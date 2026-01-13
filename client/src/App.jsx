@@ -3,7 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import './index.css';
 
 // Components
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
+
   const location = useLocation();
   const isActive = (path) => location.pathname === path;
 
@@ -24,13 +25,15 @@ const Sidebar = () => {
   });
 
   return (
-    <aside style={{
-      width: 260, flexShrink: 0, height: '100vh',
-      background: '#ffffff', // White background
-      borderRight: '1px solid #f3f4f6',
-      display: 'flex', flexDirection: 'column',
-      fontFamily: "'Inter', sans-serif"
-    }}>
+    <aside
+      className={`sidebar-mobile ${isOpen ? 'open' : ''}`}
+      style={{
+        width: 260, flexShrink: 0, height: '100vh',
+        background: '#ffffff', // White background
+        borderRight: '1px solid #f3f4f6',
+        display: 'flex', flexDirection: 'column',
+        fontFamily: "'Inter', sans-serif"
+      }}>
       {/* Brand */}
       <div style={{ height: 64, display: 'flex', alignItems: 'center', padding: '0 24px', borderBottom: '1px solid #f3f4f6', marginBottom: 16 }}>
         <div style={{ width: 24, height: 24, background: '#ea580c', marginRight: 12, borderRadius: 4 }}></div>
@@ -39,7 +42,7 @@ const Sidebar = () => {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '0 16px', overflowY: 'auto' }}>
-        <Link to="/" style={itemStyle(isActive('/'))}>
+        <Link to="/" style={itemStyle(isActive('/'))} onClick={onClose}>
           <span>🏠</span> Dashboard
         </Link>
 
@@ -100,7 +103,7 @@ const Sidebar = () => {
           justifyContent: 'center', // Center content or keep left? Standard usually left.
           border: '1px solid #e5e7eb',
           color: '#374151'
-        }}>
+        }} onClick={onClose}>
           Profile
         </Link>
         <Link to="/support" style={{
@@ -109,7 +112,7 @@ const Sidebar = () => {
           marginBottom: 0,
           border: '1px solid #e5e7eb',
           color: '#374151'
-        }}>
+        }} onClick={onClose}>
           Support
         </Link>
 
@@ -255,11 +258,17 @@ import ApiKeys from './pages/Settings/ApiKeys';
 
 // App Layout
 function App() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   return (
     <Router>
       <div className="app-layout">
-        <Sidebar />
+        <Sidebar isOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+        {mobileOpen && (
+          <div className="sidebar-overlay" onClick={() => setMobileOpen(false)}></div>
+        )}
         <main className="main-content">
+          <button className="mobile-header-btn" onClick={() => setMobileOpen(true)}>☰</button>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/financials/debits" element={<DebitLogs />} />

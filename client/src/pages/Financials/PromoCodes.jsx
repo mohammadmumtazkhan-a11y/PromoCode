@@ -65,79 +65,81 @@ const PromoCodes = () => {
                 {loading ? (
                     <div style={{ padding: 20, textAlign: 'center' }}>Loading...</div>
                 ) : (
-                    <table className="table-container">
-                        <thead>
-                            <tr>
-                                <th style={{ width: 40 }}></th>
-                                <th>Code</th>
-                                <th>Type</th>
-                                <th>Value</th>
-                                <th>Cost Incurred</th>
-                                <th>Usage</th>
-                                <th>Period</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {promos.map(promo => (
-                                <tr key={promo.id}
-                                    onClick={() => setSelectedPromo(promo)}
-                                    style={{ cursor: 'pointer', background: selectedPromo?.id === promo.id ? '#fff7ed' : 'transparent' }}
-                                >
-                                    <td>
-                                        <input
-                                            type="radio"
-                                            name="promoSelection"
-                                            checked={selectedPromo?.id === promo.id}
-                                            onChange={() => setSelectedPromo(promo)}
-                                            style={{ cursor: 'pointer' }}
-                                        />
-                                    </td>
-                                    <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{promo.code}</td>
-                                    <td>{promo.type === 'FX_BOOST' ? 'FX Boost' : promo.type}</td>
-                                    <td>
-                                        {promo.type === 'Percentage' ? `${promo.value}%` :
-                                            promo.type === 'Fixed' ? `${promo.currency} ${promo.value}` :
-                                                promo.type === 'FX_BOOST' ? `+${promo.value} Rate` : 'Fee Waiver'}
-                                    </td>
-                                    <td>
-                                        <div style={{ fontWeight: 500 }}>{promo.currency} {promo.total_discount_utilized || 0}</div>
-                                        {promo.budget_limit !== -1 && (
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                / {promo.budget_limit.toLocaleString()} Cap
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td>
-                                        {promo.usage_count} / {promo.usage_limit_global === -1 ? '∞' : promo.usage_limit_global}
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Per User: {promo.usage_limit_per_user}</div>
-                                    </td>
-                                    <td>
-                                        <span className={`badge ${promo.status === 'Active' ? 'success' : 'danger'}`}>
-                                            {promo.status}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <button
-                                            className="btn-primary"
-                                            style={{
-                                                padding: '4px 12px', fontSize: '0.75rem',
-                                                background: promo.status === 'Active' ? '#ef4444' : '#22c55e',
-                                                boxShadow: 'none'
-                                            }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleStatus(promo.id, promo.status);
-                                            }}
-                                        >
-                                            {promo.status === 'Active' ? 'Disable' : 'Enable'}
-                                        </button>
-                                    </td>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table className="table-container" style={{ minWidth: 800 }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ width: 40 }}></th>
+                                    <th>Code</th>
+                                    <th>Type</th>
+                                    <th>Value</th>
+                                    <th>Cost Incurred</th>
+                                    <th>Usage</th>
+                                    <th>Period</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {promos.map(promo => (
+                                    <tr key={promo.id}
+                                        onClick={() => setSelectedPromo(promo)}
+                                        style={{ cursor: 'pointer', background: selectedPromo?.id === promo.id ? '#fff7ed' : 'transparent' }}
+                                    >
+                                        <td>
+                                            <input
+                                                type="radio"
+                                                name="promoSelection"
+                                                checked={selectedPromo?.id === promo.id}
+                                                onChange={() => setSelectedPromo(promo)}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                        </td>
+                                        <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{promo.code}</td>
+                                        <td>{promo.type === 'FX_BOOST' ? 'FX Boost' : promo.type}</td>
+                                        <td>
+                                            {promo.type === 'Percentage' ? `${promo.value}%` :
+                                                promo.type === 'Fixed' ? `${promo.currency} ${promo.value}` :
+                                                    promo.type === 'FX_BOOST' ? `+${promo.value} Rate` : 'Fee Waiver'}
+                                        </td>
+                                        <td>
+                                            <div style={{ fontWeight: 500 }}>{promo.currency} {promo.total_discount_utilized || 0}</div>
+                                            {promo.budget_limit !== -1 && (
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                    / {promo.budget_limit.toLocaleString()} Cap
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td>
+                                            {promo.usage_count} / {promo.usage_limit_global === -1 ? '∞' : promo.usage_limit_global}
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Per User: {promo.usage_limit_per_user}</div>
+                                        </td>
+                                        <td>
+                                            <span className={`badge ${promo.status === 'Active' ? 'success' : 'danger'}`}>
+                                                {promo.status}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button
+                                                className="btn-primary"
+                                                style={{
+                                                    padding: '4px 12px', fontSize: '0.75rem',
+                                                    background: promo.status === 'Active' ? '#ef4444' : '#22c55e',
+                                                    boxShadow: 'none'
+                                                }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleStatus(promo.id, promo.status);
+                                                }}
+                                            >
+                                                {promo.status === 'Active' ? 'Disable' : 'Enable'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
 
