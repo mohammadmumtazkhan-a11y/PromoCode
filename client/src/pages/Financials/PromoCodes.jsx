@@ -114,7 +114,7 @@ const PromoCodes = () => {
                                             {promo.usage_count} / {promo.usage_limit_global === -1 ? '∞' : promo.usage_limit_global}
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Per User: {promo.usage_limit_per_user}</div>
                                         </td>
-                                        <td>
+                                        <td style={{ textAlign: 'center' }}>
                                             <div style={{ fontSize: '0.75rem', color: '#374151' }}>
                                                 {new Date(promo.start_date).toLocaleDateString()}
                                             </div>
@@ -122,7 +122,7 @@ const PromoCodes = () => {
                                                 to {new Date(promo.end_date).toLocaleDateString()}
                                             </div>
                                         </td>
-                                        <td>
+                                        <td style={{ textAlign: 'center', minWidth: 150 }}>
                                             <span className={`badge ${promo.status === 'Active' ? 'success' : 'danger'}`}>
                                                 {promo.status}
                                             </span>
