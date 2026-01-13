@@ -66,18 +66,18 @@ const PromoCodes = () => {
                     <div style={{ padding: 20, textAlign: 'center' }}>Loading...</div>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                        <table className="table-container" style={{ minWidth: 800 }}>
+                        <table className="table-container" style={{ minWidth: 1000, tableLayout: 'fixed' }}>
                             <thead>
                                 <tr>
                                     <th style={{ width: 40 }}></th>
-                                    <th style={{ width: 110 }}>Code</th>
+                                    <th style={{ width: 100 }}>Code</th>
                                     <th style={{ width: 90 }}>Type</th>
-                                    <th style={{ width: 80 }}>Value</th>
+                                    <th style={{ width: 90 }}>Value</th>
                                     <th style={{ width: 100 }}>Cost Incurred</th>
-                                    <th style={{ width: 80, textAlign: 'center' }}>Usage</th>
-                                    <th style={{ width: 100, textAlign: 'center' }}>Period</th>
+                                    <th style={{ width: 100, textAlign: 'center' }}>Usage</th>
+                                    <th style={{ width: 110, textAlign: 'center' }}>Period</th>
                                     <th style={{ width: 80, textAlign: 'center' }}>Status</th>
-                                    <th style={{ width: 120, textAlign: 'center' }}>Actions</th>
+                                    <th style={{ width: 110, textAlign: 'center' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -86,7 +86,7 @@ const PromoCodes = () => {
                                         onClick={() => setSelectedPromo(promo)}
                                         style={{ cursor: 'pointer', background: selectedPromo?.id === promo.id ? '#fff7ed' : 'transparent' }}
                                     >
-                                        <td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
                                             <input
                                                 type="radio"
                                                 name="promoSelection"
@@ -95,64 +95,54 @@ const PromoCodes = () => {
                                                 style={{ cursor: 'pointer' }}
                                             />
                                         </td>
-                                        <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{promo.code}</td>
-                                        <td>{promo.type === 'FX_BOOST' ? 'FX Boost' : promo.type}</td>
-                                        <td>
+                                        <td style={{ fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{promo.code}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{promo.type === 'FX_BOOST' ? 'FX Boost' : promo.type}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
                                             {promo.type === 'Percentage' ? `${promo.value}%` :
                                                 promo.type === 'Fixed' ? `${promo.currency} ${promo.value}` :
-                                                    promo.type === 'FX_BOOST' ? `+${promo.value} Rate` : 'Fee Waiver'}
+                                                    promo.type === 'FX_BOOST' ? `+${promo.value}` : 'Fee Waiver'}
                                         </td>
-                                        <td>
-                                            <div style={{ fontWeight: 500 }}>{promo.currency} {promo.total_discount_utilized || 0}</div>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
+                                            {promo.currency} {promo.total_discount_utilized || 0}
                                             {promo.budget_limit !== -1 && (
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                    / {promo.budget_limit.toLocaleString()} Cap
-                                                </div>
+                                                <span style={{ fontSize: '0.75rem', color: '#6b7280' }}> / {promo.budget_limit.toLocaleString()}</span>
                                             )}
                                         </td>
-                                        <td>
-                                            {promo.usage_count} / {promo.usage_limit_global === -1 ? '∞' : promo.usage_limit_global}
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Per User: {promo.usage_limit_per_user}</div>
+                                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            {promo.usage_count}/{promo.usage_limit_global === -1 ? '∞' : promo.usage_limit_global}
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>({promo.usage_limit_per_user}/user)</div>
                                         </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '0.75rem', color: '#374151' }}>
-                                                {new Date(promo.start_date).toLocaleDateString()}
-                                            </div>
-                                            <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>
-                                                to {new Date(promo.end_date).toLocaleDateString()}
-                                            </div>
+                                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                            {new Date(promo.start_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                            <span style={{ color: '#9ca3af' }}> → </span>
+                                            {new Date(promo.end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
                                         </td>
-                                        <td style={{ textAlign: 'center', minWidth: 150 }}>
+                                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                             <span className={`badge ${promo.status === 'Active' ? 'success' : 'danger'}`}>
                                                 {promo.status}
                                             </span>
                                         </td>
-                                        <td style={{ textAlign: 'center' }}>
-                                            <div style={{ marginBottom: 4 }}>
-                                                <button
-                                                    className="btn-primary"
-                                                    style={{
-                                                        padding: '4px 10px', fontSize: '0.7rem',
-                                                        background: promo.status === 'Active' ? '#ef4444' : '#22c55e',
-                                                        boxShadow: 'none'
-                                                    }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleStatus(promo.id, promo.status);
-                                                    }}
-                                                >
-                                                    {promo.status === 'Active' ? 'Disable' : 'Enable'}
-                                                </button>
-                                            </div>
+                                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            <button
+                                                className="btn-primary"
+                                                style={{
+                                                    padding: '4px 10px', fontSize: '0.7rem',
+                                                    background: promo.status === 'Active' ? '#ef4444' : '#22c55e',
+                                                    boxShadow: 'none'
+                                                }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleStatus(promo.id, promo.status);
+                                                }}
+                                            >
+                                                {promo.status === 'Active' ? 'Disable' : 'Enable'}
+                                            </button>
                                             {promo.last_campaign_sent ? (
-                                                <div style={{ fontSize: '0.75rem', color: '#374151' }}>
-                                                    📧 {new Date(promo.last_campaign_sent).toLocaleDateString()}
-                                                    <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>
-                                                        {new Date(promo.last_campaign_sent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </div>
+                                                <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: 2 }}>
+                                                    📧 {new Date(promo.last_campaign_sent).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                                                 </div>
                                             ) : (
-                                                <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>No campaigns</span>
+                                                <div style={{ fontSize: '0.65rem', color: '#9ca3af', marginTop: 2 }}>No campaigns</div>
                                             )}
                                         </td>
                                     </tr>
