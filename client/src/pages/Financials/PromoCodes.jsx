@@ -74,10 +74,10 @@ const PromoCodes = () => {
                                     <th style={{ width: 90 }}>Type</th>
                                     <th style={{ width: 80 }}>Value</th>
                                     <th style={{ width: 100 }}>Cost Incurred</th>
-                                    <th style={{ width: 80 }}>Usage</th>
-                                    <th style={{ width: 100 }}>Period</th>
-                                    <th style={{ width: 80 }}>Status</th>
-                                    <th style={{ width: 120 }}>Actions</th>
+                                    <th style={{ width: 80, textAlign: 'center' }}>Usage</th>
+                                    <th style={{ width: 100, textAlign: 'center' }}>Period</th>
+                                    <th style={{ width: 80, textAlign: 'center' }}>Status</th>
+                                    <th style={{ width: 120, textAlign: 'center' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
