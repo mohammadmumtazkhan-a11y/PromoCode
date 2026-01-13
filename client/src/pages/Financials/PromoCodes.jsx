@@ -118,22 +118,10 @@ const PromoCodes = () => {
                                             <span className={`badge ${promo.status === 'Active' ? 'success' : 'danger'}`}>
                                                 {promo.status}
                                             </span>
-                                        </td>
-                                        <td>
-                                            {promo.last_campaign_sent && (
-                                                <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: 4 }}>
-                                                    📧 {new Date(promo.last_campaign_sent).toLocaleDateString()} {new Date(promo.last_campaign_sent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </div>
-                                            )}
-                                            {!promo.last_campaign_sent && (
-                                                <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginBottom: 4 }}>
-                                                    No campaigns
-                                                </div>
-                                            )}
                                             <button
                                                 className="btn-primary"
                                                 style={{
-                                                    padding: '4px 12px', fontSize: '0.75rem',
+                                                    padding: '4px 10px', fontSize: '0.7rem', marginLeft: 8,
                                                     background: promo.status === 'Active' ? '#ef4444' : '#22c55e',
                                                     boxShadow: 'none'
                                                 }}
@@ -144,6 +132,18 @@ const PromoCodes = () => {
                                             >
                                                 {promo.status === 'Active' ? 'Disable' : 'Enable'}
                                             </button>
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            {promo.last_campaign_sent ? (
+                                                <div style={{ fontSize: '0.75rem', color: '#374151' }}>
+                                                    📧 {new Date(promo.last_campaign_sent).toLocaleDateString()}
+                                                    <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>
+                                                        {new Date(promo.last_campaign_sent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>—</span>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
