@@ -50,7 +50,7 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
                 user_segment_criteria: formData.user_segment_criteria // Add user_segment_criteria to payload
             };
 
-            const res = await fetch('http://localhost:5000/api/promocodes', {
+            const res = await fetch('/api/promocodes', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

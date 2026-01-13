@@ -18,7 +18,7 @@ const TestCheckout = () => {
         setLoading(true);
         setPromoStatus(null);
         try {
-            const res = await fetch('http://localhost:5000/api/promocodes/validate', {
+            const res = await fetch('/api/promocodes/validate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -59,7 +59,7 @@ const TestCheckout = () => {
             return;
         }
         try {
-            const res = await fetch('http://localhost:5000/api/promocodes/apply', {
+            const res = await fetch('/api/promocodes/apply', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code: promoCode })

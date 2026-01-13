@@ -27,7 +27,7 @@ const CreateDistributionModal = ({ onClose, onSuccess, selectedPromo }) => {
     useEffect(() => {
         setLoading(true);
         const query = `?max_tx=${criteria.max_tx}&churn_days=${criteria.churn_days}`;
-        fetch('http://localhost:5000/api/segments' + query)
+        fetch('/api/segments' + query)
             .then(res => res.json())
             .then(data => {
                 setSegments(data.data);
@@ -48,7 +48,7 @@ const CreateDistributionModal = ({ onClose, onSuccess, selectedPromo }) => {
                 criteria,
                 existing_code_id: selectedPromo ? selectedPromo.code : null // Pass existing code identifier
             };
-            const res = await fetch('http://localhost:5000/api/promocodes/distribute', {
+            const res = await fetch('/api/promocodes/distribute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

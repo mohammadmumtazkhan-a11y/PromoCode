@@ -15,7 +15,7 @@ const PromoCodes = () => {
 
     const fetchPromos = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/promocodes');
+            const res = await fetch('/api/promocodes');
             const data = await res.json();
             setPromos(data.data || []);
         } catch (err) {
@@ -28,7 +28,7 @@ const PromoCodes = () => {
     const toggleStatus = async (id, currentStatus) => {
         const newStatus = currentStatus === 'Active' ? 'Disabled' : 'Active';
         try {
-            await fetch(`http://localhost:5000/api/promocodes/${id}/status`, {
+            await fetch(`/api/promocodes/${id}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })
