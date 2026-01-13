@@ -153,7 +153,7 @@ const Dashboard = () => {
     <div style={{ fontFamily: 'sans-serif', color: '#4b5563' }}>
       {/* Top Banner */}
       <div style={{ background: '#dcfce7', color: '#166534', padding: '12px 24px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderRadius: 4 }}>
-        <span style={{ flex: 1 }}>furp.funtechcom.com uses cookies. By using our site you agree to our privacy policy.</span>
+        <span style={{ flex: 1 }}>MIito.Money uses cookies. By using our site you agree to our privacy policy.</span>
         <button style={{ background: 'transparent', border: 'none', color: '#166534', cursor: 'pointer', fontSize: '1.2rem' }}>&times;</button>
       </div>
 
