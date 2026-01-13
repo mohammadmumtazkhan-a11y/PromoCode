@@ -54,7 +54,7 @@ const PromoCodes = () => {
                             disabled={!selectedPromo}
                             style={{ opacity: selectedPromo ? 1 : 0.5, cursor: selectedPromo ? 'pointer' : 'not-allowed', pointerEvents: selectedPromo ? 'auto' : 'none' }}
                         >
-                            Targeted Distribution
+                            Campaign
                         </button>
                     </span>
                     <button className="btn-primary" onClick={() => setShowCreateModal(true)}>+ Create New</button>
