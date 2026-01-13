@@ -120,6 +120,16 @@ const PromoCodes = () => {
                                             </span>
                                         </td>
                                         <td>
+                                            {promo.last_campaign_sent && (
+                                                <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: 4 }}>
+                                                    📧 {new Date(promo.last_campaign_sent).toLocaleDateString()} {new Date(promo.last_campaign_sent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </div>
+                                            )}
+                                            {!promo.last_campaign_sent && (
+                                                <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginBottom: 4 }}>
+                                                    No campaigns
+                                                </div>
+                                            )}
                                             <button
                                                 className="btn-primary"
                                                 style={{

@@ -203,15 +203,23 @@ app.get('/api/merchants', (req, res) => {
 
 // --- Promo Code Logic ---
 
-// 1. List Promo Codes
+// 1. List Promo Codes (with last campaign sent date)
 app.get('/api/promocodes', (req, res) => {
-    db.all("SELECT * FROM promo_codes ORDER BY start_date DESC", [], (err, rows) => {
+    const query = `
+        SELECT p.*, MAX(e.sent_at) as last_campaign_sent
+        FROM promo_codes p
+        LEFT JOIN email_logs e ON p.code = e.code
+        GROUP BY p.id
+        ORDER BY p.start_date DESC
+    `;
+    db.all(query, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         const processed = rows.map(r => ({
             ...r,
             restrictions: JSON.parse(r.restrictions || '{}'),
             user_segment: r.user_segment ? JSON.parse(r.user_segment) : { type: 'all' },
-            user_segment_criteria: r.user_segment_criteria ? JSON.parse(r.user_segment_criteria) : {}
+            user_segment_criteria: r.user_segment_criteria ? JSON.parse(r.user_segment_criteria) : {},
+            last_campaign_sent: r.last_campaign_sent || null
         }));
         res.json({ data: processed });
     });
