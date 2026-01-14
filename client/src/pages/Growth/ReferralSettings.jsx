@@ -207,6 +207,32 @@ const ReferralSettings = () => {
         }
     };
 
+    const handleToggleStatus = async (rule) => {
+        try {
+            const updatedRule = {
+                ...rule,
+                is_enabled: !rule.is_enabled
+            };
+
+            const response = await fetch(`/api/referral-rules/${rule.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedRule)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(`Error: ${data.message || data.error}`);
+                return;
+            }
+
+            fetchRules();
+        } catch (err) {
+            alert('Error updating status');
+        }
+    };
+
     const resetForm = () => {
         setFormData({
             name: '',
@@ -440,25 +466,47 @@ const ReferralSettings = () => {
                                             {rule.name}
                                         </td>
                                         <td style={tableCellStyle}>
-                                            <span style={{
+                                            <label style={{
+                                                position: 'relative',
                                                 display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: 6,
-                                                padding: '4px 12px',
-                                                borderRadius: 12,
-                                                fontSize: '0.75rem',
-                                                fontWeight: 600,
-                                                background: rule.is_enabled ? '#d1fae5' : '#fee2e2',
-                                                color: rule.is_enabled ? '#065f46' : '#991b1b'
+                                                gap: 10,
+                                                cursor: 'pointer'
                                             }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!rule.is_enabled}
+                                                    onChange={() => handleToggleStatus(rule)}
+                                                    style={{ display: 'none' }}
+                                                />
+                                                <div style={{
+                                                    width: 44,
+                                                    height: 24,
+                                                    borderRadius: 12,
+                                                    background: rule.is_enabled ? '#10b981' : '#d1d5db',
+                                                    transition: 'background 0.3s',
+                                                    position: 'relative'
+                                                }}>
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: 2,
+                                                        left: rule.is_enabled ? 22 : 2,
+                                                        width: 20,
+                                                        height: 20,
+                                                        borderRadius: '50%',
+                                                        background: 'white',
+                                                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                                                        transition: 'left 0.3s'
+                                                    }}></div>
+                                                </div>
                                                 <span style={{
-                                                    width: 6,
-                                                    height: 6,
-                                                    borderRadius: '50%',
-                                                    background: rule.is_enabled ? '#10b981' : '#dc2626'
-                                                }}></span>
-                                                {rule.is_enabled ? 'Active' : 'Inactive'}
-                                            </span>
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    color: rule.is_enabled ? '#065f46' : '#6b7280'
+                                                }}>
+                                                    {rule.is_enabled ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </label>
                                         </td>
                                         <td style={tableCellStyle}>
                                             <span style={{
@@ -593,3 +641,5 @@ const tableCellStyle = {
     color: '#374151',
     verticalAlign: 'middle'
 };
+
+export default ReferralSettings;
