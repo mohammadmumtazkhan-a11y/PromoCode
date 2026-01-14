@@ -100,7 +100,7 @@ const PromoCodes = () => {
                                         <td style={{ whiteSpace: 'nowrap' }}>
                                             {promo.type === 'Percentage' ? `${promo.value}%` :
                                                 promo.type === 'Fixed' ? `${promo.currency} ${promo.value}` :
-                                                    promo.type === 'FX_BOOST' ? `+${promo.value}` : 'Fee Waiver'}
+                                                    promo.type === 'FX_BOOST' ? `+${promo.value}` : `${promo.value}%`}
                                         </td>
                                         <td style={{ whiteSpace: 'nowrap' }}>
                                             {promo.currency} {promo.total_discount_utilized || 0}
