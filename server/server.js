@@ -844,9 +844,9 @@ app.get('/api/credits/:userId', (req, res) => {
     });
 });
 
-// 2. Manual Credit Adjustment (Grant/Void) - Phase 3: FRD  
+// 2. Manual Credit Adjustment (Grant/Void) - Phase 3 + 4: FRD  
 app.post('/api/credits/manual', (req, res) => {
-    const { user_id, amount, type, reason_code, notes, scheme_id, admin_user } = req.body;
+    const { user_id, amount, type, reason_code, notes, scheme_id, admin_user, idempotency_key } = req.body;
 
     // Phase 3: FRD Validations (Section 3.3)
     if (!user_id || !amount || !type) {
@@ -859,34 +859,144 @@ app.post('/api/credits/manual', (req, res) => {
         return res.status(400).json({ error: "Notes must be provided for manual adjustments" });
     }
 
-    const id = 'crd_' + Date.now();
-    const parsedAmount = parseFloat(amount);
-
-    const stmt = db.prepare(`INSERT INTO credit_ledger 
-        (id, user_id, amount, type, scheme_id, reference_id, reason_code, notes, admin_user) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-    stmt.run(
-        id,
-        user_id,
-        parsedAmount,
-        type,
-        scheme_id || null,
-        `manual_${id}`, // reference_id
-        reason_code,
-        notes,
-        admin_user || 'Admin',
-        function (err) {
+    // Phase 4: Idempotency Check (FRD Section 4.2)
+    if (idempotency_key) {
+        db.get("SELECT * FROM credit_ledger WHERE reference_id = ?", [`idem_${idempotency_key}`], (err, existing) => {
             if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, id: id, new_balance_impact: parsedAmount });
-        }
-    );
-    stmt.finalize();
+            if (existing) {
+                // Already processed - return existing record
+                return res.json({
+                    success: true,
+                    id: existing.id,
+                    new_balance_impact: existing.amount,
+                    idempotent: true,
+                    message: "Request already processed"
+                });
+            }
+            // Not found, proceed with insertion
+            performManualAdjustment();
+        });
+    } else {
+        performManualAdjustment();
+    }
+
+    function performManualAdjustment() {
+        const id = 'crd_' + Date.now();
+        const parsedAmount = parseFloat(amount);
+        const reference_id = idempotency_key ? `idem_${idempotency_key}` : `manual_${id}`;
+
+        const stmt = db.prepare(`INSERT INTO credit_ledger 
+            (id, user_id, amount, type, scheme_id, reference_id, reason_code, notes, admin_user) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+        stmt.run(
+            id,
+            user_id,
+            parsedAmount,
+            type,
+            scheme_id || null,
+            reference_id,
+            reason_code,
+            notes,
+            admin_user || 'Admin',
+            function (err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true, id: id, new_balance_impact: parsedAmount });
+            }
+        );
+        stmt.finalize();
+    }
 });
 
+// 3. Award Bonus Credit (with One-Time & Expiry Rules) - Phase 4: FRD
+app.post('/api/credits/award-bonus', (req, res) => {
+    const { user_id, scheme_id, transaction_id, admin_user } = req.body;
 
+    if (!user_id || !scheme_id) {
+        return res.status(400).json({ error: "user_id and scheme_id are required" });
+    }
 
-// --- Phase 3: Campaign Blasting API ---
+    // Get scheme details
+    db.get("SELECT * FROM bonus_schemes WHERE id = ?", [scheme_id], (err, scheme) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!scheme) return res.status(404).json({ error: "Bonus scheme not found" });
+
+        // Phase 4: Check if scheme is expired (FRD Section 4.1)
+        const now = new Date().toISOString().split('T')[0];
+        if (now > scheme.end_date) {
+            return res.status(400).json({
+                error: "SCHEME_EXPIRED",
+                message: `Bonus scheme "${scheme.name}" expired on ${scheme.end_date}`
+            });
+        }
+        if (scheme.status !== 'ACTIVE') {
+            return res.status(400).json({
+                error: "SCHEME_INACTIVE",
+                message: `Bonus scheme "${scheme.name}" is not active (status: ${scheme.status})`
+            });
+        }
+
+        // Phase 4: One-Time Bonus Rule (FRD Section 4.1)
+        // Check if user already earned from this scheme
+        const rules = JSON.parse(scheme.eligibility_rules || '{}');
+        const isOneTime = rules.oneTimeOnly !== false; // Default to one-time
+
+        if (isOneTime) {
+            db.get(
+                "SELECT id, created_at FROM credit_ledger WHERE user_id = ? AND scheme_id = ? AND type = 'EARNED'",
+                [user_id, scheme_id],
+                (err, existing) => {
+                    if (err) return res.status(500).json({ error: err.message });
+
+                    if (existing) {
+                        return res.status(409).json({
+                            error: "ALREADY_EARNED",
+                            message: `User has already earned bonus from "${scheme.name}" on ${existing.created_at}. This is a one-time bonus.`
+                        });
+                    }
+
+                    // Proceed with awarding
+                    awardBonus();
+                }
+            );
+        } else {
+            awardBonus();
+        }
+
+        function awardBonus() {
+            const id = 'crd_' + Date.now();
+            // Phase 4: Calculate expiry date (FRD Section 4.1)
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + 90); // 90 days from now
+            const expires_at = expiryDate.toISOString().split('T')[0];
+
+            const stmt = db.prepare(`INSERT INTO credit_ledger 
+                (id, user_id, amount, type, scheme_id, reference_id, admin_user, expires_at) 
+                VALUES (?, ?, ?, 'EARNED', ?, ?, ?, ?)`);
+
+            stmt.run(
+                id,
+                user_id,
+                scheme.credit_amount,
+                scheme_id,
+                transaction_id || `bonus_${id}`,
+                admin_user || 'System',
+                expires_at,
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({
+                        success: true,
+                        id: id,
+                        amount: scheme.credit_amount,
+                        expires_at: expires_at,
+                        scheme_name: scheme.name
+                    });
+                }
+            );
+            stmt.finalize();
+        }
+    });
+});
 
 // 1. Get Campaign History
 app.get('/api/campaigns', (req, res) => {
