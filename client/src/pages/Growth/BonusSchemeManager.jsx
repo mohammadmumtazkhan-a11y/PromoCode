@@ -8,8 +8,9 @@ const BonusSchemeManager = () => {
 
     const [formData, setFormData] = useState({
         name: '',
-        bonus_type: 'REFERRAL_CREDIT',
+        bonus_type: 'GOODWILL_CREDIT',
         credit_amount: 10,
+        currency: 'GBP',
         min_transaction_threshold: 50,
         eligibility_rules: {
             corridors: [],
@@ -94,6 +95,7 @@ const BonusSchemeManager = () => {
             name: scheme.name,
             bonus_type: scheme.bonus_type,
             credit_amount: scheme.credit_amount,
+            currency: scheme.currency || 'GBP',
             min_transaction_threshold: scheme.min_transaction_threshold,
             eligibility_rules: scheme.eligibility_rules,
             start_date: scheme.start_date,
@@ -119,8 +121,9 @@ const BonusSchemeManager = () => {
     const resetForm = () => {
         setFormData({
             name: '',
-            bonus_type: 'REFERRAL_CREDIT',
+            bonus_type: 'GOODWILL_CREDIT',
             credit_amount: 10,
+            currency: 'GBP',
             min_transaction_threshold: 50,
             eligibility_rules: { corridors: [], paymentMethods: [], affiliates: [], segments: [] },
             start_date: '',
@@ -155,7 +158,7 @@ const BonusSchemeManager = () => {
     return (
         <div style={{ padding: 32, maxWidth: 1200, margin: '0 auto' }}>
             <h2 style={{ fontSize: '1.75rem', fontWeight: 600, marginBottom: 8 }}>Bonus Scheme Manager</h2>
-            <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>Configure and manage bonus credit earning rules (FRD Section 3.1)</p>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>Configure and manage bonus credit earning rules</p>
 
             {/* Form */}
             <div className="glass-panel" style={{ padding: 32, marginBottom: 32 }}>
@@ -170,7 +173,7 @@ const BonusSchemeManager = () => {
                             <label style={labelStyle}>Bonus Name *</label>
                             <input
                                 style={inputStyle}
-                                placeholder="e.g. First Time Referral Bonus"
+                                placeholder="e.g. Transaction Threshold Credit"
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 required
@@ -184,7 +187,6 @@ const BonusSchemeManager = () => {
                                 onChange={(e) => setFormData({ ...formData, bonus_type: e.target.value })}
                                 required
                             >
-                                <option value="REFERRAL_CREDIT">Referral Credit</option>
                                 <option value="GOODWILL_CREDIT">Goodwill Credit</option>
                                 <option value="TRANSACTION_THRESHOLD_CREDIT">Transaction Threshold Credit</option>
                             </select>
@@ -193,20 +195,36 @@ const BonusSchemeManager = () => {
 
                     {/* Credit Amount & Threshold */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
-                        <div>
-                            <label style={labelStyle}>Credit Amount (£) *</label>
-                            <input
-                                type="number"
-                                step="0.50"
-                                style={{ ...inputStyle, marginBottom: 0 }}
-                                value={formData.credit_amount}
-                                onChange={(e) => setFormData({ ...formData, credit_amount: parseFloat(e.target.value) || 0 })}
-                                required
-                                min="0.01"
-                            />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                                <label style={labelStyle}>Credit Amount *</label>
+                                <input
+                                    type="number"
+                                    step="0.50"
+                                    style={{ ...inputStyle, marginBottom: 0 }}
+                                    value={formData.credit_amount}
+                                    onChange={(e) => setFormData({ ...formData, credit_amount: parseFloat(e.target.value) || 0 })}
+                                    required
+                                    min="0.01"
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Currency *</label>
+                                <select
+                                    style={{ ...inputStyle, marginBottom: 0 }}
+                                    value={formData.currency}
+                                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                                    required
+                                >
+                                    <option value="GBP">GBP (£)</option>
+                                    <option value="USD">USD ($)</option>
+                                    <option value="EUR">EUR (€)</option>
+                                    <option value="NGN">NGN (₦)</option>
+                                </select>
+                            </div>
                         </div>
                         <div>
-                            <label style={labelStyle}>Minimum Transaction Threshold (£)</label>
+                            <label style={labelStyle}>Minimum Transaction Threshold (Send Currency)</label>
                             <input
                                 type="number"
                                 step="10"
@@ -325,10 +343,10 @@ const BonusSchemeManager = () => {
                                             </span>
                                         </td>
                                         <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 600, color: '#059669' }}>
-                                            £{scheme.credit_amount.toFixed(2)}
+                                            {scheme.currency || 'GBP'} {scheme.credit_amount.toFixed(2)}
                                         </td>
                                         <td style={{ ...tableCellStyle, textAlign: 'right', color: '#6b7280' }}>
-                                            £{scheme.min_transaction_threshold.toFixed(2)}
+                                            {scheme.min_transaction_threshold.toFixed(2)}
                                         </td>
                                         <td style={tableCellStyle}>
                                             <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>

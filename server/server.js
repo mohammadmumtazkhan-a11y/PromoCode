@@ -203,6 +203,7 @@ function initializeDatabase() {
             name TEXT NOT NULL,
             bonus_type TEXT NOT NULL, -- REFERRAL_CREDIT, GOODWILL_CREDIT, TRANSACTION_THRESHOLD_CREDIT
             credit_amount REAL NOT NULL,
+            currency TEXT DEFAULT 'GBP', -- New field
             min_transaction_threshold REAL DEFAULT 0,
             eligibility_rules TEXT, -- JSON: {corridors: [], paymentMethods: [], affiliates: [], segments: []}
             start_date TEXT NOT NULL,
@@ -211,20 +212,29 @@ function initializeDatabase() {
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
-            // Seed sample bonus schemes
-            const stmt = db.prepare(`INSERT INTO bonus_schemes 
-                (name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run('First Time Bonus', 'REFERRAL_CREDIT', 10.00, 50.0,
-                JSON.stringify({ corridors: ['UK-NG'], segments: ['new_users'] }),
-                '2024-01-01', '2024-12-31', 'ACTIVE');
-            stmt.run('High Value Threshold Bonus', 'TRANSACTION_THRESHOLD_CREDIT', 25.00, 500.0,
-                JSON.stringify({ paymentMethods: ['bank_transfer'], segments: ['all'] }),
-                '2024-06-01', '2024-12-31', 'ACTIVE');
-            stmt.run('Goodwill Credit (Expired)', 'GOODWILL_CREDIT', 5.00, 0.0,
-                JSON.stringify({ segments: ['all'] }),
-                '2023-01-01', '2023-12-31', 'EXPIRED');
-            stmt.finalize();
+            // Migration: Ensure currency column exists for existing tables
+            db.run("ALTER TABLE bonus_schemes ADD COLUMN currency TEXT DEFAULT 'GBP'", (err) => {
+                // Ignore error if column already exists
+            });
+
+            // Seed sample bonus schemes if empty
+            db.get("SELECT count(*) as count FROM bonus_schemes", (err, row) => {
+                if (row && row.count === 0) {
+                    const stmt = db.prepare(`INSERT INTO bonus_schemes 
+                        (name, bonus_type, credit_amount, currency, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+                    stmt.run('First Time Bonus', 'REFERRAL_CREDIT', 10.00, 'GBP', 50.0,
+                        JSON.stringify({ corridors: ['UK-NG'], segments: ['new_users'] }),
+                        '2024-01-01', '2024-12-31', 'ACTIVE');
+                    stmt.run('High Value Threshold Bonus', 'TRANSACTION_THRESHOLD_CREDIT', 25.00, 'USD', 500.0,
+                        JSON.stringify({ paymentMethods: ['bank_transfer'], segments: ['all'] }),
+                        '2024-06-01', '2024-12-31', 'ACTIVE');
+                    stmt.run('Goodwill Credit (Expired)', 'GOODWILL_CREDIT', 5.00, 'EUR', 0.0,
+                        JSON.stringify({ segments: ['all'] }),
+                        '2023-01-01', '2023-12-31', 'EXPIRED');
+                    stmt.finalize();
+                }
+            });
         });
 
         // Credit Ledger (Append-Only) - Enhanced with FRD fields
@@ -703,8 +713,9 @@ app.get('/api/bonus-schemes', (req, res) => {
 });
 
 // 2. Create Bonus Scheme
+// 2. Create Bonus Scheme
 app.post('/api/bonus-schemes', (req, res) => {
-    const { name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date } = req.body;
+    const { name, bonus_type, credit_amount, currency, min_transaction_threshold, eligibility_rules, start_date, end_date } = req.body;
 
     // FRD Validations (Section 3.1)
     if (!name) return res.status(400).json({ error: "Bonus Name is required" });
@@ -716,13 +727,17 @@ app.post('/api/bonus-schemes', (req, res) => {
     }
 
     const stmt = db.prepare(`INSERT INTO bonus_schemes 
-        (name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
+        (name, bonus_type, credit_amount, currency, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
+
+    // Default to GBP if not provided (Safety net)
+    const safeCurrency = currency || 'GBP';
 
     stmt.run(
         name,
         bonus_type,
         credit_amount,
+        safeCurrency,
         min_transaction_threshold || 0,
         JSON.stringify(eligibility_rules || {}),
         start_date,
@@ -752,6 +767,7 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
         name = ?,
         bonus_type = ?,
         credit_amount = ?,
+        currency = ?,
         min_transaction_threshold = ?,
         eligibility_rules = ?,
         start_date = ?,
@@ -760,10 +776,14 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
         updated_at = CURRENT_TIMESTAMP
         WHERE id = ?`);
 
+    // Default to GBP if not provided (safety)
+    const safeCurrency = req.body.currency || 'GBP';
+
     stmt.run(
         name,
         bonus_type,
         credit_amount,
+        safeCurrency,
         min_transaction_threshold || 0,
         JSON.stringify(eligibility_rules || {}),
         start_date,
