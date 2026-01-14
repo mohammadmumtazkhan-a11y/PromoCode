@@ -205,6 +205,8 @@ function initializeDatabase() {
             credit_amount REAL NOT NULL,
             currency TEXT DEFAULT 'GBP', -- New field
             min_transaction_threshold REAL DEFAULT 0,
+            min_transactions INTEGER DEFAULT 0, -- For LOYALTY_CREDIT: minimum number of transactions
+            time_period_days INTEGER DEFAULT 0, -- For LOYALTY_CREDIT: time period in days
             eligibility_rules TEXT, -- JSON: {corridors: [], paymentMethods: [], affiliates: [], segments: []}
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
@@ -212,8 +214,14 @@ function initializeDatabase() {
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
-            // Migration: Ensure currency column exists for existing tables
+            // Migration: Ensure new columns exist for existing tables
             db.run("ALTER TABLE bonus_schemes ADD COLUMN currency TEXT DEFAULT 'GBP'", (err) => {
+                // Ignore error if column already exists
+            });
+            db.run("ALTER TABLE bonus_schemes ADD COLUMN min_transactions INTEGER DEFAULT 0", (err) => {
+                // Ignore error if column already exists
+            });
+            db.run("ALTER TABLE bonus_schemes ADD COLUMN time_period_days INTEGER DEFAULT 0", (err) => {
                 // Ignore error if column already exists
             });
 
@@ -221,14 +229,14 @@ function initializeDatabase() {
             db.get("SELECT count(*) as count FROM bonus_schemes", (err, row) => {
                 if (row && row.count === 0) {
                     const stmt = db.prepare(`INSERT INTO bonus_schemes 
-                        (name, bonus_type, credit_amount, currency, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+                        (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
-                    stmt.run('High Value Threshold Bonus', 'TRANSACTION_THRESHOLD_CREDIT', 25.00, 'USD', 500.0,
+                    stmt.run('High Value Threshold Bonus', 'TRANSACTION_THRESHOLD_CREDIT', 25.00, 'USD', 500.0, 0, 0,
                         JSON.stringify({ paymentMethods: ['bank_transfer'], segments: ['all'] }),
                         '2024-06-01', '2024-12-31', 'ACTIVE');
-                    stmt.run('Loyalty Credit (Expired)', 'LOYALTY_CREDIT', 5.00, 'EUR', 0.0,
-                        JSON.stringify({ segments: ['all'] }),
+                    stmt.run('Loyalty Credit (Expired)', 'LOYALTY_CREDIT', 5.00, 'EUR', 0.0, 3, 30,
+                        JSON.stringify({ segments: ['existing_customers'] }),
                         '2023-01-01', '2023-12-31', 'EXPIRED');
                     stmt.finalize();
                 }
@@ -713,7 +721,7 @@ app.get('/api/bonus-schemes', (req, res) => {
 // 2. Create Bonus Scheme
 // 2. Create Bonus Scheme
 app.post('/api/bonus-schemes', (req, res) => {
-    const { name, bonus_type, credit_amount, currency, min_transaction_threshold, eligibility_rules, start_date, end_date } = req.body;
+    const { name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date } = req.body;
 
     // FRD Validations (Section 3.1)
     if (!name) return res.status(400).json({ error: "Bonus Name is required" });
@@ -724,9 +732,19 @@ app.post('/api/bonus-schemes', (req, res) => {
         return res.status(400).json({ error: "Please select a valid date range. Start date must be before end date." });
     }
 
+    // Loyalty Credit specific validations
+    if (bonus_type === 'LOYALTY_CREDIT') {
+        if (!min_transactions || min_transactions <= 0) {
+            return res.status(400).json({ error: "Number of Transactions is required for Loyalty Credit" });
+        }
+        if (!time_period_days || time_period_days <= 0) {
+            return res.status(400).json({ error: "Time Period (Days) is required for Loyalty Credit" });
+        }
+    }
+
     const stmt = db.prepare(`INSERT INTO bonus_schemes 
-        (name, bonus_type, credit_amount, currency, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
+        (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date, status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
 
     // Default to GBP if not provided (Safety net)
     const safeCurrency = currency || 'GBP';
@@ -737,6 +755,8 @@ app.post('/api/bonus-schemes', (req, res) => {
         credit_amount,
         safeCurrency,
         min_transaction_threshold || 0,
+        min_transactions || 0,
+        time_period_days || 0,
         JSON.stringify(eligibility_rules || {}),
         start_date,
         end_date,
@@ -751,7 +771,7 @@ app.post('/api/bonus-schemes', (req, res) => {
 // 3. Update Bonus Scheme
 app.put('/api/bonus-schemes/:id', (req, res) => {
     const { id } = req.params;
-    const { name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date, status } = req.body;
+    const { name, bonus_type, credit_amount, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date, status } = req.body;
 
     // FRD Validations
     if (credit_amount && credit_amount <= 0) {
@@ -767,6 +787,8 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
         credit_amount = ?,
         currency = ?,
         min_transaction_threshold = ?,
+        min_transactions = ?,
+        time_period_days = ?,
         eligibility_rules = ?,
         start_date = ?,
         end_date = ?,
@@ -783,6 +805,8 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
         credit_amount,
         safeCurrency,
         min_transaction_threshold || 0,
+        min_transactions || 0,
+        time_period_days || 0,
         JSON.stringify(eligibility_rules || {}),
         start_date,
         end_date,

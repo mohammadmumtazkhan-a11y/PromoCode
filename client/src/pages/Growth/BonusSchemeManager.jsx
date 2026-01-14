@@ -12,6 +12,8 @@ const BonusSchemeManager = () => {
         credit_amount: 10,
         currency: 'GBP',
         min_transaction_threshold: 50,
+        min_transactions: 3,
+        time_period_days: 30,
         eligibility_rules: {
             corridors: [],
             paymentMethods: [],
@@ -97,6 +99,8 @@ const BonusSchemeManager = () => {
             credit_amount: scheme.credit_amount,
             currency: scheme.currency || 'GBP',
             min_transaction_threshold: scheme.min_transaction_threshold,
+            min_transactions: scheme.min_transactions || 0,
+            time_period_days: scheme.time_period_days || 0,
             eligibility_rules: scheme.eligibility_rules,
             start_date: scheme.start_date,
             end_date: scheme.end_date,
@@ -125,6 +129,8 @@ const BonusSchemeManager = () => {
             credit_amount: 10,
             currency: 'GBP',
             min_transaction_threshold: 50,
+            min_transactions: 3,
+            time_period_days: 30,
             eligibility_rules: { corridors: [], paymentMethods: [], affiliates: [], segments: [] },
             start_date: '',
             end_date: '',
@@ -193,7 +199,7 @@ const BonusSchemeManager = () => {
                         </div>
                     </div>
 
-                    {/* Credit Amount & Threshold */}
+                    {/* Credit Amount & Conditional Fields */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                             <div>
@@ -223,16 +229,52 @@ const BonusSchemeManager = () => {
                                 </select>
                             </div>
                         </div>
-                        <div>
-                            <label style={labelStyle}>Minimum Transaction Threshold (Send Currency)</label>
-                            <input
-                                type="number"
-                                step="10"
-                                style={{ ...inputStyle, marginBottom: 0 }}
-                                value={formData.min_transaction_threshold}
-                                onChange={(e) => setFormData({ ...formData, min_transaction_threshold: parseFloat(e.target.value) || 0 })}
-                            />
-                        </div>
+
+                        {/* Conditional: Show for Transaction Threshold Credit */}
+                        {formData.bonus_type === 'TRANSACTION_THRESHOLD_CREDIT' && (
+                            <div>
+                                <label style={labelStyle}>Minimum Transaction Threshold (Send Currency)</label>
+                                <input
+                                    type="number"
+                                    step="10"
+                                    style={{ ...inputStyle, marginBottom: 0 }}
+                                    value={formData.min_transaction_threshold}
+                                    onChange={(e) => setFormData({ ...formData, min_transaction_threshold: parseFloat(e.target.value) || 0 })}
+                                />
+                            </div>
+                        )}
+
+                        {/* Conditional: Show for Loyalty Credit */}
+                        {formData.bonus_type === 'LOYALTY_CREDIT' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                <div>
+                                    <label style={labelStyle}>Number of Transactions *</label>
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        style={{ ...inputStyle, marginBottom: 0 }}
+                                        value={formData.min_transactions}
+                                        onChange={(e) => setFormData({ ...formData, min_transactions: parseInt(e.target.value) || 0 })}
+                                        required
+                                        min="1"
+                                        placeholder="e.g., 3"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Time Period (Days) *</label>
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        style={{ ...inputStyle, marginBottom: 0 }}
+                                        value={formData.time_period_days}
+                                        onChange={(e) => setFormData({ ...formData, time_period_days: parseInt(e.target.value) || 0 })}
+                                        required
+                                        min="1"
+                                        placeholder="e.g., 30"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Validity Period */}
@@ -274,16 +316,23 @@ const BonusSchemeManager = () => {
                     {/* Eligibility Rules - Simplified for now */}
                     <div style={{ marginBottom: 24 }}>
                         <label style={labelStyle}>Eligibility Rules (User Segments)</label>
+                        {formData.bonus_type === 'LOYALTY_CREDIT' && (
+                            <div style={{ fontSize: '0.85rem', color: '#ea580c', background: '#fff7ed', padding: '8px 12px', borderRadius: 6, marginBottom: 8, fontWeight: 500 }}>
+                                ⓘ Loyalty Credit is only for Existing Customers
+                            </div>
+                        )}
                         <select
                             style={{ ...inputStyle, marginBottom: 0 }}
-                            value={formData.eligibility_rules.segments[0] || 'all'}
+                            value={formData.bonus_type === 'LOYALTY_CREDIT' ? 'existing_customers' : (formData.eligibility_rules.segments[0] || 'all')}
                             onChange={(e) => setFormData({
                                 ...formData,
                                 eligibility_rules: { ...formData.eligibility_rules, segments: [e.target.value] }
                             })}
+                            disabled={formData.bonus_type === 'LOYALTY_CREDIT'}
                         >
                             <option value="all">All Users</option>
                             <option value="new_users">New Users Only</option>
+                            <option value="existing_customers">Existing Customers</option>
                             <option value="churned_users">Churned Users</option>
                             <option value="high_value">High Value Users</option>
                         </select>
