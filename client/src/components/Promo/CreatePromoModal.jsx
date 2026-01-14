@@ -27,7 +27,12 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        // Clear value field when Fee Waiver is selected
+        if (name === 'type' && value === 'Waiver') {
+            setFormData(prev => ({ ...prev, [name]: value, value: '' }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     };
 
     const handleSubmit = async (e) => {
@@ -100,7 +105,22 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                         <div>
                             <label style={{ display: 'block', marginBottom: 8, fontSize: '0.875rem', color: 'var(--text-muted)' }}>Value</label>
-                            <input name="value" type="number" step="0.01" value={formData.value} onChange={handleChange} required style={inputStyle} placeholder="0.00" />
+                            <input
+                                name="value"
+                                type="number"
+                                step="0.01"
+                                value={formData.type === 'Waiver' ? '' : formData.value}
+                                onChange={handleChange}
+                                required={formData.type !== 'Waiver'}
+                                disabled={formData.type === 'Waiver'}
+                                style={{
+                                    ...inputStyle,
+                                    background: formData.type === 'Waiver' ? '#f3f4f6' : 'white',
+                                    cursor: formData.type === 'Waiver' ? 'not-allowed' : 'auto',
+                                    opacity: formData.type === 'Waiver' ? 0.6 : 1
+                                }}
+                                placeholder={formData.type === 'Waiver' ? 'N/A for Fee Waiver' : '0.00'}
+                            />
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: 8, fontSize: '0.875rem', color: 'var(--text-muted)' }}>Currency (Base)</label>
@@ -298,6 +318,8 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
 };
 
 const MultiSelectField = ({ label, options, selected, onChange, allowAll = false, isRestricted = null, onToggleRestriction = null }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
     const toggle = (val) => {
         if (selected.includes(val)) {
             onChange(selected.filter(i => i !== val));
@@ -320,6 +342,11 @@ const MultiSelectField = ({ label, options, selected, onChange, allowAll = false
             if (checked) onChange([]);
         }
     };
+
+    // Filter options based on search term
+    const filteredOptions = searchTerm
+        ? options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()))
+        : options;
 
     return (
         <div>
@@ -346,18 +373,37 @@ const MultiSelectField = ({ label, options, selected, onChange, allowAll = false
                     border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: 8,
                     maxHeight: '120px', overflowY: 'auto', background: 'white'
                 }}>
+                    {/* Search Input */}
+                    <div style={{ marginBottom: 8 }}>
+                        <input
+                            type="text"
+                            placeholder="Search affiliates..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '6px 10px',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: '6px',
+                                fontSize: '0.85rem',
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                            }}
+                        />
+                    </div>
+
                     <div style={{ padding: '4px', borderBottom: '1px solid #f3f4f6', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <input
                             type="checkbox"
-                            checked={options.every(o => selected.includes(o))}
+                            checked={filteredOptions.every(o => selected.includes(o))}
                             onChange={(e) => {
-                                if (e.target.checked) onChange([...options]);
-                                else onChange([]);
+                                if (e.target.checked) onChange([...new Set([...selected, ...filteredOptions])]);
+                                else onChange(selected.filter(s => !filteredOptions.includes(s)));
                             }}
                         />
                         <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Select All</span>
                     </div>
-                    {options.map(opt => (
+                    {filteredOptions.map(opt => (
                         <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
                             <input
                                 type="checkbox"
