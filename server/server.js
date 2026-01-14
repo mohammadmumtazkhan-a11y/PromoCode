@@ -574,16 +574,30 @@ app.post('/api/referral-rules', (req, res) => {
 
     if (!name) return res.status(400).json({ error: "Name is required" });
 
-    const enabledInt = is_enabled ? 1 : 0;
-    const stmt = db.prepare(`INSERT INTO referral_rules 
-        (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)`);
-
-    stmt.run(name, enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, function (err) {
+    // Check if currency already exists
+    db.get("SELECT id, name FROM referral_rules WHERE base_currency = ?", [base_currency], (err, existing) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, id: this.lastID });
+
+        if (existing) {
+            return res.status(409).json({
+                error: "DUPLICATE_CURRENCY",
+                message: `A referral rule for ${base_currency} already exists ("${existing.name}"). Please edit or delete it first.`,
+                existing_rule: existing
+            });
+        }
+
+        // Proceed with creation
+        const enabledInt = is_enabled ? 1 : 0;
+        const stmt = db.prepare(`INSERT INTO referral_rules 
+            (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`);
+
+        stmt.run(name, enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, id: this.lastID });
+        });
+        stmt.finalize();
     });
-    stmt.finalize();
 });
 
 // 3. Update Referral Rule
@@ -591,24 +605,38 @@ app.put('/api/referral-rules/:id', (req, res) => {
     const { id } = req.params;
     const { name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency } = req.body;
 
-    const enabledInt = is_enabled ? 1 : 0;
-
-    const stmt = db.prepare(`UPDATE referral_rules SET 
-        name = ?,
-        is_enabled = ?, 
-        min_transaction_threshold = ?, 
-        referrer_reward = ?, 
-        referee_reward = ?, 
-        reward_type = ?, 
-        base_currency = ?,
-        updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`);
-
-    stmt.run(name, enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, id, function (err) {
+    // Check if another rule already uses this currency
+    db.get("SELECT id, name FROM referral_rules WHERE base_currency = ? AND id != ?", [base_currency, id], (err, existing) => {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+
+        if (existing) {
+            return res.status(409).json({
+                error: "DUPLICATE_CURRENCY",
+                message: `Another rule ("${existing.name}") already uses ${base_currency}. Please delete it first.`,
+                existing_rule: existing
+            });
+        }
+
+        // Proceed with update
+        const enabledInt = is_enabled ? 1 : 0;
+
+        const stmt = db.prepare(`UPDATE referral_rules SET 
+            name = ?,
+            is_enabled = ?, 
+            min_transaction_threshold = ?, 
+            referrer_reward = ?, 
+            referee_reward = ?, 
+            reward_type = ?, 
+            base_currency = ?,
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?`);
+
+        stmt.run(name, enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, id, function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+        stmt.finalize();
     });
-    stmt.finalize();
 });
 
 // 4. Delete Referral Rule

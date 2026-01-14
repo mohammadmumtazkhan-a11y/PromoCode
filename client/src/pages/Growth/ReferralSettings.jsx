@@ -144,25 +144,38 @@ const ReferralSettings = () => {
         e.preventDefault();
         setSaving(true);
         try {
+            let response;
             if (editingId) {
-                await fetch(`/api/referral-rules/${editingId}`, {
+                response = await fetch(`/api/referral-rules/${editingId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
-                alert('Rule updated successfully');
             } else {
-                await fetch('/api/referral-rules', {
+                response = await fetch('/api/referral-rules', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
-                alert('Rule created successfully');
             }
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // Handle duplicate currency error
+                if (data.error === 'DUPLICATE_CURRENCY') {
+                    alert(`⚠️ ${data.message}\n\nExisting rule: "${data.existing_rule.name}"`);
+                } else {
+                    alert(`Error: ${data.message || data.error}`);
+                }
+                return;
+            }
+
+            alert(editingId ? 'Rule updated successfully' : 'Rule created successfully');
             resetForm();
             fetchRules();
         } catch (err) {
-            alert('Error saving rule');
+            alert('Network error. Please try again.');
         } finally {
             setSaving(false);
         }
@@ -372,54 +385,174 @@ const ReferralSettings = () => {
             </div>
 
             {/* Table */}
-            <div className="glass-panel" style={{ padding: 24 }}>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: 16 }}>Existing Rules</h3>
-                <div className="table-wrapper">
-                    <table className="data-table" style={{ width: '100%' }}>
+            <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: 24, borderBottom: '1px solid var(--border-subtle)' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Existing Rules</h3>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: 4, marginBottom: 0 }}>
+                        Manage your referral incentive programs
+                    </p>
+                </div>
+                <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                    <table style={{
+                        width: '100%',
+                        borderCollapse: 'separate',
+                        borderSpacing: 0
+                    }}>
                         <thead>
-                            <tr>
-                                <th>Rule Name</th>
-                                <th>Status</th>
-                                <th>Reward Type</th>
-                                <th>Referrer</th>
-                                <th>Referee</th>
-                                <th>Min Threshold</th>
-                                <th>Currency</th>
-                                <th>Actions</th>
+                            <tr style={{
+                                background: 'linear-gradient(to bottom, #f9fafb, #f3f4f6)',
+                                borderBottom: '2px solid var(--border-subtle)'
+                            }}>
+                                <th style={tableHeaderStyle}>Rule Name</th>
+                                <th style={tableHeaderStyle}>Status</th>
+                                <th style={tableHeaderStyle}>Type</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referrer</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referee</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Min Threshold</th>
+                                <th style={tableHeaderStyle}>Currency</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'center' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {rules.length === 0 ? (
-                                <tr><td colSpan="8" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No rules found</td></tr>
+                                <tr>
+                                    <td colSpan="8" style={{
+                                        textAlign: 'center',
+                                        padding: 48,
+                                        color: 'var(--text-muted)',
+                                        fontSize: '0.9rem'
+                                    }}>
+                                        No rules found. Create your first referral program above.
+                                    </td>
+                                </tr>
                             ) : (
-                                rules.map(rule => (
-                                    <tr key={rule.id}>
-                                        <td style={{ fontWeight: 600 }}>{rule.name}</td>
-                                        <td>
-                                            <span className={`status-badge ${rule.is_enabled ? 'success' : 'pending'}`}>
+                                rules.map((rule, index) => (
+                                    <tr
+                                        key={rule.id}
+                                        style={{
+                                            borderBottom: index < rules.length - 1 ? '1px solid #f3f4f6' : 'none',
+                                            transition: 'background 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#fafbfc'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <td style={{ ...tableCellStyle, fontWeight: 600, color: '#1f2937' }}>
+                                            {rule.name}
+                                        </td>
+                                        <td style={tableCellStyle}>
+                                            <span style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                padding: '4px 12px',
+                                                borderRadius: 12,
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                background: rule.is_enabled ? '#d1fae5' : '#fee2e2',
+                                                color: rule.is_enabled ? '#065f46' : '#991b1b'
+                                            }}>
+                                                <span style={{
+                                                    width: 6,
+                                                    height: 6,
+                                                    borderRadius: '50%',
+                                                    background: rule.is_enabled ? '#10b981' : '#dc2626'
+                                                }}></span>
                                                 {rule.is_enabled ? 'Active' : 'Inactive'}
                                             </span>
                                         </td>
-                                        <td>{rule.reward_type === 'BOTH' ? 'Both' : rule.reward_type === 'REFERRER' ? 'Referrer Only' : 'Referee Only'}</td>
-                                        <td>{rule.base_currency} {rule.referrer_reward.toFixed(2)}</td>
-                                        <td>{rule.base_currency} {rule.referee_reward.toFixed(2)}</td>
-                                        <td>{rule.base_currency} {rule.min_transaction_threshold.toFixed(2)}</td>
-                                        <td>{rule.base_currency}</td>
-                                        <td>
-                                            <div style={{ display: 'flex', gap: 8 }}>
+                                        <td style={tableCellStyle}>
+                                            <span style={{
+                                                fontSize: '0.875rem',
+                                                color: '#6b7280',
+                                                fontWeight: 500
+                                            }}>
+                                                {rule.reward_type === 'BOTH' ? '👥 Both Parties' :
+                                                    rule.reward_type === 'REFERRER' ? '👤 Referrer Only' :
+                                                        '🆕 Referee Only'}
+                                            </span>
+                                        </td>
+                                        <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 600 }}>
+                                            <span style={{ color: rule.referrer_reward > 0 ? '#059669' : '#9ca3af' }}>
+                                                {getCurrencySymbol(rule.base_currency)}{rule.referrer_reward.toFixed(2)}
+                                            </span>
+                                        </td>
+                                        <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 600 }}>
+                                            <span style={{ color: rule.referee_reward > 0 ? '#059669' : '#9ca3af' }}>
+                                                {getCurrencySymbol(rule.base_currency)}{rule.referee_reward.toFixed(2)}
+                                            </span>
+                                        </td>
+                                        <td style={{ ...tableCellStyle, textAlign: 'right' }}>
+                                            <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                                                {getCurrencySymbol(rule.base_currency)}{rule.min_transaction_threshold.toFixed(2)}
+                                            </span>
+                                        </td>
+                                        <td style={tableCellStyle}>
+                                            <span style={{
+                                                padding: '2px 8px',
+                                                background: '#f3f4f6',
+                                                borderRadius: 6,
+                                                fontSize: '0.75rem',
+                                                fontWeight: 700,
+                                                color: '#374151'
+                                            }}>
+                                                {rule.base_currency}
+                                            </span>
+                                        </td>
+                                        <td style={{ ...tableCellStyle, textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                                                 <button
-                                                    className="btn-secondary"
-                                                    style={{ padding: '4px 12px', fontSize: '0.85rem' }}
                                                     onClick={() => handleEdit(rule)}
+                                                    style={{
+                                                        padding: '6px 14px',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 600,
+                                                        border: '1px solid #e5e7eb',
+                                                        borderRadius: 6,
+                                                        background: 'white',
+                                                        color: '#374151',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.target.style.background = '#f9fafb';
+                                                        e.target.style.borderColor = '#d1d5db';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.target.style.background = 'white';
+                                                        e.target.style.borderColor = '#e5e7eb';
+                                                    }}
                                                 >
-                                                    Edit
+                                                    ✏️ Edit
                                                 </button>
                                                 <button
-                                                    className="btn-secondary"
-                                                    style={{ padding: '4px 12px', fontSize: '0.85rem', background: '#fee2e2', color: '#dc2626' }}
                                                     onClick={() => handleDelete(rule.id)}
+                                                    style={{
+                                                        padding: '6px 14px',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 600,
+                                                        border: '1px solid #fecaca',
+                                                        borderRadius: 6,
+                                                        background: '#fef2f2',
+                                                        color: '#dc2626',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.target.style.background = '#fee2e2';
+                                                        e.target.style.borderColor = '#fca5a5';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.target.style.background = '#fef2f2';
+                                                        e.target.style.borderColor = '#fecaca';
+                                                    }}
                                                 >
-                                                    Delete
+                                                    🗑️ Delete
                                                 </button>
                                             </div>
                                         </td>
@@ -434,4 +567,29 @@ const ReferralSettings = () => {
     );
 };
 
-export default ReferralSettings;
+// Helper to get currency symbol
+const getCurrencySymbol = (code) => {
+    const symbols = {
+        'GBP': '£', 'USD': '$', 'EUR': '€', 'NGN': '₦',
+        'CAD': 'C$', 'AUD': 'A$', 'JPY': '¥', 'INR': '₹'
+    };
+    return symbols[code] || code + ' ';
+};
+
+const tableHeaderStyle = {
+    padding: '14px 16px',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    textAlign: 'left',
+    whiteSpace: 'nowrap'
+};
+
+const tableCellStyle = {
+    padding: '16px',
+    fontSize: '0.875rem',
+    color: '#374151',
+    verticalAlign: 'middle'
+};
