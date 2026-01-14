@@ -159,6 +159,32 @@ function initializeDatabase() {
             emailStmt.run('log_demo_3', 'user_003', 'BOOSTRATE', 'churned_users', '2026-01-12T14:15:00Z', 'Sent');
             emailStmt.finalize();
         });
+        // Referral Configuration (Singleton)
+        db.run(`CREATE TABLE IF NOT EXISTS referral_rules (
+            id INTEGER PRIMARY KEY CHECK (id = 1), -- Ensure singleton
+            is_enabled INTEGER DEFAULT 0,
+            min_transaction_threshold REAL DEFAULT 100.0,
+            referrer_reward REAL DEFAULT 5.0,
+            referee_reward REAL DEFAULT 10.0,
+            reward_type TEXT DEFAULT 'BOTH', -- REFERRER, REFEREE, BOTH
+            base_currency TEXT DEFAULT 'GBP',
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`, () => {
+            // Seed default config if not exists
+            db.run(`INSERT OR IGNORE INTO referral_rules (id, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) 
+                    VALUES (1, 1, 50.0, 5.00, 10.00, 'BOTH', 'GBP')`);
+        });
+
+        // Credit Ledger (Append-Only)
+        db.run(`CREATE TABLE IF NOT EXISTS credit_ledger (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            amount REAL, -- Positive for earn, Negative for spend/void
+            type TEXT, -- REFERRAL_EARN, PROMO_EARN, SPENT, MANUAL_ADJUSTMENT, VOID_FRAUD
+            reference_id TEXT, -- Transaction ID, Promo Code ID, or Manual Reason Code
+            admin_user TEXT, -- For audit trail
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`);
     });
 }
 
@@ -508,6 +534,87 @@ app.post('/api/promocodes/distribute', (req, res) => {
             res.json({ success: true, count, segment });
         });
     });
+});
+
+// --- Phase 1: Referral Scheme API ---
+
+// 1. Get Referral Config
+app.get('/api/referral-config', (req, res) => {
+    db.get("SELECT * FROM referral_rules WHERE id = 1", (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ data: row });
+    });
+});
+
+// 2. Update Referral Config
+app.put('/api/referral-config', (req, res) => {
+    const { is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency } = req.body;
+
+    // Convert boolean to integer for SQLite
+    const enabledInt = is_enabled ? 1 : 0;
+
+    const stmt = db.prepare(`UPDATE referral_rules SET 
+        is_enabled = ?, 
+        min_transaction_threshold = ?, 
+        referrer_reward = ?, 
+        referee_reward = ?, 
+        reward_type = ?, 
+        base_currency = ?,
+        updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1`);
+
+    stmt.run(enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+    stmt.finalize();
+});
+
+// --- Phase 1: Credits Ledger API ---
+
+// 1. Get User Credit Balance & History
+app.get('/api/credits/:userId', (req, res) => {
+    const userId = req.params.userId;
+
+    db.serialize(() => {
+        // Calculate Verification Balance
+        db.get("SELECT SUM(amount) as balance FROM credit_ledger WHERE user_id = ?", [userId], (err, row) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const balance = row && row.balance ? row.balance : 0;
+
+            // Get History
+            db.all("SELECT * FROM credit_ledger WHERE user_id = ? ORDER BY created_at DESC", [userId], (err, rows) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({
+                    balance: balance,
+                    currency: 'GBP', // Default for now
+                    history: rows
+                });
+            });
+        });
+    });
+});
+
+// 2. Manual Credit Adjustment (Grant/Void)
+app.post('/api/credits/manual', (req, res) => {
+    const { user_id, amount, type, reason, admin_user } = req.body;
+
+    // Basic Validation
+    if (!user_id || !amount || !type || !reason) {
+        return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const id = 'crd_' + Date.now();
+    const parsedAmount = parseFloat(amount);
+
+    const stmt = db.prepare(`INSERT INTO credit_ledger (id, user_id, amount, type, reference_id, admin_user) VALUES (?, ?, ?, ?, ?, ?)`);
+
+    stmt.run(id, user_id, parsedAmount, type, reason, admin_user || 'Admin', function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: id, new_balance_impact: parsedAmount });
+    });
+    stmt.finalize();
 });
 
 // Handle SPA routing - return index.html for all non-API routes (MUST BE LAST)
