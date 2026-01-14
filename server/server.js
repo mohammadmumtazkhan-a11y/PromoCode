@@ -197,15 +197,51 @@ function initializeDatabase() {
             stmt.finalize();
         });
 
-        // Credit Ledger (Append-Only)
+        // Bonus Schemes (Phase 1: FRD)
+        db.run(`CREATE TABLE IF NOT EXISTS bonus_schemes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            bonus_type TEXT NOT NULL, -- REFERRAL_CREDIT, GOODWILL_CREDIT, TRANSACTION_THRESHOLD_CREDIT
+            credit_amount REAL NOT NULL,
+            min_transaction_threshold REAL DEFAULT 0,
+            eligibility_rules TEXT, -- JSON: {corridors: [], paymentMethods: [], affiliates: [], segments: []}
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            status TEXT DEFAULT 'ACTIVE', -- ACTIVE, INACTIVE, EXPIRED
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`, () => {
+            // Seed sample bonus schemes
+            const stmt = db.prepare(`INSERT INTO bonus_schemes 
+                (name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+            stmt.run('First Time Bonus', 'REFERRAL_CREDIT', 10.00, 50.0,
+                JSON.stringify({ corridors: ['UK-NG'], segments: ['new_users'] }),
+                '2024-01-01', '2024-12-31', 'ACTIVE');
+            stmt.run('High Value Threshold Bonus', 'TRANSACTION_THRESHOLD_CREDIT', 25.00, 500.0,
+                JSON.stringify({ paymentMethods: ['bank_transfer'], segments: ['all'] }),
+                '2024-06-01', '2024-12-31', 'ACTIVE');
+            stmt.run('Goodwill Credit (Expired)', 'GOODWILL_CREDIT', 5.00, 0.0,
+                JSON.stringify({ segments: ['all'] }),
+                '2023-01-01', '2023-12-31', 'EXPIRED');
+            stmt.finalize();
+        });
+
+        // Credit Ledger (Append-Only) - Enhanced with FRD fields
         db.run(`CREATE TABLE IF NOT EXISTS credit_ledger (
             id TEXT PRIMARY KEY,
             user_id TEXT,
             amount REAL, -- Positive for earn, Negative for spend/void
-            type TEXT, -- REFERRAL_EARN, PROMO_EARN, SPENT, MANUAL_ADJUSTMENT, VOID_FRAUD
+            type TEXT, -- EARNED, APPLIED, EXPIRED, VOIDED
+            scheme_id INTEGER, -- FK to bonus_schemes
             reference_id TEXT, -- Transaction ID, Promo Code ID, or Manual Reason Code
+            reason_code TEXT, -- GOODWILL, CORRECTION, MANUAL_ADJUSTMENT (Phase 3: FRD)
+            notes TEXT, -- Admin notes (Phase 3: FRD)
             admin_user TEXT, -- For audit trail
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            admin_user_id TEXT, -- Admin ID (Phase 4: FRD)
+            expires_at TEXT, -- Credit expiry date (Phase 4: FRD)
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (scheme_id) REFERENCES bonus_schemes(id)
         )`);
     });
 }
@@ -644,6 +680,109 @@ app.delete('/api/referral-rules/:id', (req, res) => {
     const { id } = req.params;
 
     db.run("DELETE FROM referral_rules WHERE id = ?", [id], function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// --- Phase 1: Bonus Scheme Configuration API (FRD) ---
+
+// 1. Get All Bonus Schemes
+app.get('/api/bonus-schemes', (req, res) => {
+    db.all("SELECT * FROM bonus_schemes ORDER BY created_at DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        // Parse eligibility_rules JSON
+        const schemes = rows.map(scheme => ({
+            ...scheme,
+            eligibility_rules: JSON.parse(scheme.eligibility_rules || '{}')
+        }));
+
+        res.json({ data: schemes });
+    });
+});
+
+// 2. Create Bonus Scheme
+app.post('/api/bonus-schemes', (req, res) => {
+    const { name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date } = req.body;
+
+    // FRD Validations (Section 3.1)
+    if (!name) return res.status(400).json({ error: "Bonus Name is required" });
+    if (!bonus_type) return res.status(400).json({ error: "Bonus Type is required" });
+    if (!credit_amount || credit_amount <= 0) return res.status(400).json({ error: "Credit Amount must be a positive number" });
+    if (!start_date || !end_date) return res.status(400).json({ error: "Validity Period is required" });
+    if (new Date(start_date) >= new Date(end_date)) {
+        return res.status(400).json({ error: "Please select a valid date range. Start date must be before end date." });
+    }
+
+    const stmt = db.prepare(`INSERT INTO bonus_schemes 
+        (name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date, status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
+
+    stmt.run(
+        name,
+        bonus_type,
+        credit_amount,
+        min_transaction_threshold || 0,
+        JSON.stringify(eligibility_rules || {}),
+        start_date,
+        end_date,
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, id: this.lastID });
+        }
+    );
+    stmt.finalize();
+});
+
+// 3. Update Bonus Scheme
+app.put('/api/bonus-schemes/:id', (req, res) => {
+    const { id } = req.params;
+    const { name, bonus_type, credit_amount, min_transaction_threshold, eligibility_rules, start_date, end_date, status } = req.body;
+
+    // FRD Validations
+    if (credit_amount && credit_amount <= 0) {
+        return res.status(400).json({ error: "Credit Amount must be a positive number" });
+    }
+    if (start_date && end_date && new Date(start_date) >= new Date(end_date)) {
+        return res.status(400).json({ error: "Please select a valid date range" });
+    }
+
+    const stmt = db.prepare(`UPDATE bonus_schemes SET 
+        name = ?,
+        bonus_type = ?,
+        credit_amount = ?,
+        min_transaction_threshold = ?,
+        eligibility_rules = ?,
+        start_date = ?,
+        end_date = ?,
+        status = ?,
+        updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`);
+
+    stmt.run(
+        name,
+        bonus_type,
+        credit_amount,
+        min_transaction_threshold || 0,
+        JSON.stringify(eligibility_rules || {}),
+        start_date,
+        end_date,
+        status,
+        id,
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        }
+    );
+    stmt.finalize();
+});
+
+// 4. Delete Bonus Scheme
+app.delete('/api/bonus-schemes/:id', (req, res) => {
+    const { id } = req.params;
+
+    db.run("DELETE FROM bonus_schemes WHERE id = ?", [id], function (err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
     });
