@@ -968,7 +968,15 @@ app.get('/api/credits/:userId', (req, res) => {
 
     db.serialize(() => {
         // Calculate Balance
-        db.get("SELECT SUM(amount) as balance FROM credit_ledger WHERE user_id = ?", [userId], (err, row) => {
+        const isGlobal = userId === 'all';
+
+        // Calculate Balance (Individual or Total Liability)
+        const balanceQuery = isGlobal
+            ? "SELECT SUM(amount) as balance FROM credit_ledger"
+            : "SELECT SUM(amount) as balance FROM credit_ledger WHERE user_id = ?";
+        const balanceParams = isGlobal ? [] : [userId];
+
+        db.get(balanceQuery, balanceParams, (err, row) => {
             if (err) return res.status(500).json({ error: err.message });
 
             const balance = row && row.balance ? row.balance : 0;
@@ -978,68 +986,91 @@ app.get('/api/credits/:userId', (req, res) => {
                 SELECT cl.*, bs.name as scheme_name 
                 FROM credit_ledger cl
                 LEFT JOIN bonus_schemes bs ON cl.scheme_id = bs.id
-                WHERE cl.user_id = ?
             `;
-            const params = [userId];
+            const params = [];
+
+            // Add WHERE clause start if needed
+            let conditions = [];
+            if (!isGlobal) {
+                conditions.push("cl.user_id = ?");
+                params.push(userId);
+            }
 
             // Phase 2: FRD Filters (Section 3.2)
             if (startDate) {
-                query += " AND date(cl.created_at) >= date(?)";
+                conditions.push("date(cl.created_at) >= date(?)");
                 params.push(startDate);
             }
             if (endDate) {
-                query += " AND date(cl.created_at) <= date(?)";
+                conditions.push("date(cl.created_at) <= date(?)");
                 params.push(endDate);
             }
             if (eventType) {
-                query += " AND cl.type = ?";
+                conditions.push("cl.type = ?");
                 params.push(eventType);
             }
             if (schemeId) {
-                query += " AND cl.scheme_id = ?";
+                conditions.push("cl.scheme_id = ?");
                 params.push(parseInt(schemeId));
+            }
+
+            if (conditions.length > 0) {
+                query += " WHERE " + conditions.join(" AND ");
             }
 
             query += " ORDER BY cl.created_at DESC";
 
             // Cost Incurred Calculation (Bonuses + Promos)
-            // Filter by date range if provided
-            let costQueryCredits = "SELECT SUM(amount) as total FROM credit_ledger WHERE user_id = ? AND type = 'EARNED'";
-            let costQueryPromos = "SELECT SUM(discount_amount) as total FROM promo_redemptions WHERE user_id = ?";
-            const costParams = [userId];
+            let costQueryCredits = "SELECT SUM(amount) as total FROM credit_ledger WHERE type = 'EARNED'";
+            let costQueryPromos = "SELECT SUM(discount_amount) as total FROM promo_redemptions";
+            // Check if we need to start WHERE clause for cost queries
+            let costConditions = [];
+            const costParams = [];
 
+            if (!isGlobal) {
+                costConditions.push("user_id = ?");
+                costParams.push(userId);
+            }
             if (startDate) {
-                costQueryCredits += " AND date(created_at) >= date(?)";
-                costQueryPromos += " AND date(created_at) >= date(?)";
+                costConditions.push("date(created_at) >= date(?)");
                 costParams.push(startDate);
             }
             if (endDate) {
-                costQueryCredits += " AND date(created_at) <= date(?)";
-                costQueryPromos += " AND date(created_at) <= date(?)";
+                costConditions.push("date(created_at) <= date(?)");
+                costParams.push(endDate);
+            }
+
+            if (costConditions.length > 0) {
+                // Add conditional ANDs for Credits
+                costConditions.forEach(cond => {
+                    // Careful: 'user_id' works for both. 'created_at' works for both.
+                    costQueryCredits += " AND " + cond;
+                });
+
+                // For Promos, we start with WHERE or add AND if one existed? None existed.
+                if (costConditions.length > 0) {
+                    costQueryPromos += " WHERE " + costConditions.join(" AND ");
+                }
             }
 
             // Execute parallel queries for cost
             const getCredits = new Promise((resolve) => {
-                const params = [userId];
-                if (startDate) params.push(startDate);
-                if (endDate) params.push(endDate);
-                db.get(costQueryCredits, params, (err, row) => resolve(row?.total || 0));
+                db.get(costQueryCredits, costParams, (err, row) => resolve(row?.total || 0));
             });
 
             const getPromos = new Promise((resolve) => {
-                const params = [userId];
-                if (startDate) params.push(startDate);
-                if (endDate) params.push(endDate);
-                db.get(costQueryPromos, params, (err, row) => resolve(row?.total || 0));
+                db.get(costQueryPromos, costParams, (err, row) => resolve(row?.total || 0));
             });
 
             Promise.all([getCredits, getPromos]).then(([creditTotal, promoTotal]) => {
-                const costIncurred = creditTotal + promoTotal;
+                // Cost logic: Sum of EARNED credits + Promo Discounts
+                // creditTotal is Sum(amount) where type=EARNED (positive).
+                // promoTotal is Sum(discount_amount) (positive).
+                const costIncurred = (creditTotal || 0) + (promoTotal || 0);
 
                 // Get Filtered History (Union of Credit Ledger + Promo Redemptions)
-                // We will fetch both and merge in memory for simpler dynamic filtering logic
 
-                // 1. Credit Ledger Query (Existing)
+                // 1. Credit Ledger Query
                 const ledgerPromise = new Promise((resolve, reject) => {
                     db.all(query, params, (err, rows) => {
                         if (err) reject(err);
@@ -1049,7 +1080,6 @@ app.get('/api/credits/:userId', (req, res) => {
 
                 // 2. Promo Redemptions Query
                 const promoPromise = new Promise((resolve, reject) => {
-                    // Only fetch promos if checking APPLIED or ALL, and NO specific Bonus Scheme filter (unless we support Promo IDs there later)
                     if ((!eventType || eventType === 'APPLIED') && !schemeId) {
                         let pQuery = `
                             SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
@@ -1057,20 +1087,29 @@ app.get('/api/credits/:userId', (req, res) => {
                             'PROMO_REDEMPTION' as reason_code, 
                             (pc.code || ' (Promo Code)') as scheme_name,
                             ('Promo Code: ' || pc.code) as notes,
-                            'System' as admin_user
+                            'System' as admin_user,
+                            pr.user_id
                             FROM promo_redemptions pr
                             LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code)
-                            WHERE pr.user_id = ?
                         `;
-                        const pParams = [userId];
+                        const pParams = [];
+                        let pConditions = [];
 
+                        if (!isGlobal) {
+                            pConditions.push("pr.user_id = ?");
+                            pParams.push(userId);
+                        }
                         if (startDate) {
-                            pQuery += " AND date(pr.created_at) >= date(?)";
+                            pConditions.push("date(pr.created_at) >= date(?)");
                             pParams.push(startDate);
                         }
                         if (endDate) {
-                            pQuery += " AND date(pr.created_at) <= date(?)";
+                            pConditions.push("date(pr.created_at) <= date(?)");
                             pParams.push(endDate);
+                        }
+
+                        if (pConditions.length > 0) {
+                            pQuery += " WHERE " + pConditions.join(" AND ");
                         }
 
                         db.all(pQuery, pParams, (err, rows) => {

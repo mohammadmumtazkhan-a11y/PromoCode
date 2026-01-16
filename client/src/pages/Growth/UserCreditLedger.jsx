@@ -43,13 +43,16 @@ const UserCreditLedger = () => {
 
     const handleSearch = async (e) => {
         if (e) e.preventDefault();
-        if (!userId) return alert('Please enter a User ID');
+        // Allow search if userId is provided OR if we are doing a global search (userId === 'all')
+        if (!userId) return alert('Please enter a User ID or click "Global View"');
+
         setLoading(true);
         try {
             // Build query params with filters
             const params = new URLSearchParams({ ...filters });
             const queryString = params.toString() ? `?${params.toString()}` : '';
 
+            // If userId is 'all', backend handles global scope
             const res = await fetch(`/api/credits/${userId}${queryString}`);
             const data = await res.json();
             setUserData(data);
@@ -60,6 +63,35 @@ const UserCreditLedger = () => {
             setLoading(false);
         }
     };
+
+    const handleGlobalView = () => {
+        setUserId('all');
+        // We need to trigger search, but state update is async. 
+        // Better to call a search function with specific ID or wait. 
+        // Simplest: set ID then let user click search or auto-trigger? 
+        // React batching might fail auto-trigger if simply calling handleSearch().
+        // Let's modify handleSearch to accept an override or use a useEffect? 
+        // Or just set it and call fetch directly.
+        // Actually, setting state 'all' and calling fetch with 'all' matches handleSearch logic.
+
+        // Hack: Call it directly passing 'all' if we refactor handleSearch to take arg? 
+        // Or just duplicate logic slightly for reliable immediate action.
+        setLoading(true);
+        const params = new URLSearchParams({ ...filters });
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        fetch(`/api/credits/all${queryString}`)
+            .then(res => res.json())
+            .then(data => {
+                setUserData(data);
+                setUserId('all');
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Error fetching global data');
+            })
+            .finally(() => setLoading(false));
+    };
+
 
     const handleAdjustment = async () => {
         // Phase 3: FRD Validations (Section 3.3)
@@ -176,7 +208,7 @@ const UserCreditLedger = () => {
                         <Search size={20} color="var(--text-muted)" />
                         <input
                             type="text"
-                            placeholder="Search by User ID (e.g., user_123)..."
+                            placeholder="Search by User ID (e.g., user_123) or type 'all'..."
                             value={userId}
                             onChange={(e) => setUserId(e.target.value)}
                             style={{ width: '100%', border: 'none', outline: 'none', fontSize: '1rem', background: 'transparent' }}
@@ -184,6 +216,9 @@ const UserCreditLedger = () => {
                     </div>
                     <button type="submit" className="btn-primary" disabled={loading}>
                         {loading ? 'Searching...' : 'Search User'}
+                    </button>
+                    <button type="button" className="btn-secondary" disabled={loading} onClick={handleGlobalView}>
+                        Global View
                     </button>
                 </div>
 
