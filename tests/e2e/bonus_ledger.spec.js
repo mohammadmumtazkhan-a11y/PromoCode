@@ -15,15 +15,21 @@ test.describe('Bonus & Wallet Ledger', () => {
 
         await expect(page.getByText('Bonus Scheme Manager')).toBeVisible({ timeout: 15000 });
 
-        // Create Scheme
+        // Create Scheme - Use REQUEST_MONEY (simpler, no extra fields)
         const schemeName = `Test Scheme ${Date.now()}`;
         await page.fill('input[placeholder="e.g. Transaction Threshold Credit"]', schemeName);
-        await page.selectOption('select:has-text("Bonus Type")', 'LOYALTY_CREDIT');
 
-        await page.fill('input[placeholder="0.00"]', '50');
+        // Select Bonus Type dropdown - REQUEST_MONEY
+        await page.locator('form select').first().selectOption('REQUEST_MONEY');
 
-        // Select Currency (New Feature)
-        await page.selectOption('select:has-text("Currency")', 'USD');
+        // Commission Type - Fixed Amount
+        await page.locator('select').filter({ hasText: 'Fixed Amount' }).selectOption('FIXED');
+
+        // Credit Amount (only visible for non-tiered Fixed/Percentage)
+        await page.getByPlaceholder('e.g. 10').fill('50');
+
+        // Select Currency
+        await page.locator('form select').last().selectOption('USD');
 
         const today = new Date().toISOString().split('T')[0];
         const dateInputs = await page.locator('input[type="date"]');
@@ -34,7 +40,7 @@ test.describe('Bonus & Wallet Ledger', () => {
 
         // Verification
         await expect(page.getByText(schemeName)).toBeVisible({ timeout: 10000 });
-        // Verify currency display in table (e.g., "USD 50.00")
+        // Verify currency display in table
         await expect(page.getByText('USD 50.00')).toBeVisible();
     });
 
@@ -55,7 +61,8 @@ test.describe('Bonus & Wallet Ledger', () => {
 
         // Verify Modal content
         await expect(page.getByText('Transaction Details')).toBeVisible();
-        await expect(page.getByText('Audit History')).toBeVisible();
+        // Use getByRole to avoid strict mode violation with duplicate text
+        await expect(page.getByRole('heading', { name: '📜 Audit History' })).toBeVisible();
         await expect(page.getByText('Expires')).toBeVisible();
 
         // Close Modal
