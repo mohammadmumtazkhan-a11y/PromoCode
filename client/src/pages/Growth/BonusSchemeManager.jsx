@@ -106,7 +106,10 @@ const UserSegmentManager = () => {
                                             type="number"
                                             style={inputStyle}
                                             value={formData.criteria.period_days || ''}
-                                            onChange={e => setFormData({ ...formData, criteria: { ...formData.criteria, period_days: parseInt(e.target.value) } })}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setFormData({ ...formData, criteria: { ...formData.criteria, period_days: val === '' ? '' : parseInt(val) } });
+                                            }}
                                         />
                                     </div>
                                 )}

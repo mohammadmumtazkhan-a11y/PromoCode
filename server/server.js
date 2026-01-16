@@ -1036,16 +1036,65 @@ app.get('/api/credits/:userId', (req, res) => {
             Promise.all([getCredits, getPromos]).then(([creditTotal, promoTotal]) => {
                 const costIncurred = creditTotal + promoTotal;
 
-                // Get Filtered History (existing logic)
-                db.all(query, params, (err, rows) => {
-                    if (err) return res.status(500).json({ error: err.message });
-                    res.json({
-                        balance: balance,
-                        cost_incurred: costIncurred, // New field
-                        currency: 'GBP',
-                        history: rows
+                // Get Filtered History (Union of Credit Ledger + Promo Redemptions)
+                // We will fetch both and merge in memory for simpler dynamic filtering logic
+
+                // 1. Credit Ledger Query (Existing)
+                const ledgerPromise = new Promise((resolve, reject) => {
+                    db.all(query, params, (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows || []);
                     });
                 });
+
+                // 2. Promo Redemptions Query
+                const promoPromise = new Promise((resolve, reject) => {
+                    // Only fetch promos if checking APPLIED or ALL, and NO specific Bonus Scheme filter (unless we support Promo IDs there later)
+                    if ((!eventType || eventType === 'APPLIED') && !schemeId) {
+                        let pQuery = `
+                            SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
+                            pr.promo_code_id as scheme_id, pr.transaction_id as reference_id, 
+                            'PROMO_REDEMPTION' as reason_code, 
+                            (pc.code || ' (Promo Code)') as scheme_name,
+                            ('Promo Code: ' || pc.code) as notes,
+                            'System' as admin_user
+                            FROM promo_redemptions pr
+                            LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code)
+                            WHERE pr.user_id = ?
+                        `;
+                        const pParams = [userId];
+
+                        if (startDate) {
+                            pQuery += " AND date(pr.created_at) >= date(?)";
+                            pParams.push(startDate);
+                        }
+                        if (endDate) {
+                            pQuery += " AND date(pr.created_at) <= date(?)";
+                            pParams.push(endDate);
+                        }
+
+                        db.all(pQuery, pParams, (err, rows) => {
+                            if (err) reject(err);
+                            else resolve(rows || []);
+                        });
+                    } else {
+                        resolve([]);
+                    }
+                });
+
+                Promise.all([ledgerPromise, promoPromise]).then(([ledgerRows, promoRows]) => {
+                    // Merge and Sort by Date Descending
+                    const allHistory = [...ledgerRows, ...promoRows].sort((a, b) => {
+                        return new Date(b.created_at) - new Date(a.created_at);
+                    });
+
+                    res.json({
+                        balance: balance,
+                        cost_incurred: costIncurred,
+                        currency: 'GBP',
+                        history: allHistory
+                    });
+                }).catch(err => res.status(500).json({ error: err.message }));
             });
         });
     });
