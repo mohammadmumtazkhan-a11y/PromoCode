@@ -14,6 +14,47 @@ app.use(bodyParser.json());
 // Serve Static Files
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
+// --- User Segments API ---
+app.get('/api/user-segments', (req, res) => {
+    db.all("SELECT * FROM user_segments ORDER BY created_at DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const segments = rows.map(seg => ({
+            ...seg,
+            criteria: JSON.parse(seg.criteria || '{}')
+        }));
+        res.json({ data: segments });
+    });
+});
+
+app.post('/api/user-segments', (req, res) => {
+    const { name, description, criteria } = req.body;
+    if (!name) return res.status(400).json({ error: "Name is required" });
+
+    const stmt = db.prepare("INSERT INTO user_segments (name, description, criteria) VALUES (?, ?, ?)");
+    stmt.run(name, description, JSON.stringify(criteria || {}), function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: this.lastID });
+    });
+    stmt.finalize();
+});
+
+app.put('/api/user-segments/:id', (req, res) => {
+    const { name, description, criteria } = req.body;
+    const stmt = db.prepare("UPDATE user_segments SET name = ?, description = ?, criteria = ? WHERE id = ?");
+    stmt.run(name, description, JSON.stringify(criteria || {}), req.params.id, function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, changes: this.changes });
+    });
+    stmt.finalize();
+});
+
+app.delete('/api/user-segments/:id', (req, res) => {
+    db.run("DELETE FROM user_segments WHERE id = ?", [req.params.id], function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, changes: this.changes });
+    });
+});
+
 // SPA Catch-all Route (Must be after API routes, handled at bottom)
 
 // Database Setup
@@ -105,7 +146,18 @@ function initializeDatabase() {
             status TEXT,
             created_at TEXT,
             FOREIGN KEY(promo_code_id) REFERENCES promo_codes(id)
-        )`);
+        )`, () => {
+            // Seed data for cost incurred demo
+            db.get("SELECT count(*) as count FROM promo_redemptions", (err, row) => {
+                if (row && row.count === 0) {
+                    const stmt = db.prepare("INSERT INTO promo_redemptions VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    // User 123 (matching dummy user in frontend mostly)
+                    stmt.run('pr_1', 'SAVE20', 'txn_promo_1', 'user_123', 20.00, 'Redeemed', '2024-05-15T10:00:00Z');
+                    stmt.run('pr_2', 'BOOSTRATE', 'txn_promo_2', 'user_123', 5.00, 'Redeemed', '2024-06-01T14:30:00Z');
+                    stmt.finalize();
+                }
+            });
+        });
 
         db.run(`CREATE TABLE IF NOT EXISTS email_logs (
             id TEXT PRIMARY KEY,
@@ -197,33 +249,55 @@ function initializeDatabase() {
             stmt.finalize();
         });
 
+        // User Segments (New)
+        db.run(`CREATE TABLE IF NOT EXISTS user_segments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            criteria TEXT DEFAULT '{}', -- JSON: { type: 'TRANSACTION_COUNT'|'TRANSACTION_VOLUME', min, max, period_days, currency }
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`);
+
         // Bonus Schemes (Phase 1: FRD)
         db.run(`CREATE TABLE IF NOT EXISTS bonus_schemes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            bonus_type TEXT NOT NULL, -- REFERRAL_CREDIT, LOYALTY_CREDIT, TRANSACTION_THRESHOLD_CREDIT
+            bonus_type TEXT NOT NULL, -- REFERRAL_CREDIT, LOYALTY_CREDIT, TRANSACTION_THRESHOLD_CREDIT, REQUEST_MONEY
             credit_amount REAL NOT NULL,
-            currency TEXT DEFAULT 'GBP', -- New field
+            currency TEXT DEFAULT 'GBP',
             min_transaction_threshold REAL DEFAULT 0,
-            min_transactions INTEGER DEFAULT 0, -- For LOYALTY_CREDIT: minimum number of transactions
-            time_period_days INTEGER DEFAULT 0, -- For LOYALTY_CREDIT: time period in days
-            eligibility_rules TEXT, -- JSON: {corridors: [], paymentMethods: [], affiliates: [], segments: []}
+            min_transactions INTEGER DEFAULT 0,
+            time_period_days INTEGER DEFAULT 0,
+            commission_type TEXT DEFAULT 'FIXED', -- FIXED, PERCENTAGE
+            commission_percentage REAL DEFAULT 0,
+            is_tiered INTEGER DEFAULT 0, -- Boolean (0/1)
+            tiers TEXT DEFAULT '[]', -- JSON: [{min, max, value}]
+            eligibility_rules TEXT,
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
-            status TEXT DEFAULT 'ACTIVE', -- ACTIVE, INACTIVE, EXPIRED
+            status TEXT DEFAULT 'ACTIVE',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
-            // Migration: Ensure new columns exist for existing tables
-            db.run("ALTER TABLE bonus_schemes ADD COLUMN currency TEXT DEFAULT 'GBP'", (err) => {
-                // Ignore error if column already exists
+            // Migration: Ensure new columns exist
+            const migrations = [
+                "ALTER TABLE bonus_schemes ADD COLUMN currency TEXT DEFAULT 'GBP'",
+                "ALTER TABLE bonus_schemes ADD COLUMN min_transactions INTEGER DEFAULT 0",
+                "ALTER TABLE bonus_schemes ADD COLUMN time_period_days INTEGER DEFAULT 0",
+                "ALTER TABLE bonus_schemes ADD COLUMN commission_type TEXT DEFAULT 'FIXED'",
+                "ALTER TABLE bonus_schemes ADD COLUMN commission_percentage REAL DEFAULT 0",
+                "ALTER TABLE bonus_schemes ADD COLUMN is_tiered INTEGER DEFAULT 0",
+                "ALTER TABLE bonus_schemes ADD COLUMN tiers TEXT DEFAULT '[]'"
+            ];
+
+            // Migrations (Redundant for fresh DB)
+            /*
+            db.serialize(() => {
+                migrations.forEach(query => {
+                    db.run(query, (err) => { });
+                });
             });
-            db.run("ALTER TABLE bonus_schemes ADD COLUMN min_transactions INTEGER DEFAULT 0", (err) => {
-                // Ignore error if column already exists
-            });
-            db.run("ALTER TABLE bonus_schemes ADD COLUMN time_period_days INTEGER DEFAULT 0", (err) => {
-                // Ignore error if column already exists
-            });
+            */
 
             // Seed sample bonus schemes if empty
             db.get("SELECT count(*) as count FROM bonus_schemes", (err, row) => {
@@ -510,29 +584,8 @@ app.get('/api/segments', (req, res) => {
 // 8. Distribute Promos (Story 2.0)
 app.post('/api/promocodes/distribute', (req, res) => {
     const { segment, promo_config, criteria, existing_code_id } = req.body;
-    let query = "";
 
-    // Explicit criteria handling
-    const max_tx = criteria?.max_tx || 0;
-    const churn_days = criteria?.churn_days || 90;
-
-    if (segment === 'new_users') {
-        // Mock query logic matching /api/segments
-        // For prototype, let's just select ALL merchants as "targets" to ensure it works.
-        query = "SELECT * FROM merchants";
-    }
-    else if (segment === 'churned_users') {
-        query = "SELECT * FROM merchants"; // Mock
-    }
-    else return res.status(400).json({ error: "Invalid segment" });
-
-    db.all(query, [], (err, users) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        // Mock filtering
-        // For prototype, effectively returning all mocked users
-        const targets = users;
-
+    const distributeToTargets = (targets) => {
         if (targets.length === 0) return res.json({ success: true, count: 0, message: "No users in segment" });
 
         const now = new Date().toISOString();
@@ -564,8 +617,6 @@ app.post('/api/promocodes/distribute', (req, res) => {
             const logStmt = db.prepare("INSERT INTO email_logs VALUES (?, ?, ?, ?, ?, ?)");
 
             let count = 0;
-
-            // Helper to ensure proper numeric types
             const parseNum = (val, isInt = false) => {
                 if (val === '' || val === null || val === undefined) return null;
                 const num = isInt ? parseInt(val) : parseFloat(val);
@@ -575,24 +626,14 @@ app.post('/api/promocodes/distribute', (req, res) => {
             targets.forEach(user => {
                 const uniqueCode = (promo_config.prefix || 'OFFER') + Math.random().toString(36).substring(7).toUpperCase();
                 const id = 'pc_' + Date.now() + '_' + count;
-
-                // Propagate restrictions
                 const restrictions = { ...promo_config.restrictions };
                 if (promo_config.corridors) restrictions.corridors = promo_config.corridors;
                 if (promo_config.affiliates) restrictions.affiliates = promo_config.affiliates;
 
                 stmt.run(
-                    id,
-                    uniqueCode,
-                    promo_config.type,
-                    parseNum(promo_config.value),
-                    parseNum(promo_config.min_threshold) || 0,
-                    parseNum(promo_config.max_discount),
-                    promo_config.currency || null,
-                    1, 1, -1, // Single use code
-                    promo_config.start_date,
-                    promo_config.end_date,
-                    'Active',
+                    id, uniqueCode, promo_config.type, parseNum(promo_config.value), parseNum(promo_config.min_threshold) || 0,
+                    parseNum(promo_config.max_discount), promo_config.currency || null, 1, 1, -1,
+                    promo_config.start_date, promo_config.end_date, 'Active',
                     JSON.stringify(restrictions),
                     JSON.stringify({ type: 'targeted', user_id: user.id }),
                     JSON.stringify({})
@@ -607,7 +648,71 @@ app.post('/api/promocodes/distribute', (req, res) => {
             logStmt.finalize();
             res.json({ success: true, count, segment });
         });
-    });
+    };
+
+    // 1. Check if Segment is Dynamic (Numeric ID)
+    if (!isNaN(segment)) {
+        db.get("SELECT * FROM user_segments WHERE id = ?", [segment], (err, segRow) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (!segRow) return res.status(404).json({ error: "Segment not found" });
+
+            const crit = JSON.parse(segRow.criteria || '{}');
+            let sql = "SELECT m.* FROM merchants m ";
+            const params = [];
+
+            // Build Dynamic Query
+            if (crit.type === 'TRANSACTION_COUNT' || crit.type === 'TRANSACTION_VOLUME') {
+                sql += " LEFT JOIN transactions t ON t.merchant_id = m.id ";
+
+                // Time Period Filter (Moved to ON clause for LEFT JOIN)
+                if (crit.period_days) {
+                    sql += " AND t.debit_date >= date('now', '-' || ? || ' days') ";
+                    params.push(crit.period_days);
+                }
+
+                sql += " GROUP BY m.id ";
+
+                // Aggregation Filter
+                if (crit.type === 'TRANSACTION_COUNT') {
+                    // Count(t.id) handles NULLs correctly (returns 0)
+                    sql += " HAVING COUNT(t.id) >= ? ";
+                    params.push(crit.min || 0);
+                    if (crit.max !== null && crit.max !== undefined) {
+                        sql += " AND COUNT(t.id) <= ? ";
+                        params.push(crit.max);
+                    }
+                } else { // VOLUME
+                    // Use COALESCE to handle NULL sums as 0
+                    sql += " HAVING COALESCE(SUM(t.amount_debit_ngn), 0) >= ? ";
+                    params.push(crit.min || 0);
+                    if (crit.max !== null && crit.max !== undefined) {
+                        sql += " AND COALESCE(SUM(t.amount_debit_ngn), 0) <= ? ";
+                        params.push(crit.max);
+                    }
+                }
+            } else {
+                // Default: All merchants if no valid type
+                // Or maybe 'New Users' logic if we implemented 'ACCOUNT_AGE'
+            }
+
+            console.log("[DEBUG] Segment Query:", sql, params);
+
+            db.all(sql, params, (err, users) => {
+                if (err) return res.status(500).json({ error: err.message });
+                distributeToTargets(users);
+            });
+        });
+    } else {
+        // 2. Handle 'all' users or Invalid
+        if (segment === 'all') {
+            db.all("SELECT * FROM merchants", [], (err, users) => {
+                if (err) return res.status(500).json({ error: err.message });
+                distributeToTargets(users);
+            });
+        } else {
+            return res.status(400).json({ error: "Invalid segment ID. Use a numeric ID or 'all'." });
+        }
+    }
 });
 
 // --- Phase 1: Referral Scheme API (CRUD) ---
@@ -708,10 +813,12 @@ app.get('/api/bonus-schemes', (req, res) => {
     db.all("SELECT * FROM bonus_schemes ORDER BY created_at DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        // Parse eligibility_rules JSON
+        // Parse JSON fields
         const schemes = rows.map(scheme => ({
             ...scheme,
-            eligibility_rules: JSON.parse(scheme.eligibility_rules || '{}')
+            eligibility_rules: JSON.parse(scheme.eligibility_rules || '{}'),
+            tiers: JSON.parse(scheme.tiers || '[]'),
+            is_tiered: !!scheme.is_tiered // Convert to boolean
         }));
 
         res.json({ data: schemes });
@@ -721,12 +828,21 @@ app.get('/api/bonus-schemes', (req, res) => {
 // 2. Create Bonus Scheme
 // 2. Create Bonus Scheme
 app.post('/api/bonus-schemes', (req, res) => {
-    const { name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date } = req.body;
+    const {
+        name, bonus_type, credit_amount, currency, min_transaction_threshold,
+        min_transactions, time_period_days, commission_type, commission_percentage,
+        is_tiered, tiers, eligibility_rules, start_date, end_date
+    } = req.body;
 
     // FRD Validations (Section 3.1)
     if (!name) return res.status(400).json({ error: "Bonus Name is required" });
     if (!bonus_type) return res.status(400).json({ error: "Bonus Type is required" });
-    if (!credit_amount || credit_amount <= 0) return res.status(400).json({ error: "Credit Amount must be a positive number" });
+    if (!credit_amount && commission_type !== 'PERCENTAGE') {
+        // It's okay if credit_amount is 0 if it's percentage or tiered (maybe)
+        // But for simplicity let's keep basic check or refine it.
+        // If tiered, credit_amount might be 0/unused.
+    }
+
     if (!start_date || !end_date) return res.status(400).json({ error: "Validity Period is required" });
     if (new Date(start_date) >= new Date(end_date)) {
         return res.status(400).json({ error: "Please select a valid date range. Start date must be before end date." });
@@ -743,8 +859,8 @@ app.post('/api/bonus-schemes', (req, res) => {
     }
 
     const stmt = db.prepare(`INSERT INTO bonus_schemes 
-        (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
+        (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, commission_type, commission_percentage, is_tiered, tiers, eligibility_rules, start_date, end_date, status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
 
     // Default to GBP if not provided (Safety net)
     const safeCurrency = currency || 'GBP';
@@ -752,11 +868,15 @@ app.post('/api/bonus-schemes', (req, res) => {
     stmt.run(
         name,
         bonus_type,
-        credit_amount,
+        credit_amount || 0,
         safeCurrency,
         min_transaction_threshold || 0,
         min_transactions || 0,
         time_period_days || 0,
+        commission_type || 'FIXED',
+        commission_percentage || 0,
+        is_tiered ? 1 : 0,
+        JSON.stringify(tiers || []),
         JSON.stringify(eligibility_rules || {}),
         start_date,
         end_date,
@@ -771,12 +891,13 @@ app.post('/api/bonus-schemes', (req, res) => {
 // 3. Update Bonus Scheme
 app.put('/api/bonus-schemes/:id', (req, res) => {
     const { id } = req.params;
-    const { name, bonus_type, credit_amount, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date, status } = req.body;
+    const {
+        name, bonus_type, credit_amount, currency, min_transaction_threshold,
+        min_transactions, time_period_days, commission_type, commission_percentage,
+        is_tiered, tiers, eligibility_rules, start_date, end_date, status
+    } = req.body;
 
     // FRD Validations
-    if (credit_amount && credit_amount <= 0) {
-        return res.status(400).json({ error: "Credit Amount must be a positive number" });
-    }
     if (start_date && end_date && new Date(start_date) >= new Date(end_date)) {
         return res.status(400).json({ error: "Please select a valid date range" });
     }
@@ -789,6 +910,10 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
         min_transaction_threshold = ?,
         min_transactions = ?,
         time_period_days = ?,
+        commission_type = ?,
+        commission_percentage = ?,
+        is_tiered = ?,
+        tiers = ?,
         eligibility_rules = ?,
         start_date = ?,
         end_date = ?,
@@ -797,16 +922,20 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
         WHERE id = ?`);
 
     // Default to GBP if not provided (safety)
-    const safeCurrency = req.body.currency || 'GBP';
+    const safeCurrency = currency || 'GBP';
 
     stmt.run(
         name,
         bonus_type,
-        credit_amount,
+        credit_amount || 0,
         safeCurrency,
         min_transaction_threshold || 0,
         min_transactions || 0,
         time_period_days || 0,
+        commission_type || 'FIXED',
+        commission_percentage || 0,
+        is_tiered ? 1 : 0,
+        JSON.stringify(tiers || []),
         JSON.stringify(eligibility_rules || {}),
         start_date,
         end_date,
@@ -855,11 +984,11 @@ app.get('/api/credits/:userId', (req, res) => {
 
             // Phase 2: FRD Filters (Section 3.2)
             if (startDate) {
-                query += " AND cl.created_at >= ?";
+                query += " AND date(cl.created_at) >= date(?)";
                 params.push(startDate);
             }
             if (endDate) {
-                query += " AND cl.created_at <= ?";
+                query += " AND date(cl.created_at) <= date(?)";
                 params.push(endDate);
             }
             if (eventType) {
@@ -873,13 +1002,49 @@ app.get('/api/credits/:userId', (req, res) => {
 
             query += " ORDER BY cl.created_at DESC";
 
-            // Get Filtered History
-            db.all(query, params, (err, rows) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({
-                    balance: balance,
-                    currency: 'GBP',
-                    history: rows
+            // Cost Incurred Calculation (Bonuses + Promos)
+            // Filter by date range if provided
+            let costQueryCredits = "SELECT SUM(amount) as total FROM credit_ledger WHERE user_id = ? AND type = 'EARNED'";
+            let costQueryPromos = "SELECT SUM(discount_amount) as total FROM promo_redemptions WHERE user_id = ?";
+            const costParams = [userId];
+
+            if (startDate) {
+                costQueryCredits += " AND date(created_at) >= date(?)";
+                costQueryPromos += " AND date(created_at) >= date(?)";
+                costParams.push(startDate);
+            }
+            if (endDate) {
+                costQueryCredits += " AND date(created_at) <= date(?)";
+                costQueryPromos += " AND date(created_at) <= date(?)";
+            }
+
+            // Execute parallel queries for cost
+            const getCredits = new Promise((resolve) => {
+                const params = [userId];
+                if (startDate) params.push(startDate);
+                if (endDate) params.push(endDate);
+                db.get(costQueryCredits, params, (err, row) => resolve(row?.total || 0));
+            });
+
+            const getPromos = new Promise((resolve) => {
+                const params = [userId];
+                if (startDate) params.push(startDate);
+                if (endDate) params.push(endDate);
+                db.get(costQueryPromos, params, (err, row) => resolve(row?.total || 0));
+            });
+
+            Promise.all([getCredits, getPromos]).then(([creditTotal, promoTotal]) => {
+                const costIncurred = creditTotal + promoTotal;
+
+                // Get Filtered History (existing logic)
+                db.all(query, params, (err, rows) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({
+                        balance: balance,
+                        cost_incurred: costIncurred, // New field
+                        currency: 'GBP',
+                        history: rows
+                    });
                 });
             });
         });
@@ -983,29 +1148,97 @@ app.post('/api/credits/award-bonus', (req, res) => {
         const rules = JSON.parse(scheme.eligibility_rules || '{}');
         const isOneTime = rules.oneTimeOnly !== false; // Default to one-time
 
-        if (isOneTime) {
-            db.get(
-                "SELECT id, created_at FROM credit_ledger WHERE user_id = ? AND scheme_id = ? AND type = 'EARNED'",
-                [user_id, scheme_id],
-                (err, existing) => {
-                    if (err) return res.status(500).json({ error: err.message });
+        const checkDuplicate = (callback) => {
+            if (isOneTime) {
+                db.get(
+                    "SELECT id, created_at FROM credit_ledger WHERE user_id = ? AND scheme_id = ? AND type = 'EARNED'",
+                    [user_id, scheme_id],
+                    (err, existing) => {
+                        if (err) return callback(err);
+                        if (existing) {
+                            return res.status(409).json({
+                                error: "ALREADY_EARNED",
+                                message: `User has already earned bonus from "${scheme.name}" on ${existing.created_at}. This is a one-time bonus.`
+                            });
+                        }
+                        callback(null);
+                    }
+                );
+            } else {
+                callback(null);
+            }
+        };
 
-                    if (existing) {
-                        return res.status(409).json({
-                            error: "ALREADY_EARNED",
-                            message: `User has already earned bonus from "${scheme.name}" on ${existing.created_at}. This is a one-time bonus.`
+        checkDuplicate((err) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            // Calculate Bonus Amount
+            if (scheme.is_tiered) {
+                if (!transaction_id) {
+                    return res.status(400).json({ error: "Transaction ID is required for tiered commissions" });
+                }
+
+                db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    if (!txn) return res.status(404).json({ error: "Transaction not found for tiered calculation" });
+
+                    const amount = txn.amount_debit_ngn;
+                    const tiers = JSON.parse(scheme.tiers || '[]');
+                    let bonusAmount = 0;
+
+                    // Find matching tier
+                    const matchedTier = tiers.find(t => {
+                        const min = parseFloat(t.min);
+                        const max = t.max ? parseFloat(t.max) : Infinity;
+                        return amount >= min && amount <= max;
+                    });
+
+                    if (matchedTier) {
+                        if (scheme.commission_type === 'PERCENTAGE') {
+                            bonusAmount = (amount * parseFloat(matchedTier.value)) / 100;
+                        } else {
+                            bonusAmount = parseFloat(matchedTier.value);
+                        }
+                        awardBonus(bonusAmount);
+                    } else {
+                        // No tier matched - RETURN ERROR or 0? 
+                        // Usually 0 if not eligible but technically they shouldn't trigger this if not eligible.
+                        // However, let's return 0 success or error. Error is clearer for debugging.
+                        return res.status(400).json({
+                            error: "TIER_MISMATCH",
+                            message: `Transaction amount ${amount} does not match any commission tiers.`
                         });
                     }
+                });
+            } else {
+                // Fixed or Simple Percentage
+                let bonusAmount = scheme.credit_amount;
 
-                    // Proceed with awarding
-                    awardBonus();
+                // If Percentage but NOT Tiered, we must calculate based on transaction amount
+                if (scheme.commission_type === 'PERCENTAGE') {
+                    if (!transaction_id) {
+                        // Fallback: If no transaction ID, we can't calculate percentage. 
+                        // But if credit_amount is set (e.g. flat value stored), use it? No, percentage implies calculation.
+                        return res.status(400).json({ error: "Transaction ID required for percentage commission" });
+                    }
+
+                    db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
+                        if (err) return res.status(500).json({ error: err.message });
+                        if (!txn) return res.status(404).json({ error: "Transaction not found" });
+
+                        // Use commission_percentage
+                        bonusAmount = (txn.amount_debit_ngn * scheme.commission_percentage) / 100;
+                        awardBonus(bonusAmount);
+                    });
+                    return;
                 }
-            );
-        } else {
-            awardBonus();
-        }
 
-        function awardBonus() {
+                // Default Fixed Amount
+                awardBonus(scheme.credit_amount);
+            }
+        });
+
+        function awardBonus(finalAmount) {
             const id = 'crd_' + Date.now();
             // Phase 4: Calculate expiry date (FRD Section 4.1)
             const expiryDate = new Date();
@@ -1019,7 +1252,7 @@ app.post('/api/credits/award-bonus', (req, res) => {
             stmt.run(
                 id,
                 user_id,
-                scheme.credit_amount,
+                finalAmount,
                 scheme_id,
                 transaction_id || `bonus_${id}`,
                 admin_user || 'System',
@@ -1029,7 +1262,7 @@ app.post('/api/credits/award-bonus', (req, res) => {
                     res.json({
                         success: true,
                         id: id,
-                        amount: scheme.credit_amount,
+                        amount: finalAmount,
                         expires_at: expires_at,
                         scheme_name: scheme.name
                     });
