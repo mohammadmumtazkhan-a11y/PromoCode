@@ -164,31 +164,7 @@ function initializeDatabase() {
             });
         });
 
-        db.run(`CREATE TABLE IF NOT EXISTS email_logs (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            code TEXT,
-            segment TEXT,
-            sent_at TEXT,
-            status TEXT,
-            campaign_id TEXT -- Link to parent campaign
-        )`);
 
-        db.run(`CREATE TABLE IF NOT EXISTS campaign_history (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            template_id TEXT,
-            segment TEXT,
-            promo_code TEXT,
-            sent_count INTEGER,
-            sent_at TEXT,
-            status TEXT
-        )`, () => {
-            // Seed data
-            const campStmt = db.prepare("INSERT INTO campaign_history VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            campStmt.run('camp_1', 'Welcome Blast Jan', 'welcome_v1', 'new_users', 'SAVE20', 120, '2026-01-10T10:00:00Z', 'Completed');
-            campStmt.finalize();
-        });
 
         db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,12 +202,6 @@ function initializeDatabase() {
 
             pStmt.finalize();
 
-            // Sample email campaign logs
-            const emailStmt = db.prepare("INSERT INTO email_logs VALUES (?, ?, ?, ?, ?, ?, ?)");
-            emailStmt.run('log_demo_1', 'user_001', 'SAVE20', 'new_users', '2026-01-14T10:30:00Z', 'Sent', null);
-            emailStmt.run('log_demo_2', 'user_002', 'SAVE20', 'new_users', '2026-01-14T10:30:00Z', 'Sent', null);
-            emailStmt.run('log_demo_3', 'user_003', 'BOOSTRATE', 'churned_users', '2026-01-12T14:15:00Z', 'Sent', null);
-            emailStmt.finalize();
         });
         // Referral Rules (Multi-Record)
         db.run(`CREATE TABLE IF NOT EXISTS referral_rules (
@@ -418,14 +388,12 @@ app.get('/api/merchants', (req, res) => {
 
 // --- Promo Code Logic ---
 
-// 1. List Promo Codes (with last campaign sent date)
+// 1. List Promo Codes
 app.get('/api/promocodes', (req, res) => {
     const query = `
-        SELECT p.*, MAX(e.sent_at) as last_campaign_sent
-        FROM promo_codes p
-        LEFT JOIN email_logs e ON p.code = e.code
-        GROUP BY p.id
-        ORDER BY p.start_date DESC
+        SELECT *
+        FROM promo_codes
+        ORDER BY start_date DESC
     `;
     db.all(query, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -433,8 +401,7 @@ app.get('/api/promocodes', (req, res) => {
             ...r,
             restrictions: JSON.parse(r.restrictions || '{}'),
             user_segment: r.user_segment ? JSON.parse(r.user_segment) : { type: 'all' },
-            user_segment_criteria: r.user_segment_criteria ? JSON.parse(r.user_segment_criteria) : {},
-            last_campaign_sent: r.last_campaign_sent || null
+            user_segment_criteria: r.user_segment_criteria ? JSON.parse(r.user_segment_criteria) : {}
         }));
         res.json({ data: processed });
     });
@@ -1054,138 +1021,83 @@ app.get('/api/credits/:userId', (req, res) => {
 
             query += " ORDER BY cl.created_at DESC";
 
-            // Cost Incurred Calculation (Bonuses + Promos)
-            let costQueryCredits = "SELECT SUM(amount) as total FROM credit_ledger WHERE type = 'EARNED'";
-            let costQueryPromos = "SELECT SUM(discount_amount) as total FROM promo_redemptions";
-            // Check if we need to start WHERE clause for cost queries
-            let costConditions = [];
-            const costParams = [];
+            // Get Filtered History (Union of Credit Ledger + Promo Redemptions)
 
-            if (!isGlobal) {
-                costConditions.push("user_id = ?");
-                costParams.push(userId);
-            }
-            if (startDate) {
-                costConditions.push("date(created_at) >= date(?)");
-                costParams.push(startDate);
-            }
-            if (endDate) {
-                costConditions.push("date(created_at) <= date(?)");
-                costParams.push(endDate);
-            }
-
-            if (costConditions.length > 0) {
-                // Add conditional ANDs for Credits
-                costConditions.forEach(cond => {
-                    // Careful: 'user_id' works for both. 'created_at' works for both.
-                    costQueryCredits += " AND " + cond;
+            // 1. Credit Ledger Query
+            const ledgerPromise = new Promise((resolve, reject) => {
+                db.all(query, params, (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
                 });
-
-                // For Promos, we start with WHERE or add AND if one existed? None existed.
-                if (costConditions.length > 0) {
-                    costQueryPromos += " WHERE " + costConditions.join(" AND ");
-                }
-            }
-
-            // Execute parallel queries for cost
-            const getCredits = new Promise((resolve) => {
-                db.get(costQueryCredits, costParams, (err, row) => resolve(row?.total || 0));
             });
 
-            const getPromos = new Promise((resolve) => {
-                db.get(costQueryPromos, costParams, (err, row) => resolve(row?.total || 0));
-            });
+            // 2. Promo Redemptions Query
+            const promoPromise = new Promise((resolve, reject) => {
+                // Only include promos if no specific non-APPLIED event type is requested
+                if (!eventType || eventType === 'APPLIED') {
+                    let pQuery = `
+                        SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
+                        pr.promo_code_id as scheme_id, pr.transaction_id as reference_id, 
+                        'PROMO_REDEMPTION' as reason_code, 
+                        (pc.code || ' (Promo Code)') as scheme_name,
+                        ('Promo Code: ' || pc.code) as notes,
+                        'System' as admin_user,
+                        pr.user_id
+                        FROM promo_redemptions pr
+                        LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code)
+                    `;
+                    const pParams = [];
+                    let pConditions = [];
 
-            Promise.all([getCredits, getPromos]).then(([creditTotal, promoTotal]) => {
-                // Cost logic: Sum of EARNED credits + Promo Discounts
-                // creditTotal is Sum(amount) where type=EARNED (positive).
-                // promoTotal is Sum(discount_amount) (positive).
-                const costIncurred = (creditTotal || 0) + (promoTotal || 0);
+                    if (!isGlobal) {
+                        pConditions.push("pr.user_id = ?");
+                        pParams.push(userId);
+                    }
+                    if (startDate) {
+                        pConditions.push("date(pr.created_at) >= date(?)");
+                        pParams.push(startDate);
+                    }
+                    if (endDate) {
+                        pConditions.push("date(pr.created_at) <= date(?)");
+                        pParams.push(endDate);
+                    }
+                    // Fix for Scheme/Promo Filter Collision - Now works even when filtering
+                    if (schemeId) {
+                        pConditions.push("(pr.promo_code_id = ? OR pr.promo_code_id = (SELECT code FROM promo_codes WHERE id = ?))");
+                        pParams.push(schemeId);
+                        pParams.push(schemeId);
+                    }
 
-                // Get Filtered History (Union of Credit Ledger + Promo Redemptions)
+                    if (pConditions.length > 0) {
+                        pQuery += " WHERE " + pConditions.join(" AND ");
+                    }
 
-                // 1. Credit Ledger Query
-                const ledgerPromise = new Promise((resolve, reject) => {
-                    db.all(query, params, (err, rows) => {
+                    db.all(pQuery, pParams, (err, rows) => {
                         if (err) reject(err);
                         else resolve(rows || []);
                     });
-                });
-
-                // 2. Promo Redemptions Query
-                const promoPromise = new Promise((resolve, reject) => {
-                    if ((!eventType || eventType === 'APPLIED') && !schemeId) {
-                        let pQuery = `
-                            SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
-                            pr.promo_code_id as scheme_id, pr.transaction_id as reference_id, 
-                            'PROMO_REDEMPTION' as reason_code, 
-                            (pc.code || ' (Promo Code)') as scheme_name,
-                            ('Promo Code: ' || pc.code) as notes,
-                            'System' as admin_user,
-                            pr.user_id
-                            FROM promo_redemptions pr
-                            LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code)
-                        `;
-                        const pParams = [];
-                        let pConditions = [];
-
-                        if (!isGlobal) {
-                            pConditions.push("pr.user_id = ?");
-                            pParams.push(userId);
-                        }
-                        if (startDate) {
-                            pConditions.push("date(pr.created_at) >= date(?)");
-                            pParams.push(startDate);
-                        }
-                        if (endDate) {
-                            pConditions.push("date(pr.created_at) <= date(?)");
-                            pParams.push(endDate);
-                        }
-                        // Fix for Scheme/Promo Filter Collision
-                        if (schemeId) {
-                            // If schemeId is numeric, it might be a Bonus Scheme OR a Promo Code ID.
-                            // If it's alphanumeric (e.g. 'SAVE20'), it's definitely a Promo Code... but frontend sends IDs.
-                            // The current logic in `query` (Credit Ledger) filters `cl.scheme_id = ?`.
-                            // If `schemeId` passed is a Bonus Scheme ID, we do NOT want Promo Redemptions unless that Promo is somehow linked (it isn't).
-                            // So if filtering by a Bonus Scheme, Promo Redemptions should logically be EMPTY unless we want to show everything mixed.
-                            // BUT, if the user selects a "Promo Code" from the dropdown (which sends an ID), we want to filter Promo Redemptions by `promo_code_id`.
-
-                            // Heuristic: Check if schemeId matches a Promo Code ID validly?
-                            // Or, since we lack a 'type' param in the filter API, we assume ambiguous ID means "Try to match both".
-                            // If I select Bonus Scheme 1, I get Bonus 1 credits AND Promo 1 redemptions.
-                            // This is the accepted behavior for now given the API constraint.
-                            pConditions.push("(pr.promo_code_id = ? OR pr.promo_code_id = (SELECT code FROM promo_codes WHERE id = ?))");
-                            pParams.push(schemeId);
-                            pParams.push(schemeId);
-                        }
-
-                        if (pConditions.length > 0) {
-                            pQuery += " WHERE " + pConditions.join(" AND ");
-                        }
-
-                        db.all(pQuery, pParams, (err, rows) => {
-                            if (err) reject(err);
-                            else resolve(rows || []);
-                        });
-                    } else {
-                        resolve([]);
-                    }
-                });
-
-                Promise.all([ledgerPromise, promoPromise]).then(([ledgerRows, promoRows]) => {
-                    // Merge and Sort by Date Descending
-                    const allHistory = [...ledgerRows, ...promoRows].sort((a, b) => {
-                        return new Date(b.created_at) - new Date(a.created_at);
-                    });
-
-                    res.json({
-                        balance: balance,
-                        cost_incurred: costIncurred,
-                        currency: 'GBP',
-                        history: allHistory
-                    });
-                }).catch(err => res.status(500).json({ error: err.message }));
+                } else {
+                    resolve([]);
+                }
             });
+
+            Promise.all([ledgerPromise, promoPromise]).then(([ledgerRows, promoRows]) => {
+                // Merge and Sort by Date Descending
+                const allHistory = [...ledgerRows, ...promoRows].sort((a, b) => {
+                    return new Date(b.created_at) - new Date(a.created_at);
+                });
+
+                // Calculate cost_incurred dynamically from exactly what's in the table
+                // Use absolute values to represent the total "volume" of rewards/spending incurrence
+                const dynamicCost = allHistory.reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
+
+                res.json({
+                    balance: balance,
+                    cost_incurred: dynamicCost,
+                    currency: 'GBP',
+                    history: allHistory
+                });
+            }).catch(err => res.status(500).json({ error: err.message }));
         });
     });
 });
@@ -1412,56 +1324,6 @@ app.post('/api/credits/award-bonus', (req, res) => {
     });
 });
 
-// 1. Get Campaign History
-app.get('/api/campaigns', (req, res) => {
-    db.all("SELECT * FROM campaign_history ORDER BY sent_at DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ data: rows });
-    });
-});
-
-// 2. Audience Preview (Estimate Count)
-app.post('/api/segments/preview', (req, res) => {
-    const { segment, criteria } = req.body;
-
-    // Mock Logic for Prototype (In real app, would query users table with filters)
-    let count = 0;
-    if (segment === 'new_users') count = 1250;
-    else if (segment === 'churned_users') count = 450;
-    else if (segment === 'all') count = 5000;
-    else count = 0;
-
-    // Simulate delay
-    setTimeout(() => {
-        res.json({ count: count });
-    }, 500);
-});
-
-// 3. Send Campaign
-app.post('/api/campaigns/send', (req, res) => {
-    const { name, template_id, segment, promo_code_id, criteria } = req.body;
-
-    // 1. Create Campaign Record
-    const campaignId = 'camp_' + Date.now();
-    const now = new Date().toISOString();
-
-    // Mock Sending Logic (Reusing distribution logic simplified)
-    let sentCount = 0;
-    // For prototype, we just "say" we sent it.
-    if (segment === 'new_users') sentCount = 1250;
-    else if (segment === 'churned_users') sentCount = 450;
-    else sentCount = 5000;
-
-    const stmt = db.prepare(`INSERT INTO campaign_history 
-        (id, name, template_id, segment, promo_code, sent_count, sent_at, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-
-    stmt.run(campaignId, name, template_id, segment, promo_code_id, sentCount, now, 'Completed', function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, campaign_id: campaignId, sent_count: sentCount });
-    });
-    stmt.finalize();
-});
 
 // Handle SPA routing - return index.html for all non-API routes (MUST BE LAST)
 app.get(/.*/, (req, res) => {

@@ -44,19 +44,9 @@ const PromoCodes = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
                     <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: 8 }}>Promo Codes</h2>
-                    <p style={{ color: 'var(--text-muted)' }}>Manage your marketing campaigns and discounts.</p>
+                    <p style={{ color: 'var(--text-muted)' }}>Configure and monitor your active promo codes and discounts.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
-                    <span title={!selectedPromo ? "Select the promo code" : ""} style={{ display: 'inline-block' }}>
-                        <button
-                            className="btn-secondary"
-                            onClick={() => setShowDistributeModal(true)}
-                            disabled={!selectedPromo}
-                            style={{ opacity: selectedPromo ? 1 : 0.5, cursor: selectedPromo ? 'pointer' : 'not-allowed', pointerEvents: selectedPromo ? 'auto' : 'none' }}
-                        >
-                            Campaign
-                        </button>
-                    </span>
                     <button className="btn-primary" onClick={() => setShowCreateModal(true)}>+ Create New</button>
                 </div>
             </div>
@@ -140,13 +130,6 @@ const PromoCodes = () => {
                                             >
                                                 {promo.status === 'Active' ? 'Disable' : 'Enable'}
                                             </button>
-                                            {promo.last_campaign_sent ? (
-                                                <div style={{ fontSize: '0.65rem', color: '#059669', marginTop: 2 }}>
-                                                    ✉️ Mail sent - {new Date(promo.last_campaign_sent).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                                                </div>
-                                            ) : (
-                                                <div style={{ fontSize: '0.65rem', color: '#9ca3af', marginTop: 2 }}>No campaigns</div>
-                                            )}
                                         </td>
                                     </tr>
                                 ))}
