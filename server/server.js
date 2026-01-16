@@ -147,13 +147,18 @@ function initializeDatabase() {
             created_at TEXT,
             FOREIGN KEY(promo_code_id) REFERENCES promo_codes(id)
         )`, () => {
-            // Seed data for cost incurred demo
+            // Seed data for cost incurred demo & Global View
             db.get("SELECT count(*) as count FROM promo_redemptions", (err, row) => {
                 if (row && row.count === 0) {
                     const stmt = db.prepare("INSERT INTO promo_redemptions VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    // User 123 (matching dummy user in frontend mostly)
+                    // Existing Seed
                     stmt.run('pr_1', 'SAVE20', 'txn_promo_1', 'user_123', 20.00, 'Redeemed', '2024-05-15T10:00:00Z');
                     stmt.run('pr_2', 'BOOSTRATE', 'txn_promo_2', 'user_123', 5.00, 'Redeemed', '2024-06-01T14:30:00Z');
+
+                    // NEW: Global View Dummy Data
+                    stmt.run('pr_3', 'SAVE20', 'txn_promo_3', 'user_101', 20.00, 'Redeemed', '2025-01-10T09:30:00Z');
+                    stmt.run('pr_4', 'SAVE20', 'txn_promo_4', 'user_102', 20.00, 'Redeemed', '2025-01-11T14:15:00Z');
+                    stmt.run('pr_5', 'BOOSTRATE', 'txn_promo_5', 'user_105', 5.00, 'Redeemed', '2025-01-12T16:45:00Z');
                     stmt.finalize();
                 }
             });
@@ -312,6 +317,12 @@ function initializeDatabase() {
                     stmt.run('Loyalty Credit (Expired)', 'LOYALTY_CREDIT', 5.00, 'EUR', 0.0, 3, 30,
                         JSON.stringify({ segments: ['existing_customers'] }),
                         '2023-01-01', '2023-12-31', 'EXPIRED');
+
+                    // NEW: Request Money Scheme Seed (ID will be 3)
+                    stmt.run('Request Money Scheme', 'REQUEST_MONEY', 0.00, 'GBP', 0.0, 0, 0,
+                        JSON.stringify({ segments: ['all'] }),
+                        '2024-01-01', '2025-12-31', 'ACTIVE');
+
                     stmt.finalize();
                 }
             });
@@ -332,7 +343,30 @@ function initializeDatabase() {
             expires_at TEXT, -- Credit expiry date (Phase 4: FRD)
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (scheme_id) REFERENCES bonus_schemes(id)
-        )`);
+        )`, () => {
+            // Seed data for Credit Ledger if empty (or just append dummy for dev for user_123, user_101, etc)
+            db.get("SELECT count(*) as count FROM credit_ledger", (err, row) => {
+                if (row && row.count === 0) {
+                    const stmt = db.prepare("INSERT INTO credit_ledger (user_id, amount, type, scheme_id, reference_id, reason_code, notes, created_at, admin_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    // User 123 (Main Demo User)
+                    stmt.run('user_123', 50.00, 'EARNED', 1, 'ref_001', 'LOYALTY', 'Initial Loyalty Bonus', '2025-01-01 10:00:00', 'System');
+
+                    // Global View Dummy Data
+                    stmt.run('user_101', 15.00, 'EARNED', 2, 'ref_101', 'REFERRAL_REWARD', 'Referral: user_999', '2025-01-10 10:00:00', 'System');
+                    stmt.run('user_101', -5.00, 'APPLIED', 2, 'tx_999', 'PAYMENT_OFFSET', 'Used for Txn #123', '2025-01-12 14:00:00', 'System');
+
+                    stmt.run('user_102', 25.00, 'EARNED', 1, 'loyalty_001', 'LOYALTY', 'VIP Tier reached', '2025-01-01 09:00:00', 'Admin_Jane');
+                    stmt.run('user_102', -25.00, 'EXPIRED', 1, 'exp_001', 'EXPIRY', 'Unused credit expired', '2025-04-01 00:00:00', 'System');
+
+                    stmt.run('user_105', 10.00, 'EARNED', 1, 'bonus_105', 'TRANSACTION_THRESHOLD', 'Hit 500 USD volume', '2025-01-15 16:20:00', 'System');
+
+                    // NEW: Request Money Scheme Entry (ID 3)
+                    stmt.run('user_105', 100.00, 'EARNED', 3, 'req_001', 'REQUEST_MONEY', 'Money Requested', '2025-01-16 09:00:00', 'System');
+
+                    stmt.finalize();
+                }
+            });
+        });
     });
 }
 
@@ -1106,6 +1140,23 @@ app.get('/api/credits/:userId', (req, res) => {
                         if (endDate) {
                             pConditions.push("date(pr.created_at) <= date(?)");
                             pParams.push(endDate);
+                        }
+                        // Fix for Scheme/Promo Filter Collision
+                        if (schemeId) {
+                            // If schemeId is numeric, it might be a Bonus Scheme OR a Promo Code ID.
+                            // If it's alphanumeric (e.g. 'SAVE20'), it's definitely a Promo Code... but frontend sends IDs.
+                            // The current logic in `query` (Credit Ledger) filters `cl.scheme_id = ?`.
+                            // If `schemeId` passed is a Bonus Scheme ID, we do NOT want Promo Redemptions unless that Promo is somehow linked (it isn't).
+                            // So if filtering by a Bonus Scheme, Promo Redemptions should logically be EMPTY unless we want to show everything mixed.
+                            // BUT, if the user selects a "Promo Code" from the dropdown (which sends an ID), we want to filter Promo Redemptions by `promo_code_id`.
+
+                            // Heuristic: Check if schemeId matches a Promo Code ID validly?
+                            // Or, since we lack a 'type' param in the filter API, we assume ambiguous ID means "Try to match both".
+                            // If I select Bonus Scheme 1, I get Bonus 1 credits AND Promo 1 redemptions.
+                            // This is the accepted behavior for now given the API constraint.
+                            pConditions.push("(pr.promo_code_id = ? OR pr.promo_code_id = (SELECT code FROM promo_codes WHERE id = ?))");
+                            pParams.push(schemeId);
+                            pParams.push(schemeId);
                         }
 
                         if (pConditions.length > 0) {

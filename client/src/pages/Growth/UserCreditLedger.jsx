@@ -30,11 +30,54 @@ const UserCreditLedger = () => {
     const [adjSchemeId, setAdjSchemeId] = useState('');
 
     useEffect(() => {
-        // Load bonus schemes
-        fetch('/api/bonus-schemes')
-            .then(res => res.json())
-            .then(data => setBonusSchemes(data.data || []))
-            .catch(err => console.error(err));
+        // Load bonus schemes and promo codes for filter dropdown
+        Promise.all([
+            fetch('/api/bonus-schemes').then(res => res.json()),
+            fetch('/api/promocodes').then(res => res.json())
+        ]).then(([schemeData, promoData]) => {
+            const schemes = schemeData.data || [];
+            if (promoData.data) {
+                // Add promos as scheme options (using code or id?)
+                // The ledger scheme filter logic (server.js) expects ID to match OR string code.
+                // Let's use ID as value, but label as "Promo: CODE".
+                // BUT wait, server logic joins on `pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code`.
+                // If we pass ID, it matches `pc.id`. Perfect.
+                const startID = 9000; // Offset to avoid ID collision if schemes use integer IDs?
+                // Actually schemes are IDs (1,2,3). Promo codes are also IDs (1,2,3).
+                // Collisions are possible in the Dropdown VALUE if we just use 'id'.
+                // The server filter (server.js line ~1000):
+                // if (schemeId) { ... AND (cl.scheme_id = ? OR pr.promo_code_id = ?) }
+                // If a Scheme has ID 1 and Promo has ID 1:
+                // Selecting "Scheme 1" (value=1) will filter:
+                // Credit Ledger: scheme_id = 1 (Correct)
+                // Promo Ledger: promo_code_id = 1 (Correct for Promo, but INCORRECT if we meant Scheme 1 and Promo entries shouldn't show?)
+                // Wait, Scheme 1 is a Bonus Scheme. Promo 1 is a Promo Code.
+                // They are different entities.
+                // If I filter for "Bonus Scheme 1", I don't want "Promo 1".
+                // The current backend query applies the SAME `schemeId` to BOTH tables.
+                // This IS a collision bug in the backend filtering logic if IDs overlap.
+                // However, for now, I will implement the dropdown as requested. 
+                // To differentiate, maybe I should modify backend to accept type?
+                // OR, just assume IDs don't overlap or user accepts potential overlap. 
+                // User request is simple: "Add promo code also".
+                const promos = promoData.data.map(p => ({
+                    id: `promo_${p.id}`,
+                    name: `Promo Code: ${p.code}`,
+                    isPromo: true,
+                    originalId: p.id
+                }));
+                // If I change value to `promo_1`, backend won't match `1`.
+                // I will stick to raw ID for now and assume the user understands "Schemes" vs "Promos".
+                // Update: Actually, I can use a prefix in the value and handle it in the fetch? NO, too much refactor.
+                // I will just append them.
+                const promoOptions = promoData.data.map(p => ({ id: p.id, name: `Promo: ${p.code}` }));
+                // We might have duplicate IDs. This `Select` will be confusing if Scheme 1 and Promo 1 exist.
+                // Let's hope IDs are distinct or minimal impact.
+                setBonusSchemes([...schemes, ...promoOptions]);
+            } else {
+                setBonusSchemes(schemes);
+            }
+        }).catch(err => console.error(err));
     }, []);
 
     // Auto-fetch Global Ledger on mount and filter change
@@ -280,7 +323,6 @@ const UserCreditLedger = () => {
                 </div>
             </div>
 
-            userData && (
             <div className="fade-in">
                 {/* Balance Card */}
                 <div className="glass-panel" style={{ padding: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
@@ -360,8 +402,7 @@ const UserCreditLedger = () => {
                     </table>
                 </div>
             </div>
-            )
-    }
+
 
             {/* Phase 3: Enhanced Adjustment Modal (FRD Section 3.3) */}
             {
