@@ -59,7 +59,7 @@ const PromoCodes = () => {
                         <table className="table-container" style={{ minWidth: 1000, tableLayout: 'fixed' }}>
                             <thead>
                                 <tr>
-                                    <th style={{ width: 40 }}></th>
+
                                     <th style={{ width: 100 }}>Code</th>
                                     <th style={{ width: 90 }}>Type</th>
                                     <th style={{ width: 90 }}>Value</th>
@@ -76,15 +76,7 @@ const PromoCodes = () => {
                                         onClick={() => setSelectedPromo(promo)}
                                         style={{ cursor: 'pointer', background: selectedPromo?.id === promo.id ? '#fff7ed' : 'transparent' }}
                                     >
-                                        <td style={{ whiteSpace: 'nowrap' }}>
-                                            <input
-                                                type="radio"
-                                                name="promoSelection"
-                                                checked={selectedPromo?.id === promo.id}
-                                                onChange={() => setSelectedPromo(promo)}
-                                                style={{ cursor: 'pointer' }}
-                                            />
-                                        </td>
+
                                         <td style={{ fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{promo.code}</td>
                                         <td style={{ whiteSpace: 'nowrap' }}>
                                             {promo.type === 'FX_BOOST' ? 'FX Boost' :

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 
 const UserCreditLedger = () => {
-    const [userId] = useState('all'); // Enforce Global View
+    const [userId, setUserId] = useState('all'); // Enforce Global View
     // Dummy Data for visual confirmation if nothing loaded
     const [userData, setUserData] = useState({
         balance: 125.50,
@@ -96,6 +96,8 @@ const UserCreditLedger = () => {
             setLoading(false);
         }
     };
+
+    const handleSearch = fetchLedger;
 
     useEffect(() => {
         fetchLedger();
@@ -370,6 +372,7 @@ const UserCreditLedger = () => {
                                         </td>
                                         <td style={{ padding: '16px 24px', fontSize: '0.85rem', color: '#6b7280' }}>{entry.scheme_name || '-'}</td>
                                         <td style={{ padding: '16px 24px', fontSize: '0.85rem' }}>
+                                            {entry.source_type && <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4b5563', background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>{entry.source_type}</span>}
                                             {entry.reason_code && <span style={{ fontWeight: 600, color: '#ea580c', background: '#fff7ed', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>{entry.reason_code}</span>}
                                             <span style={{ color: '#374151' }}>{entry.reference_id || '-'}</span>
                                         </td>

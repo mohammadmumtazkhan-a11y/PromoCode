@@ -58,11 +58,11 @@ app.delete('/api/user-segments/:id', (req, res) => {
 // SPA Catch-all Route (Must be after API routes, handled at bottom)
 
 // Database Setup
-const db = new sqlite3.Database(':memory:', (err) => {
+const db = new sqlite3.Database('./database.sqlite', (err) => {
     if (err) {
         console.error('Error opening database', err);
     } else {
-        console.log('Connected to the in-memory SQLite database.');
+        console.log('Connected to the file-based SQLite database.');
         initializeDatabase();
     }
 });
@@ -70,7 +70,7 @@ const db = new sqlite3.Database(':memory:', (err) => {
 function initializeDatabase() {
     db.serialize(() => {
         // Merchants
-        db.run(`CREATE TABLE merchants (
+        db.run(`CREATE TABLE IF NOT EXISTS merchants (
             id TEXT PRIMARY KEY,
             mito_id TEXT UNIQUE,
             type TEXT,
@@ -83,7 +83,7 @@ function initializeDatabase() {
         )`);
 
         // Transactions
-        db.run(`CREATE TABLE transactions (
+        db.run(`CREATE TABLE IF NOT EXISTS transactions (
             id TEXT PRIMARY KEY,
             ref_number TEXT UNIQUE,
             merchant_id TEXT,
@@ -95,7 +95,7 @@ function initializeDatabase() {
         )`);
 
         // Forex Logs
-        db.run(`CREATE TABLE forex_logs (
+        db.run(`CREATE TABLE IF NOT EXISTS forex_logs (
             id TEXT PRIMARY KEY,
             transaction_id TEXT,
             conversion_date TEXT,
@@ -106,33 +106,35 @@ function initializeDatabase() {
         )`);
 
         // Commissions
-        db.run(`CREATE TABLE commissions (
+        db.run(`CREATE TABLE IF NOT EXISTS commissions (
             id TEXT PRIMARY KEY,
             transaction_id TEXT,
             base_commission_ngn REAL,
             forex_spread_ngn REAL,
             total_commission_ngn REAL,
-            payout_status TEXT,
-            FOREIGN KEY(transaction_id) REFERENCES transactions(id)
+            base_currency TEXT,
+            payout_currency TEXT,
+            status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`);
 
         // Seed Data
-        const stmt = db.prepare("INSERT INTO merchants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        stmt.run("m1", "MITO001", "Business", "Global Tech Ltd", "RC12345", "contact@globaltech.com", "NGN", "USD", "Active");
-        stmt.run("m2", "MITO002", "Individual", "John Doe Logistics", "N/A", "john@doelogistics.com", "NGN", "GBP", "Onboarding");
+        const stmt = db.prepare("INSERT OR IGNORE INTO merchants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        stmt.run("m1", "MITO001", "Business", "Global Tech Ltd", "RC12345", "contact@globaltech.com", "NGN", "USD", "Active", "2024-01-01T00:00:00Z");
+        stmt.run("m2", "MITO002", "Individual", "John Doe Logistics", "N/A", "john@doelogistics.com", "NGN", "GBP", "Onboarding", "2025-01-01T00:00:00Z");
         stmt.finalize();
 
         // Seed Transactions, Forex, Commissions
-        const tStmt = db.prepare("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?)");
+        const tStmt = db.prepare("INSERT OR IGNORE INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?)");
         tStmt.run("t1", "TXN100001", "m1", "Debit", 500000.00, "2024-10-24T10:30:00Z", "Successful");
         tStmt.run("t2", "TXN100002", "m2", "Debit", 150000.00, "2024-10-24T11:15:00Z", "Pending");
         tStmt.finalize();
 
-        const fStmt = db.prepare("INSERT INTO forex_logs VALUES (?, ?, ?, ?, ?, ?)");
+        const fStmt = db.prepare("INSERT OR IGNORE INTO forex_logs VALUES (?, ?, ?, ?, ?, ?)");
         fStmt.run("f1", "t1", "2024-10-24T14:00:00Z", 1545.79, 500000.00, 323.45);
         fStmt.finalize();
 
-        const cStmt = db.prepare("INSERT INTO commissions VALUES (?, ?, ?, ?, ?, ?)");
+        const cStmt = db.prepare("INSERT OR IGNORE INTO commissions VALUES (?, ?, ?, ?, ?, ?)");
         cStmt.run("c1", "t1", 5000.00, 2500.00, 7500.00, "Due");
         cStmt.finalize();
 
@@ -187,7 +189,7 @@ function initializeDatabase() {
             user_segment_criteria TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
-            const pStmt = db.prepare(`INSERT INTO promo_codes 
+            const pStmt = db.prepare(`INSERT OR IGNORE INTO promo_codes 
                 (code, type, value, min_threshold, currency, usage_limit_global, usage_count, start_date, end_date, status, restrictions) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
@@ -217,7 +219,7 @@ function initializeDatabase() {
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
             // Seed sample rules
-            const stmt = db.prepare(`INSERT INTO referral_rules (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+            const stmt = db.prepare(`INSERT OR IGNORE INTO referral_rules (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) VALUES (?, ?, ?, ?, ?, ?, ?)`);
             stmt.run('Default UK Program', 1, 50.0, 5.00, 10.00, 'BOTH', 'GBP');
             stmt.run('US High Value', 1, 100.0, 10.00, 20.00, 'BOTH', 'USD');
             stmt.run('Nigeria Special', 0, 20000.0, 2000.00, 5000.00, 'REFEREE', 'NGN');
@@ -832,7 +834,7 @@ app.post('/api/bonus-schemes', (req, res) => {
     const {
         name, bonus_type, credit_amount, currency, min_transaction_threshold,
         min_transactions, time_period_days, commission_type, commission_percentage,
-        is_tiered, tiers, eligibility_rules, start_date, end_date
+        is_tiered, tiers, eligibility_rules, start_date, end_date, status
     } = req.body;
 
     // FRD Validations (Section 3.1)
@@ -861,7 +863,7 @@ app.post('/api/bonus-schemes', (req, res) => {
 
     const stmt = db.prepare(`INSERT INTO bonus_schemes 
         (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, commission_type, commission_percentage, is_tiered, tiers, eligibility_rules, start_date, end_date, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
     // Default to GBP if not provided (Safety net)
     const safeCurrency = currency || 'GBP';
@@ -881,6 +883,7 @@ app.post('/api/bonus-schemes', (req, res) => {
         JSON.stringify(eligibility_rules || {}),
         start_date,
         end_date,
+        status || 'ACTIVE',
         function (err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true, id: this.lastID });
@@ -954,9 +957,9 @@ app.put('/api/bonus-schemes/:id', (req, res) => {
 app.delete('/api/bonus-schemes/:id', (req, res) => {
     const { id } = req.params;
 
-    db.run("DELETE FROM bonus_schemes WHERE id = ?", [id], function (err) {
+    db.run("UPDATE bonus_schemes SET status = 'ARCHIVED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id], function (err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+        res.json({ success: true, message: "Scheme archived" });
     });
 });
 
@@ -984,7 +987,7 @@ app.get('/api/credits/:userId', (req, res) => {
 
             // Build dynamic query with filters
             let query = `
-                SELECT cl.*, bs.name as scheme_name 
+                SELECT cl.*, 'BONUS' as source_type, bs.name as scheme_name 
                 FROM credit_ledger cl
                 LEFT JOIN bonus_schemes bs ON cl.scheme_id = bs.id
             `;
@@ -1039,6 +1042,7 @@ app.get('/api/credits/:userId', (req, res) => {
                         SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
                         pr.promo_code_id as scheme_id, pr.transaction_id as reference_id, 
                         'PROMO_REDEMPTION' as reason_code, 
+                        'PROMO' as source_type,
                         (pc.code || ' (Promo Code)') as scheme_name,
                         ('Promo Code: ' || pc.code) as notes,
                         'System' as admin_user,
@@ -1168,160 +1172,337 @@ app.post('/api/credits/manual', (req, res) => {
 
 // 3. Award Bonus Credit (with One-Time & Expiry Rules) - Phase 4: FRD
 app.post('/api/credits/award-bonus', (req, res) => {
-    const { user_id, scheme_id, transaction_id, admin_user } = req.body;
+    const { user_id, scheme_id, transaction_id, admin_user, idempotency_key } = req.body;
 
     if (!user_id || !scheme_id) {
         return res.status(400).json({ error: "user_id and scheme_id are required" });
     }
 
-    // Get scheme details
-    db.get("SELECT * FROM bonus_schemes WHERE id = ?", [scheme_id], (err, scheme) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!scheme) return res.status(404).json({ error: "Bonus scheme not found" });
-
-        // Phase 4: Check if scheme is expired (FRD Section 4.1)
-        const now = new Date().toISOString().split('T')[0];
-        if (now > scheme.end_date) {
-            return res.status(400).json({
-                error: "SCHEME_EXPIRED",
-                message: `Bonus scheme "${scheme.name}" expired on ${scheme.end_date}`
-            });
-        }
-        if (scheme.status !== 'ACTIVE') {
-            return res.status(400).json({
-                error: "SCHEME_INACTIVE",
-                message: `Bonus scheme "${scheme.name}" is not active (status: ${scheme.status})`
-            });
-        }
-
-        // Phase 4: One-Time Bonus Rule (FRD Section 4.1)
-        // Check if user already earned from this scheme
-        const rules = JSON.parse(scheme.eligibility_rules || '{}');
-        const isOneTime = rules.oneTimeOnly !== false; // Default to one-time
-
-        const checkDuplicate = (callback) => {
-            if (isOneTime) {
-                db.get(
-                    "SELECT id, created_at FROM credit_ledger WHERE user_id = ? AND scheme_id = ? AND type = 'EARNED'",
-                    [user_id, scheme_id],
-                    (err, existing) => {
-                        if (err) return callback(err);
-                        if (existing) {
-                            return res.status(409).json({
-                                error: "ALREADY_EARNED",
-                                message: `User has already earned bonus from "${scheme.name}" on ${existing.created_at}. This is a one-time bonus.`
-                            });
-                        }
-                        callback(null);
-                    }
-                );
-            } else {
-                callback(null);
-            }
-        };
-
-        checkDuplicate((err) => {
+    // Phase 4: Idempotency Check (FRD Section 4.2)
+    if (idempotency_key) {
+        const checkIdemStmt = db.prepare("SELECT * FROM credit_ledger WHERE reference_id = ?");
+        checkIdemStmt.get([`idem_${idempotency_key}`], (err, existing) => {
             if (err) return res.status(500).json({ error: err.message });
+            if (existing) {
+                return res.json({
+                    success: true,
+                    id: existing.id,
+                    amount: existing.amount,
+                    idempotent: true,
+                    message: "Bonus already awarded (Idempotent)"
+                });
+            }
+            // Not found, proceed
+            processAwarding(idempotency_key);
+        });
+        checkIdemStmt.finalize();
+    } else {
+        processAwarding(null);
+    }
 
-            // Calculate Bonus Amount
-            if (scheme.is_tiered) {
-                if (!transaction_id) {
-                    return res.status(400).json({ error: "Transaction ID is required for tiered commissions" });
-                }
+    function processAwarding(idemKey) {
+        // Get scheme details
+        db.get("SELECT * FROM bonus_schemes WHERE id = ?", [scheme_id], (err, scheme) => {
+            if (err) return res.status(500).json({ error: err.message });
+            if (!scheme) return res.status(404).json({ error: "Bonus scheme not found" });
 
-                db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
-                    if (err) return res.status(500).json({ error: err.message });
-                    if (!txn) return res.status(404).json({ error: "Transaction not found for tiered calculation" });
+            // 1. Status Check
+            if (scheme.status !== 'ACTIVE') {
+                return res.status(400).json({
+                    error: "SCHEME_INACTIVE",
+                    message: `Bonus scheme "${scheme.name}" is not active (status: ${scheme.status})`
+                });
+            }
 
-                    const amount = txn.amount_debit_ngn;
-                    const tiers = JSON.parse(scheme.tiers || '[]');
-                    let bonusAmount = 0;
+            // 2. Date Validity Check (Strict Parsing)
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
 
-                    // Find matching tier
-                    const matchedTier = tiers.find(t => {
-                        const min = parseFloat(t.min);
-                        const max = t.max ? parseFloat(t.max) : Infinity;
-                        return amount >= min && amount <= max;
+            // Check Start Date
+            if (scheme.start_date && todayStr < scheme.start_date) {
+                return res.status(400).json({
+                    error: "SCHEME_NOT_STARTED",
+                    message: `Bonus scheme "${scheme.name}" has not started yet (starts ${scheme.start_date})`
+                });
+            }
+
+            // Check End Date
+            if (scheme.end_date && todayStr > scheme.end_date) {
+                return res.status(400).json({
+                    error: "SCHEME_EXPIRED",
+                    message: `Bonus scheme "${scheme.name}" expired on ${scheme.end_date}`
+                });
+            }
+
+            // 3. Eligibility Rules
+            const rules = JSON.parse(scheme.eligibility_rules || '{}');
+
+            // 3a. Segment Check
+            if (rules.segments && Array.isArray(rules.segments) && rules.segments.length > 0 && !rules.segments.includes('all')) {
+                // Verify against first segment (FRD implies one segment per rule usually, or ANY?)
+                // Assuming ANY match is sufficient or ALL? UI allows single selection usually.
+                // We will check all listed segments. If user matches ANY, they are eligible.
+                // If the list is inclusive.
+
+                const segmentIds = rules.segments;
+
+                // Helper to check a single segment - wrapped in Promise
+                const verifySegment = (segId) => {
+                    return new Promise((resolve, reject) => {
+                        db.get("SELECT * FROM user_segments WHERE id = ?", [segId], (err, segment) => {
+                            if (err) return reject(err);
+                            if (!segment) return resolve(false); // Segment doesn't exist? Fail.
+
+                            const criteria = JSON.parse(segment.criteria || '{}');
+
+                            // 1. Check User/Merchant Created At (Registration Date)
+                            // Note: `user_id` passed to this endpoint corresponds to `merchants.mito_id` or `id`?
+                            // Based on test usage 'user_test_fixed_1', it seems to be an arbitrary ID string.
+                            // In real usages, it should match `merchants.id` or `merchants.mito_id`.
+                            // Let's assume `user_id` matches `merchants.id` for joining.
+                            db.get("SELECT created_at FROM merchants WHERE id = ?", [user_id], (err, merchant) => {
+                                // If merchant not found, we can't verify registration date.
+                                // If strict, fail. If relaxed, ignore?
+                                // Let's proceed if merchant exists.
+
+                                if (criteria.signup_start_date || criteria.signup_end_date) {
+                                    if (!merchant || !merchant.created_at) {
+                                        // If we can't verify date, assume fail if date criteria exists
+                                        return resolve(false);
+                                    }
+                                    const signupDate = new Date(merchant.created_at);
+
+                                    if (criteria.signup_start_date && signupDate < new Date(criteria.signup_start_date)) {
+                                        return resolve(false);
+                                    }
+                                    if (criteria.signup_end_date && signupDate > new Date(criteria.signup_end_date)) {
+                                        return resolve(false);
+                                    }
+                                }
+
+                                // If type is NEW_USER, we strictly check date and ignore transactions (or ensure count is 0 if implied? "New User" usually implies just date.)
+                                // The user asked for "New User" option strictly.
+                                if (criteria.type === 'NEW_USER') {
+                                    // If we passed the date check above (which returns false if fail), we are good.
+                                    // But wait, the date check above returns `resolve(false)` on failure, but doesn't return `resolve(true)` on pass.
+                                    // It falls through to transaction query.
+
+                                    // Update: User requested transaction filter for NEW_USER as well.
+                                    // So we simply fall through to the transaction query below.
+                                    // No short-circuit.
+                                    // return resolve(true);
+                                }
+
+                                // 2. Query Transactions
+                                // Note: transactions table uses `merchant_id` to link to user.
+                                let query = "SELECT COUNT(*) as count, SUM(amount_debit_ngn) as volume FROM transactions WHERE merchant_id = ?";
+                                let params = [user_id];
+                                // ... existing transaction query logic ...
+
+
+                                // Date filter for transactions
+                                if (criteria.period_days) {
+                                    const date = new Date();
+                                    date.setDate(date.getDate() - criteria.period_days);
+                                    query += " AND created_at >= ?"; // Note: check transactions schema for created_at vs debit_date
+                                    // Schema said `debit_date`. created_at wasn't listed in PRAGMA for transactions?
+                                    // Wait, PRAGMA output for transactions: id, ref_number, merchant_id, type, amount_debit_ngn, debit_date, status.
+                                    // It MISSES created_at.
+                                    // We should use `debit_date`.
+                                    params.push(date.toISOString());
+                                }
+
+                                // Fix query to use debit_date if created_at missing
+                                if (criteria.period_days) {
+                                    // Re-construct query with correct column
+                                    query = "SELECT COUNT(*) as count, SUM(amount_debit_ngn) as volume FROM transactions WHERE merchant_id = ? AND debit_date >= ?";
+                                }
+
+                                db.get(query, params, (err, stats) => {
+                                    if (err) return reject(err);
+                                    const count = stats.count || 0;
+                                    const volume = stats.volume || 0;
+
+                                    if (criteria.type === 'TRANSACTION_COUNT') {
+                                        if (count >= criteria.min && (criteria.max === null || count <= criteria.max)) {
+                                            return resolve(true);
+                                        }
+                                    } else if (criteria.type === 'TRANSACTION_VOLUME') {
+                                        if (volume >= criteria.min && (criteria.max === null || volume <= criteria.max)) {
+                                            return resolve(true);
+                                        }
+                                    }
+                                    resolve(false);
+                                });
+                            });
+                        });
                     });
+                };
 
-                    if (matchedTier) {
-                        if (scheme.commission_type === 'PERCENTAGE') {
-                            bonusAmount = (amount * parseFloat(matchedTier.value)) / 100;
-                        } else {
-                            bonusAmount = parseFloat(matchedTier.value);
-                        }
-                        awardBonus(bonusAmount);
-                    } else {
-                        // No tier matched - RETURN ERROR or 0? 
-                        // Usually 0 if not eligible but technically they shouldn't trigger this if not eligible.
-                        // However, let's return 0 success or error. Error is clearer for debugging.
-                        return res.status(400).json({
-                            error: "TIER_MISMATCH",
-                            message: `Transaction amount ${amount} does not match any commission tiers.`
+                // Execute Checks
+                // We need to wait for checks. Since we are in callback hell, let's use async/await wrapper or simple recursive check?
+                // Actually, `processAwarding` is not async.
+                // We must use a callback-based approach or Promise chain.
+                // Refactoring `processAwarding` to be async is easiest.
+                // But `sqlite` driver is callback based.
+                // I'll call a helper function `checkSegments(ids, callback)`.
+
+                checkSegments(segmentIds, (err, isEligible) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    if (!isEligible) {
+                        return res.status(403).json({
+                            error: "USER_INELIGIBLE",
+                            message: "User does not meet the requirements for this bonus segment."
                         });
                     }
+                    // Proceed to next step
+                    checkOneTime();
                 });
+                return; // Stop execution, wait for callback
             } else {
-                // Fixed or Simple Percentage
-                let bonusAmount = scheme.credit_amount;
+                checkOneTime();
+            }
 
-                // If Percentage but NOT Tiered, we must calculate based on transaction amount
-                if (scheme.commission_type === 'PERCENTAGE') {
+            function checkSegments(ids, cb) {
+                // Check sequentially or parallel. Parallel is fine.
+                let checks = ids.map(id => verifySegment(id)); // verifySegment must be hoisted or defined
+                Promise.all(checks).then(results => {
+                    // If ANY true?
+                    const pass = results.some(r => r === true);
+                    cb(null, pass);
+                }).catch(err => cb(err));
+            }
+
+
+
+            // 3b. One-Time Bonus Rule
+            function checkOneTime() {
+                const isOneTime = rules.oneTimeOnly !== false;
+                // ... logic continues ...
+                doCheckDuplicate();
+            }
+
+            function doCheckDuplicate() {
+                const isOneTime = rules.oneTimeOnly !== false;
+                // ... duplicate code moved here ...
+                if (isOneTime) {
+                    db.get(
+                        "SELECT id, created_at FROM credit_ledger WHERE user_id = ? AND scheme_id = ? AND type = 'EARNED'",
+                        [user_id, scheme_id],
+                        (err, existing) => {
+                            if (err) return res.status(500).json({ error: err.message });
+                            if (existing) {
+                                return res.status(409).json({
+                                    error: "ALREADY_EARNED",
+                                    message: `User has already earned bonus from "${scheme.name}" on ${existing.created_at}. This is a one-time bonus.`
+                                });
+                            }
+                            calculateAndAward();
+                        }
+                    );
+                } else {
+                    calculateAndAward();
+                }
+            }
+
+            function calculateAndAward() {
+                // ... Existing calculation logic ...
+                // Calculate Bonus Amount
+                if (scheme.is_tiered) {
                     if (!transaction_id) {
-                        // Fallback: If no transaction ID, we can't calculate percentage. 
-                        // But if credit_amount is set (e.g. flat value stored), use it? No, percentage implies calculation.
-                        return res.status(400).json({ error: "Transaction ID required for percentage commission" });
+                        return res.status(400).json({ error: "Transaction ID is required for tiered commissions" });
                     }
 
                     db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
                         if (err) return res.status(500).json({ error: err.message });
-                        if (!txn) return res.status(404).json({ error: "Transaction not found" });
+                        if (!txn) return res.status(404).json({ error: "Transaction not found for tiered calculation" });
 
-                        // Use commission_percentage
-                        bonusAmount = (txn.amount_debit_ngn * scheme.commission_percentage) / 100;
-                        awardBonus(bonusAmount);
+                        const amount = txn.amount_debit_ngn;
+                        const tiers = JSON.parse(scheme.tiers || '[]');
+                        let bonusAmount = 0;
+
+                        const matchedTier = tiers.find(t => {
+                            const min = parseFloat(t.min);
+                            const max = t.max ? parseFloat(t.max) : Infinity;
+                            return amount >= min && amount <= max;
+                        });
+
+                        if (matchedTier) {
+                            if (scheme.commission_type === 'PERCENTAGE') {
+                                bonusAmount = (amount * parseFloat(matchedTier.value)) / 100;
+                            } else {
+                                bonusAmount = parseFloat(matchedTier.value);
+                            }
+                            awardBonus(bonusAmount, idemKey);
+                        } else {
+                            return res.status(400).json({
+                                error: "TIER_MISMATCH",
+                                message: `Transaction amount ${amount} does not match any commission tiers.`
+                            });
+                        }
                     });
-                    return;
-                }
+                } else {
+                    let bonusAmount = scheme.credit_amount;
+                    if (scheme.commission_type === 'PERCENTAGE') {
+                        if (!transaction_id) {
+                            return res.status(400).json({ error: "Transaction ID required for percentage commission" });
+                        }
 
-                // Default Fixed Amount
-                awardBonus(scheme.credit_amount);
+                        db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
+                            if (err) return res.status(500).json({ error: err.message });
+                            if (!txn) return res.status(404).json({ error: "Transaction not found" });
+
+                            bonusAmount = (txn.amount_debit_ngn * scheme.commission_percentage) / 100;
+                            awardBonus(bonusAmount, idemKey);
+                        });
+                        return;
+                    }
+
+                    awardBonus(scheme.credit_amount, idemKey);
+                }
+            }
+
+            function awardBonus(finalAmount, key) {
+                // ... (Keep existing awardBonus logic) ...
+                const id = 'crd_' + Date.now();
+                const expiryDate = new Date();
+                expiryDate.setDate(expiryDate.getDate() + 90);
+                const expires_at = expiryDate.toISOString().split('T')[0];
+
+                const refId = key ? `idem_${key}` : (transaction_id || `bonus_${id}`);
+
+                const stmt = db.prepare(`INSERT INTO credit_ledger 
+                    (id, user_id, amount, type, scheme_id, reference_id, admin_user, expires_at) 
+                    VALUES (?, ?, ?, 'EARNED', ?, ?, ?, ?)`);
+
+                stmt.run(
+                    id,
+                    user_id,
+                    finalAmount,
+                    scheme_id,
+                    refId,
+                    admin_user || 'System',
+                    expires_at,
+                    function (err) {
+                        if (err) {
+                            if (err.message.includes('UNIQUE')) {
+                                return res.status(409).json({ error: "Duplicate bonus award (Reference conflict)" });
+                            }
+                            return res.status(500).json({ error: err.message });
+                        }
+                        res.json({
+                            success: true,
+                            id: id,
+                            amount: finalAmount,
+                            expires_at: expires_at,
+                            scheme_name: scheme.name
+                        });
+                    }
+                );
+                stmt.finalize();
             }
         });
-
-        function awardBonus(finalAmount) {
-            const id = 'crd_' + Date.now();
-            // Phase 4: Calculate expiry date (FRD Section 4.1)
-            const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + 90); // 90 days from now
-            const expires_at = expiryDate.toISOString().split('T')[0];
-
-            const stmt = db.prepare(`INSERT INTO credit_ledger 
-                (id, user_id, amount, type, scheme_id, reference_id, admin_user, expires_at) 
-                VALUES (?, ?, ?, 'EARNED', ?, ?, ?, ?)`);
-
-            stmt.run(
-                id,
-                user_id,
-                finalAmount,
-                scheme_id,
-                transaction_id || `bonus_${id}`,
-                admin_user || 'System',
-                expires_at,
-                function (err) {
-                    if (err) return res.status(500).json({ error: err.message });
-                    res.json({
-                        success: true,
-                        id: id,
-                        amount: finalAmount,
-                        expires_at: expires_at,
-                        scheme_name: scheme.name
-                    });
-                }
-            );
-            stmt.finalize();
-        }
-    });
+    }
 });
 
 

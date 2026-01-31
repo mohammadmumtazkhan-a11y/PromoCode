@@ -10,8 +10,6 @@ const UserSegmentManager = () => {
         criteria: { type: 'TRANSACTION_COUNT', min: 0, max: null, period_days: 30, currency: 'GBP' }
     });
 
-    useEffect(() => { fetchSegments(); }, []);
-
     const fetchSegments = async () => {
         try {
             const res = await fetch('/api/user-segments');
@@ -20,6 +18,8 @@ const UserSegmentManager = () => {
             setLoading(false);
         } catch (err) { console.error(err); }
     };
+
+    useEffect(() => { fetchSegments(); }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -60,11 +60,13 @@ const UserSegmentManager = () => {
                 <div style={{ marginBottom: 16 }}>
                     <label style={labelStyle}>Criteria Type</label>
                     <select style={inputStyle} value={formData.criteria.type} onChange={e => setFormData({ ...formData, criteria: { ...formData.criteria, type: e.target.value } })}>
-                        <option value="TRANSACTION_COUNT">Transaction Count (for New/Churned)</option>
+                        <option value="NEW_USER">New User (Signup Date)</option>
+                        <option value="TRANSACTION_COUNT">Transaction Count (for Churned/Active)</option>
                         <option value="TRANSACTION_VOLUME">Transaction Volume (for High Value)</option>
                     </select>
                 </div>
 
+                {/* Transaction Fields (Visible for all types now, as per user request to filter New Users by transaction count too) */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
                     <div>
                         <label style={labelStyle}>Min {formData.criteria.type === 'TRANSACTION_VOLUME' ? 'Amount' : 'Count'}</label>
@@ -115,6 +117,34 @@ const UserSegmentManager = () => {
                                 )}
                             </div>
                         )}
+                    </div>
+                </div>
+
+                {/* Signed Up Criteria */}
+                <div style={{ marginBottom: 16, padding: 16, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+                    <label style={{ ...labelStyle, marginBottom: 12, fontWeight: 600 }}>User Signup Date (Optional)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        <div>
+                            <label style={labelStyle}>Signed Up From</label>
+                            <input
+                                type="date"
+                                style={inputStyle}
+                                value={formData.criteria.signup_start_date || ''}
+                                onChange={e => setFormData({ ...formData, criteria: { ...formData.criteria, signup_start_date: e.target.value } })}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Signed Up Until</label>
+                            <input
+                                type="date"
+                                style={inputStyle}
+                                value={formData.criteria.signup_end_date || ''}
+                                onChange={e => setFormData({ ...formData, criteria: { ...formData.criteria, signup_end_date: e.target.value } })}
+                            />
+                        </div>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                        Limit eligibility to users who registered within this date range. Leave empty for all users.
                     </div>
                 </div>
 

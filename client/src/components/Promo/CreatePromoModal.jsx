@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const CreatePromoModal = ({ onClose, onSuccess }) => {
     const [formData, setFormData] = useState({
@@ -24,6 +24,14 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
     const [restrictCorridors, setRestrictCorridors] = useState(false);
     const [restrictAffiliates, setRestrictAffiliates] = useState(false);
     const [restrictPaymentMethods, setRestrictPaymentMethods] = useState(false); // Optional, but consistent
+    const [availableSegments, setAvailableSegments] = useState([]);
+
+    useEffect(() => {
+        fetch('/api/user-segments')
+            .then(res => res.json())
+            .then(data => setAvailableSegments(data.data || []))
+            .catch(err => console.error('Error fetching segments:', err));
+    }, []);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -275,37 +283,10 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
                                 })}
                             >
                                 <option value="all">All Users</option>
-                                <option value="new">New Users Only</option>
-                                <option value="churned">Churned Users Only</option>
+                                {availableSegments.map(seg => (
+                                    <option key={seg.id} value={seg.id}>{seg.name}</option>
+                                ))}
                             </select>
-
-                            {formData.user_segment.type === 'new' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ fontSize: '0.85rem' }}>Max Txs:</span>
-                                    <input
-                                        type="number" min="0" style={{ ...compactInputStyle, width: 60 }}
-                                        value={formData.user_segment_criteria.max_tx}
-                                        onChange={e => setFormData({
-                                            ...formData,
-                                            user_segment_criteria: { ...formData.user_segment_criteria, max_tx: parseInt(e.target.value) || 0 }
-                                        })}
-                                    />
-                                </div>
-                            )}
-
-                            {formData.user_segment.type === 'churned' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ fontSize: '0.85rem' }}>Inactive Days:</span>
-                                    <input
-                                        type="number" min="1" style={{ ...compactInputStyle, width: 60 }}
-                                        value={formData.user_segment_criteria.churn_days}
-                                        onChange={e => setFormData({
-                                            ...formData,
-                                            user_segment_criteria: { ...formData.user_segment_criteria, churn_days: parseInt(e.target.value) || 30 }
-                                        })}
-                                    />
-                                </div>
-                            )}
                         </div>
                     </div>
 
