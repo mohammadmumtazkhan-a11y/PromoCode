@@ -112,9 +112,23 @@ const Sidebar = ({ isOpen, onClose }) => {
         <Link to="/admin" style={itemStyle(false)}>
           <span>👤</span> Administration
         </Link>
-        <Link to="/config" style={itemStyle(false)}>
-          <span>⚙️</span> Configuration
-        </Link>
+
+        {/* Configuration Section */}
+        <div style={{ ...itemStyle(false), flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0, border: '1px solid #ffedd5', overflow: 'hidden', marginTop: 16 }}>
+          <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #fff7ed' }}>
+            <span>⚙️</span> Configuration
+          </div>
+          <div style={{ background: '#fff7ed', padding: '8px 0' }}>
+            <Link to="/configuration/rate-manager" style={{
+              display: 'block', padding: '8px 16px 8px 48px',
+              color: isActive('/configuration/rate-manager') || location.pathname.startsWith('/configuration/rate-manager/') ? '#c2410c' : '#4b5563',
+              textDecoration: 'none', fontSize: '0.85rem', fontWeight: isActive('/configuration/rate-manager') || location.pathname.startsWith('/configuration/rate-manager/') ? 600 : 400
+            }} onClick={onClose}>
+              Rate Manager
+            </Link>
+          </div>
+        </div>
+
         <Link to="/logs" style={itemStyle(false)}>
           <span>📋</span> Logs
         </Link>
@@ -286,6 +300,9 @@ import PromoCodes from './pages/Financials/PromoCodes';
 import MerchantList from './pages/Merchants/MerchantList';
 import OnboardingWizard from './pages/Merchants/OnboardingWizard';
 import ApiKeys from './pages/Settings/ApiKeys';
+import RateManager from './pages/Configuration/RateManager';
+import RateSettings from './pages/Configuration/RateSettings';
+import RateAuditLog from './pages/Configuration/RateAuditLog';
 
 // App Layout
 function App() {
@@ -315,6 +332,11 @@ function App() {
             <Route path="/growth/referral-settings" element={<ReferralSettings />} />
             <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
             <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
+
+            {/* Configuration */}
+            <Route path="/configuration/rate-manager" element={<RateManager />} />
+            <Route path="/configuration/rate-manager/:id" element={<RateSettings />} />
+            <Route path="/configuration/rate-audit-log" element={<RateAuditLog />} />
           </Routes>
         </main>
       </div>

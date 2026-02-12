@@ -79,7 +79,8 @@ function initializeDatabase() {
             email TEXT,
             base_currency TEXT,
             payout_currency TEXT,
-            status TEXT DEFAULT 'Active'
+            status TEXT DEFAULT 'Active',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`);
 
         // Transactions
@@ -134,7 +135,7 @@ function initializeDatabase() {
         fStmt.run("f1", "t1", "2024-10-24T14:00:00Z", 1545.79, 500000.00, 323.45);
         fStmt.finalize();
 
-        const cStmt = db.prepare("INSERT OR IGNORE INTO commissions VALUES (?, ?, ?, ?, ?, ?)");
+        const cStmt = db.prepare("INSERT OR IGNORE INTO commissions (id, transaction_id, base_commission_ngn, forex_spread_ngn, total_commission_ngn, status) VALUES (?, ?, ?, ?, ?, ?)");
         cStmt.run("c1", "t1", 5000.00, 2500.00, 7500.00, "Due");
         cStmt.finalize();
 
@@ -335,6 +336,35 @@ function initializeDatabase() {
                     // NEW: Request Money Scheme Entry (ID 3)
                     stmt.run('user_105', 100.00, 'EARNED', 3, 'req_001', 'REQUEST_MONEY', 'Money Requested', '2025-01-16 09:00:00', 'System');
 
+                    stmt.finalize();
+                }
+            });
+        });
+
+        // Rate Audit Log
+        db.run(`CREATE TABLE IF NOT EXISTS rate_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rate_id TEXT NOT NULL,
+            corridor TEXT,
+            change_type TEXT NOT NULL,
+            field_name TEXT NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            admin_id TEXT NOT NULL,
+            admin_name TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )`, () => {
+            db.get("SELECT count(*) as count FROM rate_audit_log", (err, row) => {
+                if (row && row.count === 0) {
+                    const stmt = db.prepare(`INSERT INTO rate_audit_log
+                        (rate_id, corridor, change_type, field_name, old_value, new_value, admin_id, admin_name, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+                    stmt.run('1246', 'EUR → SGD', 'RATE', 'Money-R Buy', '1.3800', '1.3900', 'admin_john', 'John Smith', '2026-02-10 09:15:00');
+                    stmt.run('1246', 'EUR → SGD', 'FACTOR', 'Money (All) Factor', '0.95', '1.00', 'admin_john', 'John Smith', '2026-02-10 09:15:00');
+                    stmt.run('2309', 'GBP → INR', 'OVERRIDE', 'Override Enabled', 'No', 'Yes', 'admin_jane', 'Jane Doe', '2026-02-09 14:30:00');
+                    stmt.run('2309', 'GBP → INR', 'RATE', 'Money-W Sell', '104.5000', '105.0000', 'admin_jane', 'Jane Doe', '2026-02-09 14:32:00');
+                    stmt.run('2269', 'EUR → TRY', 'FACTOR', 'Airtime Factor', '1.00', '0.98', 'admin_john', 'John Smith', '2026-02-08 11:20:00');
+                    stmt.run('1203', 'NGN → USD', 'RATE', 'Money-W Buy', '640.0000', '643.0000', 'admin_jane', 'Jane Doe', '2026-02-07 16:45:00');
                     stmt.finalize();
                 }
             });
@@ -1505,6 +1535,40 @@ app.post('/api/credits/award-bonus', (req, res) => {
     }
 });
 
+
+// --- Rate Audit Log API ---
+
+// 1. Get Audit Log Entries
+app.get('/api/rate-audit-log', (req, res) => {
+    const { rate_id } = req.query;
+    let sql = 'SELECT * FROM rate_audit_log';
+    const params = [];
+    if (rate_id) {
+        sql += ' WHERE rate_id = ?';
+        params.push(rate_id);
+    }
+    sql += ' ORDER BY created_at DESC';
+    db.all(sql, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ data: rows });
+    });
+});
+
+// 2. Create Audit Log Entry
+app.post('/api/rate-audit-log', (req, res) => {
+    const { rate_id, corridor, change_type, field_name, old_value, new_value, admin_id, admin_name } = req.body;
+    if (!rate_id || !change_type || !field_name || !admin_id) {
+        return res.status(400).json({ error: 'Missing required fields: rate_id, change_type, field_name, admin_id' });
+    }
+    const stmt = db.prepare(`INSERT INTO rate_audit_log
+        (rate_id, corridor, change_type, field_name, old_value, new_value, admin_id, admin_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    stmt.run(rate_id, corridor || '', change_type, field_name, old_value || '', new_value || '', admin_id, admin_name || '', function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: this.lastID });
+    });
+    stmt.finalize();
+});
 
 // Handle SPA routing - return index.html for all non-API routes (MUST BE LAST)
 app.get(/.*/, (req, res) => {
