@@ -7,7 +7,12 @@ const UserCreditLedger = () => {
     const [userData, setUserData] = useState({
         balance: 125.50,
         currency: 'USD',
-        history: [] // Clear dummy history to avoid confusion
+        history: [
+            {
+                id: 1, created_at: new Date().toISOString(), type: 'EARNED', amount: 50.00,
+                scheme_name: 'Loyalty Bonus', notes: 'Ref: #9988', reason_code: 'LOYALTY'
+            }
+        ]
     });
     const [loading, setLoading] = useState(false);
     const [showAdjustModal, setShowAdjustModal] = useState(false);

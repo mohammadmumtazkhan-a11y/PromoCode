@@ -309,38 +309,36 @@ function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <Router>
-      <div className="app-layout">
-        <Sidebar isOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
-        {mobileOpen && (
-          <div className="sidebar-overlay" onClick={() => setMobileOpen(false)}></div>
-        )}
-        <main className="main-content">
-          <button className="mobile-header-btn" onClick={() => setMobileOpen(true)}>☰</button>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/financials/debits" element={<DebitLogs />} />
-            <Route path="/financials/payouts" element={<Payouts />} />
-            <Route path="/financials/commissions" element={<Commissions />} />
-            <Route path="/financials/promocodes" element={<PromoCodes />} />
-            <Route path="/merchants" element={<MerchantList />} />
-            <Route path="/merchants/onboard" element={<OnboardingWizard />} />
-            <Route path="/api-keys" element={<ApiKeys />} />
-            {/* Dev Route */}
-            <Route path="/test-checkout" element={<TestCheckout />} />
-            {/* Growth Engine */}
-            <Route path="/growth/referral-settings" element={<ReferralSettings />} />
-            <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
-            <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
+    <div className="app-layout">
+      <Sidebar isOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      {mobileOpen && (
+        <div className="sidebar-overlay" onClick={() => setMobileOpen(false)}></div>
+      )}
+      <main className="main-content">
+        <button className="mobile-header-btn" onClick={() => setMobileOpen(true)}>☰</button>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/financials/debits" element={<DebitLogs />} />
+          <Route path="/financials/payouts" element={<Payouts />} />
+          <Route path="/financials/commissions" element={<Commissions />} />
+          <Route path="/financials/promocodes" element={<PromoCodes />} />
+          <Route path="/merchants" element={<MerchantList />} />
+          <Route path="/merchants/onboard" element={<OnboardingWizard />} />
+          <Route path="/api-keys" element={<ApiKeys />} />
+          {/* Dev Route */}
+          <Route path="/test-checkout" element={<TestCheckout />} />
+          {/* Growth Engine */}
+          <Route path="/growth/referral-settings" element={<ReferralSettings />} />
+          <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
+          <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
 
-            {/* Configuration */}
-            <Route path="/configuration/rate-manager" element={<RateManager />} />
-            <Route path="/configuration/rate-manager/:id" element={<RateSettings />} />
-            <Route path="/configuration/rate-audit-log" element={<RateAuditLog />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+          {/* Configuration */}
+          <Route path="/configuration/rate-manager" element={<RateManager />} />
+          <Route path="/configuration/rate-manager/:id" element={<RateSettings />} />
+          <Route path="/configuration/rate-audit-log" element={<RateAuditLog />} />
+        </Routes>
+      </main>
+    </div>
   );
 }
 

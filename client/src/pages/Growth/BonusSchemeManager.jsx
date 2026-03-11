@@ -590,6 +590,7 @@ const BonusSchemeManager = () => {
                                                         onChange={(e) => setFormData({ ...formData, credit_amount: parseFloat(e.target.value) || 0 })}
                                                         required
                                                         min="0.01"
+                                                        placeholder="e.g. 10"
                                                     />
                                                 </div>
                                                 <div>
