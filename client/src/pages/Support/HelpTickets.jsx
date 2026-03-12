@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
 // Mock tickets — realistic sample data across all statuses
 const INITIAL_TICKETS = [
@@ -202,6 +203,9 @@ const StatusBadge = ({ status }) => {
 };
 
 const HelpTickets = () => {
+    const navigate = useNavigate();
+    const { ticketId } = useParams();
+    const isDetailRoute = Boolean(ticketId);
     const [tickets, setTickets] = useState(INITIAL_TICKETS);
     const [activeTab, setActiveTab] = useState('New');
     const [selectedId, setSelectedId] = useState(null);
@@ -265,8 +269,8 @@ const HelpTickets = () => {
         return base.filter(t => t.status === activeTab);
     }, [tickets, activeTab, filterTicketNo, filterEmail, filterName, filterSubject, searchQuery]);
 
-    // Auto-select first ticket when tab changes
-    const selectedTicket = tickets.find(t => t.ticketId === selectedId);
+    const activeTicketId = isDetailRoute ? ticketId : selectedId;
+    const selectedTicket = tickets.find(t => t.ticketId === activeTicketId);
 
     const handleTabChange = (tab) => {
         setActiveTab(tab);
@@ -274,18 +278,22 @@ const HelpTickets = () => {
         setSelectedId(filtered.length > 0 ? filtered[0].ticketId : null);
     };
 
-    // Select first ticket on mount
+    // Keep selected ticket in sync with route mode.
     React.useEffect(() => {
+        if (isDetailRoute) {
+            setSelectedId(ticketId);
+            return;
+        }
         const newTickets = INITIAL_TICKETS.filter(t => t.status === 'New');
         if (newTickets.length > 0) {
             setSelectedId(newTickets[0].ticketId);
         }
-    }, []);
+    }, [isDetailRoute, ticketId]);
 
     const handleSendReply = () => {
         if (!replyText.trim()) return;
         setTickets(prev => prev.map(t => {
-            if (t.ticketId === selectedId) {
+            if (t.ticketId === activeTicketId) {
                 const now = new Date();
                 const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                 return {
@@ -302,7 +310,7 @@ const HelpTickets = () => {
 
     const handleStatusChange = (newStatus) => {
         setTickets(prev => prev.map(t => {
-            if (t.ticketId === selectedId) {
+            if (t.ticketId === activeTicketId) {
                 return { ...t, status: newStatus };
             }
             return t;
@@ -322,6 +330,8 @@ const HelpTickets = () => {
 
     return (
         <div style={{ fontFamily: "'Inter', sans-serif" }}>
+            {!isDetailRoute && (
+            <>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -487,16 +497,16 @@ const HelpTickets = () => {
                         <div
                             key={t.ticketId}
                             id={`ticket-row-${t.ticketId}`}
-                            onClick={() => setSelectedId(t.ticketId)}
+                            onClick={() => navigate(`/support/help-tickets/${t.ticketId}`)}
                             style={{
                                 display: 'grid', gridTemplateColumns: '100px 1fr 1fr 1.5fr 110px',
                                 padding: '14px 24px', borderBottom: '1px solid #f3f4f6',
                                 cursor: 'pointer', alignItems: 'center',
-                                background: selectedId === t.ticketId ? '#faf5ff' : 'white',
+                                background: ticketId === t.ticketId ? '#faf5ff' : 'white',
                                 transition: 'background 0.15s',
                             }}
-                            onMouseEnter={e => { if (selectedId !== t.ticketId) e.currentTarget.style.background = '#fafafa'; }}
-                            onMouseLeave={e => { if (selectedId !== t.ticketId) e.currentTarget.style.background = 'white'; }}
+                            onMouseEnter={e => { if (ticketId !== t.ticketId) e.currentTarget.style.background = '#fafafa'; }}
+                            onMouseLeave={e => { if (ticketId !== t.ticketId) e.currentTarget.style.background = 'white'; }}
                         >
                             <div style={{ color: '#5b21b6', fontWeight: 600, fontSize: '0.85rem' }}>{t.ticketId}</div>
                             <div style={{ color: '#374151', fontSize: '0.85rem' }}>{t.createdAt}</div>
@@ -507,16 +517,46 @@ const HelpTickets = () => {
                     ))
                 )}
             </div>
+            </>
+            )}
 
             {/* Ticket Detail Panel (shown below when a ticket is selected) */}
-            {selectedTicket && (
+            {isDetailRoute && !selectedTicket && (
                 <div style={{
-                    marginTop: 24, background: 'white', borderRadius: 12,
+                    marginTop: 12, background: 'white', borderRadius: 12,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '24px 28px',
+                }}>
+                    <h2 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', color: '#111827' }}>Ticket not found</h2>
+                    <button
+                        onClick={() => navigate('/support/help-tickets')}
+                        style={{
+                            background: 'white', color: '#5b21b6', border: '1px solid #5b21b6',
+                            padding: '8px 18px', borderRadius: 6, fontWeight: 600,
+                            fontSize: '0.85rem', cursor: 'pointer',
+                        }}
+                    >
+                        Back to help tickets
+                    </button>
+                </div>
+            )}
+            {isDetailRoute && selectedTicket && (
+                <div style={{
+                    marginTop: 12, background: 'white', borderRadius: 12,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                     overflow: 'hidden',
                 }}>
                     {/* Detail Header */}
                     <div style={{ padding: '20px 28px', borderBottom: '1px solid #f3f4f6' }}>
+                        <button
+                            onClick={() => navigate('/support/help-tickets')}
+                            style={{
+                                background: 'white', color: '#5b21b6', border: '1px solid #c4b5fd',
+                                padding: '6px 12px', borderRadius: 6, fontWeight: 600,
+                                fontSize: '0.8rem', cursor: 'pointer', marginBottom: 14,
+                            }}
+                        >
+                            ← Back to list
+                        </button>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                             <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#5b21b6' }}>
                                 #{selectedTicket.ticketId}

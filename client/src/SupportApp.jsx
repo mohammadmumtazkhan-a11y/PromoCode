@@ -50,6 +50,7 @@ const SupportSidebar = ({ isOpen, onClose }) => {
     const location = useLocation();
     const { agent, logout } = useSupportAuth();
     const isActive = (path) => location.pathname === path;
+    const isHelpTicketsActive = location.pathname.startsWith('/support/help-tickets');
 
     const itemStyle = (active) => ({
         display: 'flex', alignItems: 'center', gap: 12,
@@ -91,7 +92,7 @@ const SupportSidebar = ({ isOpen, onClose }) => {
                 <Link to="/support/transactions" style={itemStyle(isActive('/support/transactions'))} onClick={onClose}>
                     <span>🔍</span> Transaction Search
                 </Link>
-                <Link to="/support/help-tickets" style={itemStyle(isActive('/support/help-tickets'))} onClick={onClose}>
+                <Link to="/support/help-tickets" style={itemStyle(isHelpTicketsActive)} onClick={onClose}>
                     <span>🎫</span> Help Tickets
                 </Link>
                 <Link to="/support/rates" style={itemStyle(isActive('/support/rates'))} onClick={onClose}>
@@ -164,6 +165,7 @@ function SupportApp() {
                     <Route index element={<SupportDashboard />} />
                     <Route path="transactions" element={<TransactionSearch />} />
                     <Route path="help-tickets" element={<HelpTickets />} />
+                    <Route path="help-tickets/:ticketId" element={<HelpTickets />} />
                     <Route path="rates" element={<SupportRates />} />
                     <Route path="change-password" element={<ChangePassword />} />
                 </Route>
@@ -173,3 +175,4 @@ function SupportApp() {
 }
 
 export default SupportApp;
+
