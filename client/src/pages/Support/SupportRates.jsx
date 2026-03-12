@@ -68,16 +68,156 @@ const SupportRates = () => {
         borderBottom: '1px solid #f3f4f6'
     };
 
+    const exportColumns = [
+        { label: 'Ref', value: (rate) => rate.id },
+        { label: 'From-To', value: (rate) => `${rate.from} - ${rate.to}` },
+        { label: 'Money-R', value: (rate) => rate.moneyR },
+        { label: 'Mobile-R', value: (rate) => rate.mobileR },
+        { label: 'Bill-R', value: (rate) => rate.billR },
+        { label: 'Money-W', value: (rate) => rate.moneyW },
+        { label: 'Status', value: (rate) => (rate.active ? 'Active' : 'Inactive') },
+    ];
+
+    const formatCsvValue = (value) => `"${String(value).replaceAll('"', '""')}"`;
+
+    const downloadBlob = (content, fileName, mimeType) => {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadCsv = () => {
+        const headerRow = exportColumns.map((column) => formatCsvValue(column.label)).join(',');
+        const dataRows = filtered.map((rate) =>
+            exportColumns.map((column) => formatCsvValue(column.value(rate))).join(',')
+        );
+        downloadBlob(
+            [headerRow, ...dataRows].join('\n'),
+            'exchange-rates-corridors.csv',
+            'text/csv;charset=utf-8;'
+        );
+    };
+
+    const handleDownloadPdf = () => {
+        const printableRows = filtered.map((rate) => `
+            <tr>
+                ${exportColumns.map((column) => `<td>${column.value(rate)}</td>`).join('')}
+            </tr>
+        `).join('');
+        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
+        if (!printWindow) return;
+
+        printWindow.document.write(`
+            <!doctype html>
+            <html>
+                <head>
+                    <title>Exchange Rates & Corridors</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            margin: 24px;
+                            color: #111827;
+                        }
+                        h1 {
+                            margin: 0 0 8px;
+                            font-size: 24px;
+                        }
+                        p {
+                            margin: 0 0 20px;
+                            color: #4b5563;
+                            font-size: 14px;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            font-size: 12px;
+                        }
+                        th, td {
+                            border: 1px solid #d1d5db;
+                            padding: 8px 10px;
+                            text-align: left;
+                            vertical-align: top;
+                        }
+                        th {
+                            background: #f3f4f6;
+                        }
+                        @media print {
+                            body {
+                                margin: 12px;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Exchange Rates & Corridors</h1>
+                    <p>Exported ${new Date().toLocaleString()}</p>
+                    <table>
+                        <thead>
+                            <tr>${exportColumns.map((column) => `<th>${column.label}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${printableRows || `<tr><td colspan="${exportColumns.length}">No corridors match the current filters.</td></tr>`}
+                        </tbody>
+                    </table>
+                    <script>
+                        window.onload = function () {
+                            window.print();
+                        };
+                    </script>
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+    };
+
     return (
         <div style={{ fontFamily: "'Inter', sans-serif" }}>
             {/* Header */}
-            <div style={{ marginBottom: 24 }}>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1f2937', margin: '0 0 4px' }}>
-                    Exchange Rates & Corridors
-                </h1>
-                <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>
-                    View active rates and corridors (read-only)
-                </p>
+            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div>
+                    <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1f2937', margin: '0 0 4px' }}>
+                        Exchange Rates & Corridors
+                    </h1>
+                    <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>
+                        View active rates and corridors (read-only)
+                    </p>
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <button
+                        onClick={handleDownloadCsv}
+                        style={{
+                            padding: '10px 14px',
+                            borderRadius: 8,
+                            border: '1px solid #d1d5db',
+                            background: 'white',
+                            color: '#374151',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Download CSV
+                    </button>
+                    <button
+                        onClick={handleDownloadPdf}
+                        style={{
+                            padding: '10px 14px',
+                            borderRadius: 8,
+                            border: 'none',
+                            background: '#ea580c',
+                            color: 'white',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Download PDF
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
@@ -139,8 +279,6 @@ const SupportRates = () => {
                                 <th style={thStyle}>Mobile-R</th>
                                 <th style={thStyle}>Bill-R</th>
                                 <th style={thStyle}>Money-W</th>
-                                <th style={{ ...thStyle, color: '#ea580c' }}>P/L Factor</th>
-                                <th style={{ ...thStyle, color: '#ea580c' }}>P/L Comm %</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
                             </tr>
                         </thead>
@@ -159,8 +297,6 @@ const SupportRates = () => {
                                         {rate.moneyW}
                                         {rate.override && <OverrideBadge />}
                                     </td>
-                                    <td style={{ ...tdStyle, color: rate.plFactor.includes('-') ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{rate.plFactor}</td>
-                                    <td style={{ ...tdStyle, color: '#16a34a' }}>{rate.plCommPct}</td>
                                     <td style={{ ...tdStyle, textAlign: 'center' }}>
                                         <StatusBadge active={rate.active} />
                                     </td>
@@ -168,7 +304,7 @@ const SupportRates = () => {
                             ))}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={9} style={{ padding: '40px 16px', textAlign: 'center', color: '#9ca3af' }}>
+                                    <td colSpan={7} style={{ padding: '40px 16px', textAlign: 'center', color: '#9ca3af' }}>
                                         No corridors match your filters
                                     </td>
                                 </tr>

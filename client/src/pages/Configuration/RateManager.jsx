@@ -132,9 +132,7 @@ const RateManager = () => {
                                         <th style={{ padding: '12px 16px', textAlign: 'left', color: '#6b7280', fontWeight: 600 }}>Mobile-R</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'left', color: '#6b7280', fontWeight: 600 }}>Bill-R</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'left', color: '#6b7280', fontWeight: 600 }}>Money-W</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#ea580c', fontWeight: 600 }}>P/L Factor</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'left', color: '#ea580c', fontWeight: 600 }}>P/L Comm Base</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#ea580c', fontWeight: 600 }}>P/L Comm %</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'center', color: '#6b7280', fontWeight: 600 }}>Action</th>
                                     </tr>
                                 </thead>
@@ -153,9 +151,7 @@ const RateManager = () => {
                                                 {rate.moneyW}
                                                 {rate.override && <OverrideBadge />}
                                             </td>
-                                            <td style={{ padding: '12px 16px', color: rate.plFactor.includes('-') ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{rate.plFactor}</td>
                                             <td style={{ padding: '12px 16px', color: '#6b7280' }}>{rate.plCommBase}</td>
-                                            <td style={{ padding: '12px 16px', color: '#16a34a' }}>{rate.plCommPct}</td>
                                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                                 <button
                                                     onClick={() => navigate(`/configuration/rate-manager/${rate.id}`)}

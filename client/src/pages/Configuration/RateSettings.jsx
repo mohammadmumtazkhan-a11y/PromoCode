@@ -117,10 +117,7 @@ const SettingsGrid = ({ type }) => (
                     <th style={{ padding: '8px', textAlign: 'center', width: 60, fontWeight: 600, color: '#374151' }}>Ovr</th>
                     <th style={{ padding: '8px', textAlign: 'left', width: 80, fontWeight: 600, color: '#374151' }}>Comm ($)</th>
                     <th style={{ padding: '8px', textAlign: 'left', width: 80, fontWeight: 600, color: '#374151' }}>Comm (%)</th>
-                    {/* New Profit/Loss Columns */}
-                    <th style={{ padding: '8px', textAlign: 'left', width: 90, fontWeight: 600, color: '#ea580c' }}>P/L Fctr</th>
                     <th style={{ padding: '8px', textAlign: 'left', width: 90, fontWeight: 600, color: '#ea580c' }}>P/L ($)</th>
-                    <th style={{ padding: '8px', textAlign: 'left', width: 90, fontWeight: 600, color: '#ea580c' }}>P/L (%)</th>
                 </tr>
             </thead>
             <tbody>
@@ -131,10 +128,7 @@ const SettingsGrid = ({ type }) => (
                         <td style={{ padding: '8px 4px', textAlign: 'center' }}><input type="checkbox" /></td>
                         <td style={{ padding: '8px 4px' }}><Input value="0" style={{ textAlign: 'right', padding: '6px' }} /></td>
                         <td style={{ padding: '8px 4px' }}><Input value="0" style={{ textAlign: 'right', padding: '6px' }} /></td>
-                        {/* Mock P/L Data */}
-                        <td style={{ padding: '8px 8px', color: '#16a34a', fontWeight: 500 }}>+2.5%</td>
                         <td style={{ padding: '8px 8px', color: '#9ca3af', fontStyle: 'italic' }}>-</td>
-                        <td style={{ padding: '8px 8px', color: '#16a34a', fontWeight: 500 }}>+0.5%</td>
                     </tr>
                 ))}
             </tbody>
