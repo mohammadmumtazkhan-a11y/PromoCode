@@ -805,15 +805,6 @@ const HelpTickets = () => {
                         <h2 style={{ textAlign: 'center', color: '#374151', fontSize: '1.5rem', fontWeight: 700, marginTop: 0, marginBottom: 32 }}>Create a new ticket</h2>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#4b5563', marginBottom: 8 }}>Platform <span style={{ color: '#5b21b6' }}>*</span></label>
-                                <select style={{ ...inputStyle, appearance: 'none', background: 'white url("data:image/svg+xml,%3Csvg stroke=\'%236b7280\' fill=\'none\' stroke-width=\'2\' viewBox=\'0 0 24 24\' stroke-linecap=\'round\' stroke-linejoin=\'round\' height=\'1em\' width=\'1em\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 12px center' }}>
-                                    <option value="">Select platform</option>
-                                    <option value="web">Web</option>
-                                    <option value="ios">iOS</option>
-                                    <option value="android">Android</option>
-                                </select>
-                            </div>
                             
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#4b5563', marginBottom: 8 }}>Select user <span style={{ color: '#5b21b6' }}>*</span></label>

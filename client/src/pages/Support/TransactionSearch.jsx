@@ -12,9 +12,16 @@ const MOCK_TRANSACTIONS = [
         beneficiaryFirstName: 'OGBEIDE',
         beneficiaryLastName: 'OSAYANDE',
         beneficiaryPhone: '2348136931833',
+        beneficiaryEmail: 'ogbeide.o@example.com',
+        beneficiaryAddress: '12, Osayande St, Benin City, Nigeria',
         senderFirstName: 'OGBEIDE',
         senderLastName: 'OSAYANDE',
-        senderPhone: '',
+        senderPhone: '34678123456',
+        senderEmail: 'ogbeide.sender@example.com',
+        senderAddress: 'Calle de Alcala, 45, Madrid, Spain',
+        accountBalance: '₦ 1,250,000.00',
+        lastUpdated: '11 Mar 2026, 09:48',
+        channel: 'FURP (onepipe) / FunTech',
         serviceName: 'ZENITH BANK PLC',
         serviceCode: '1011',
         collectionMethod: 'BANKACCOUNT',
@@ -29,7 +36,8 @@ const MOCK_TRANSACTIONS = [
             { time: '09:48 AM', event: 'Transaction Initiated', status: 'complete' },
             { time: '09:50 AM', event: 'Funds Cleared', status: 'complete' },
             { time: '09:55 AM', event: 'Partner Payout Confirmed', status: 'complete' }
-        ]
+        ],
+        kycStatus: 'Passed'
     },
     {
         reference: 'MITO-7721003',
@@ -41,9 +49,16 @@ const MOCK_TRANSACTIONS = [
         beneficiaryFirstName: 'John',
         beneficiaryLastName: 'Doe',
         beneficiaryPhone: '254712345678',
+        beneficiaryEmail: 'john.doe@gmail.com',
+        beneficiaryAddress: 'Moi Avenue, Nairobi, Kenya',
         senderFirstName: 'Jane',
         senderLastName: 'Smith',
         senderPhone: '447712345678',
+        senderEmail: 'jane.smith@btinternet.co.uk',
+        senderAddress: '221B Baker St, London, UK',
+        accountBalance: '£ 5,420.50',
+        lastUpdated: '08 Mar 2026, 14:10',
+        channel: 'Mito Direct',
         serviceName: 'M-PESA',
         serviceCode: 'MPESA-KE',
         collectionMethod: 'MOBILEMONEY',
@@ -59,7 +74,8 @@ const MOCK_TRANSACTIONS = [
             { time: '09:02 AM', event: 'Funds Cleared', status: 'complete' },
             { time: '09:10 AM', event: 'Partner Payout Confirmed', status: 'complete' },
             { time: '09:12 AM', event: 'Transaction Complete', status: 'complete' },
-        ]
+        ],
+        kycStatus: 'Pending'
     }
 ];
 
@@ -70,9 +86,44 @@ const statusColors = {
     'Failed': { bg: '#fee2e2', color: '#991b1b' },
 };
 
+const kycStatusColors = {
+    'Passed': { bg: '#dcfce7', color: '#166534', icon: '✅' },
+    'Pending': { bg: '#fef3c7', color: '#92400e', icon: '⏳' },
+    'Failed': { bg: '#fee2e2', color: '#991b1b', icon: '❌' },
+};
+
+// PII Masking Helper
+const maskPII = (value, type) => {
+    if (!value) return 'N/A';
+    
+    switch (type) {
+        case 'phone': {
+            const clean = value.replace(/\s+/g, '');
+            if (clean.length <= 4) return value;
+            return '*'.repeat(clean.length - 4) + clean.slice(-4);
+        }
+        case 'email': {
+            const [local, domain] = value.split('@');
+            if (!domain) return value;
+            if (local.length <= 2) return '*@' + domain;
+            return local[0] + '*'.repeat(local.length - 2) + local.slice(-1) + '@' + domain;
+        }
+        case 'address': {
+            const parts = value.split(',');
+            if (parts.length <= 1) return '***';
+            return '***, ' + parts.slice(1).join(',').trim();
+        }
+        case 'balance':
+            return '****';
+            
+        default:
+            return value;
+    }
+};
+
 // Audit Trail Timeline
 const AuditTrail = ({ trail }) => (
-    <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid #e5e7eb' }}>
+    <div style={{ padding: '24px 0' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#1f2937', marginBottom: 16 }}>📋 Audit Trail</h3>
         <div style={{ position: 'relative', paddingLeft: 28 }}>
             {/* Vertical Line */}
@@ -112,6 +163,7 @@ const TransactionSearch = () => {
     const [query, setQuery] = useState('');
     const [result, setResult] = useState(null);
     const [searched, setSearched] = useState(false);
+    const [activeTab, setActiveTab] = useState('Details');
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -120,10 +172,11 @@ const TransactionSearch = () => {
         );
         setResult(found || null);
         setSearched(true);
+        setActiveTab('Details'); // Always reset tab on new search
     };
 
     return (
-        <div style={{ fontFamily: "'Inter', sans-serif", maxWidth: 800 }}>
+        <div style={{ fontFamily: "'Inter', sans-serif", maxWidth: 1000 }}>
             {/* Header */}
             <div style={{ marginBottom: 24 }}>
                 <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b', margin: '0 0 4px' }}>
@@ -179,6 +232,221 @@ const TransactionSearch = () => {
                 Try searching for these mock references: <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('05023676980')}>05023676980</strong> or <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('MITO-7721003')}>MITO-7721003</strong>
             </div>
 
+            {/* Results Section */}
+            {searched && result && (
+                <div id="search-results">
+                    {/* Summary Highlights (Mini Table) */}
+                    <div style={{
+                        background: 'white', borderRadius: 12, overflow: 'hidden',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: 24,
+                        border: '1px solid #f1f5f9'
+                    }}>
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr 1fr',
+                            padding: '14px 20px', borderBottom: '1px solid #e5e7eb',
+                            fontSize: '0.75rem', fontWeight: 700, color: '#64748b',
+                            textTransform: 'uppercase', letterSpacing: '0.025em'
+                        }}>
+                            <div>Ref #</div>
+                            <div>Amount Ng.</div>
+                            <div>Status</div>
+                            <div>Date</div>
+                            <div>Channel</div>
+                        </div>
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr 1fr',
+                            padding: '14px 20px', fontSize: '0.85rem', color: '#1e293b',
+                            alignItems: 'center'
+                        }}>
+                            <div style={{ color: '#ea580c', fontWeight: 600 }}>{result.reference}</div>
+                            <div>{result.payout}</div>
+                            <div>
+                                <span style={{
+                                    padding: '4px 10px', borderRadius: 99, fontSize: '0.75rem', fontWeight: 600,
+                                    background: statusColors[result.status]?.bg || '#f3f4f6',
+                                    color: statusColors[result.status]?.color || '#374151'
+                                }}>
+                                    {result.status}
+                                </span>
+                            </div>
+                            <div>{result.lastUpdated}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{result.channel}</div>
+                        </div>
+                    </div>
+
+                    {/* Detailed Card with Tabs */}
+                    <div style={{
+                        background: 'white', borderRadius: 12,
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
+                        border: '1px solid #f1f5f9', overflow: 'hidden'
+                    }}>
+                        {/* Tabs Navigation */}
+                        <div style={{
+                            display: 'flex', borderBottom: '1px solid #f1f5f9',
+                            background: '#f8fafc'
+                        }}>
+                            {['Details', 'Trail', 'KYC'].map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    style={{
+                                        padding: '14px 28px', border: 'none', background: 'none',
+                                        fontSize: '0.9rem', fontWeight: activeTab === tab ? 700 : 500,
+                                        color: activeTab === tab ? '#ea580c' : '#64748b',
+                                        borderBottom: activeTab === tab ? '3px solid #ea580c' : '3px solid transparent',
+                                        cursor: 'pointer', transition: 'all 0.2s',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Tab Content */}
+                        <div style={{ padding: 28 }}>
+                            {activeTab === 'Details' && (
+                                <div id="details-tab">
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, max-content) 1fr', rowGap: 12, columnGap: 24, fontSize: '0.9rem' }}>
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>MTN:</div>
+                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{result.mtn}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Affiliate:</div>
+                                        <div style={{ color: '#1e293b' }}>{result.affiliate}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Status:</div>
+                                        <div style={{ color: statusColors[result.status]?.color, fontWeight: 600 }}>{result.status}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Type:</div>
+                                        <div>{result.type}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Sending Country:</div>
+                                        <div>{result.sendingCountry}</div>
+
+                                        <div style={{ margin: '8px 0', gridColumn: 'span 2', height: '1px', background: '#f1f5f9' }}></div>
+
+                                        {/* Beneficiary Details (Masked) */}
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Beneficiary Name:</div>
+                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{result.beneficiaryFirstName} {result.beneficiaryLastName}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Beneficiary Contact:</div>
+                                        <div style={{ color: '#ea580c', fontWeight: 600 }}>{maskPII(result.beneficiaryPhone, 'phone')}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Beneficiary Email:</div>
+                                        <div>{maskPII(result.beneficiaryEmail, 'email')}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Beneficiary Address:</div>
+                                        <div style={{ fontSize: '0.85rem' }}>{maskPII(result.beneficiaryAddress, 'address')}</div>
+
+                                        <div style={{ margin: '8px 0', gridColumn: 'span 2', height: '1px', background: '#f1f5f9' }}></div>
+
+                                        {/* Sender Details (Masked) */}
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Sender Name:</div>
+                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{result.senderFirstName} {result.senderLastName}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Sender Contact:</div>
+                                        <div style={{ color: '#ea580c', fontWeight: 600 }}>{maskPII(result.senderPhone, 'phone')}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Sender Email:</div>
+                                        <div>{maskPII(result.senderEmail, 'email')}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Sender Address:</div>
+                                        <div style={{ fontSize: '0.85rem' }}>{maskPII(result.senderAddress, 'address')}</div>
+
+                                        <div style={{ margin: '8px 0', gridColumn: 'span 2', height: '1px', background: '#f1f5f9' }}></div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Service Name:</div>
+                                        <div>{result.serviceName}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Service Code:</div>
+                                        <div style={{ fontFamily: 'monospace' }}>{result.serviceCode}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Collection Method:</div>
+                                        <div>{result.collectionMethod}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Account Number:</div>
+                                        <div style={{ fontWeight: 600 }}>{result.account}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Rate:</div>
+                                        <div>{result.rate}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Payout:</div>
+                                        <div style={{ color: '#059669', fontWeight: 700 }}>{result.payout}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Settle Amount:</div>
+                                        <div>{result.settle}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Total Paid:</div>
+                                        <div style={{ fontWeight: 700 }}>{result.total}</div>
+
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Comments:</div>
+                                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{result.comments}</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'Trail' && (
+                                <div id="trail-tab">
+                                    <AuditTrail trail={result.auditTrail} />
+                                </div>
+                            )}
+
+                            {activeTab === 'KYC' && (
+                                <div id="kyc-tab" style={{ textAlign: 'center', padding: '60px 0' }}>
+                                    <div style={{ fontSize: '4rem', marginBottom: 20 }}>
+                                        {kycStatusColors[result.kycStatus]?.icon || '🛡️'}
+                                    </div>
+                                    <h3 style={{ margin: '0 0 8px', color: '#64748b', fontSize: '1rem', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        KYC Verification Status
+                                    </h3>
+                                    <div style={{
+                                        display: 'inline-block',
+                                        padding: '12px 32px',
+                                        borderRadius: 12,
+                                        fontSize: '1.5rem',
+                                        fontWeight: 800,
+                                        background: kycStatusColors[result.kycStatus]?.bg || '#f3f4f6',
+                                        color: kycStatusColors[result.kycStatus]?.color || '#374151',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                                        border: `1px solid ${kycStatusColors[result.kycStatus]?.color}20`
+                                    }}>
+                                        {result.kycStatus || 'Not Available'}
+                                    </div>
+                                    <p style={{ marginTop: 24, color: '#94a3b8', fontSize: '0.9rem' }}>
+                                        Last updated: {result.lastUpdated}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* No Result */}
+            {searched && !result && (
+                <div id="no-result" style={{
+                    textAlign: 'center', padding: '80px 20px',
+                    background: 'white', borderRadius: 12,
+                    border: '1px solid #f1f5f9',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
+                }}>
+                    <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'center' }}>
+                        <div style={{ position: 'relative', width: 64, height: 64 }}>
+                            <div style={{ position: 'absolute', bottom: -10, left: 12, right: 12, height: 10, background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 70%)' }}></div>
+                            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="18" y="4" width="12" height="64" rx="6" transform="rotate(-45 18 4)" fill="#fb7185" />
+                                <rect x="4" y="46" width="12" height="64" rx="6" transform="rotate(-135 4 46)" fill="#f43f5e" />
+                                <rect x="20" y="6" width="4" height="60" rx="2" transform="rotate(-45 20 6)" fill="#fda4af" opacity="0.8" />
+                            </svg>
+                        </div>
+                    </div>
+                    <h3 style={{ color: '#334155', fontWeight: 700, marginBottom: 12, fontSize: '1.35rem' }}>No Transaction Found</h3>
+                    <p style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
+                        No transaction matches "{query}". Check the reference and try again.
+                    </p>
+                </div>
+            )}
+
             {/* Empty State */}
             {!searched && (
                 <div id="empty-state" style={{
@@ -192,127 +460,6 @@ const TransactionSearch = () => {
                     <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
                         Enter an exact reference number to view transaction details and audit trail.
                     </p>
-                </div>
-            )}
-
-            {/* No Result */}
-            {searched && !result && (
-                <div id="no-result" style={{
-                    textAlign: 'center', padding: '80px 20px',
-                    background: 'white', borderRadius: 12,
-                    border: '1px solid #f1f5f9',
-                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
-                }}>
-                    <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'center' }}>
-                        {/* 3D-ish Pinkish Red Cross */}
-                        <div style={{ position: 'relative', width: 64, height: 64 }}>
-                            {/* Shadow under the cross */}
-                            <div style={{ position: 'absolute', bottom: -10, left: 12, right: 12, height: 10, background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 70%)' }}></div>
-                            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <rect x="18" y="4" width="12" height="64" rx="6" transform="rotate(-45 18 4)" fill="#fb7185" />
-                                <rect x="4" y="46" width="12" height="64" rx="6" transform="rotate(-135 4 46)" fill="#f43f5e" />
-                                {/* Highlights to create 3D bevel effect */}
-                                <rect x="20" y="6" width="4" height="60" rx="2" transform="rotate(-45 20 6)" fill="#fda4af" opacity="0.8" />
-                            </svg>
-                        </div>
-                    </div>
-                    <h3 style={{ color: '#334155', fontWeight: 700, marginBottom: 12, fontSize: '1.35rem' }}>No Transaction Found</h3>
-                    <p style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
-                        No transaction matches "{query}". Check the reference and try again.
-                    </p>
-                </div>
-            )}
-
-            {/* Result Card */}
-            {searched && result && (
-                <div id="transaction-result" style={{
-                    background: 'white', borderRadius: 12, padding: 28,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
-                }}>
-                    {/* Reference Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-                        <div>
-                            <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: 2 }}>Reference</div>
-                            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1f2937' }}>{result.reference}</div>
-                        </div>
-                        <span style={{
-                            padding: '6px 16px', borderRadius: 99,
-                            fontSize: '0.85rem', fontWeight: 600,
-                            background: statusColors[result.status]?.bg || '#f3f4f6',
-                            color: statusColors[result.status]?.color || '#374151'
-                        }}>
-                            {result.status}
-                        </span>
-                    </div>
-
-                    {/* Detailed Fields List based on Screenshot */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, max-content) 1fr', rowGap: 8, columnGap: 16, fontSize: '0.95rem', color: '#1f2937' }}>
-                        <div style={{ color: '#4b5563' }}>MTN:</div>
-                        <div>{result.mtn || result.reference}</div>
-
-                        <div style={{ color: '#4b5563' }}>Affiliate:</div>
-                        <div>{result.affiliate || result.mto || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Status:</div>
-                        <div>{result.status}</div>
-
-                        <div style={{ color: '#4b5563' }}>Type:</div>
-                        <div>{result.type || 'MONEYTRANSFER'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Sending Country:</div>
-                        <div>{result.sendingCountry || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Beneficiary First Name:</div>
-                        <div>{result.beneficiaryFirstName || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Beneficiary Last Name:</div>
-                        <div>{result.beneficiaryLastName || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Beneficiary Contact Number:</div>
-                        <div style={{ fontFamily: 'monospace', color: '#991b1b' }}>{result.beneficiaryPhone}</div>
-
-                        <div style={{ color: '#4b5563' }}>Sender First Name:</div>
-                        <div>{result.senderFirstName || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Sender Last Name:</div>
-                        <div>{result.senderLastName || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Sender Contact Number:</div>
-                        <div style={{ fontFamily: 'monospace', color: '#991b1b' }}>{result.senderPhone}</div>
-
-                        <div style={{ color: '#4b5563' }}>Service Name:</div>
-                        <div>{result.serviceName || result.provider || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Service Code:</div>
-                        <div>{result.serviceCode || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Collection Method:</div>
-                        <div>{result.collectionMethod || 'BANKACCOUNT'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Account Number:</div>
-                        <div>{result.account}</div>
-
-                        <div style={{ color: '#4b5563' }}>Rate:</div>
-                        <div>{result.rate}</div>
-
-                        <div style={{ color: '#4b5563' }}>Payout:</div>
-                        <div>{result.payout || result.receiveAmount}</div>
-
-                        <div style={{ color: '#4b5563' }}>Settle:</div>
-                        <div>{result.settle || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Total:</div>
-                        <div>{result.total || result.sendAmount}</div>
-
-                        <div style={{ color: '#4b5563' }}>Comments:</div>
-                        <div>{result.comments || 'N/A'}</div>
-
-                        <div style={{ color: '#4b5563' }}>Notes:</div>
-                        <div>{result.notes || ''}</div>
-                    </div>
-
-                    {/* Audit Trail */}
-                    <AuditTrail trail={result.auditTrail} />
                 </div>
             )}
         </div>
