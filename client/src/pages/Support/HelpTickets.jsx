@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { supportModalTitleStyle, supportPageTitleStyle, supportSectionTitleStyle } from './supportTypography';
 
 // Mock tickets — realistic sample data across all statuses
 const INITIAL_TICKETS = [
@@ -335,7 +336,7 @@ const HelpTickets = () => {
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#5b21b6', margin: 0 }}>
+                    <h1 style={{ ...supportPageTitleStyle, margin: 0 }}>
                         Help tickets ({tabCounts[activeTab]})
                     </h1>
                     <button 
@@ -548,7 +549,17 @@ const HelpTickets = () => {
                     {/* Detail Header */}
                     <div style={{ padding: '20px 28px', borderBottom: '1px solid #f3f4f6' }}>
                         <button
-                            onClick={() => navigate(-1)}
+                            onClick={() => {
+                                // Check if we came from transaction search
+                                const txnContext = sessionStorage.getItem('txnSearchContext');
+                                if (txnContext) {
+                                    const { query } = JSON.parse(txnContext);
+                                    sessionStorage.removeItem('txnSearchContext');
+                                    navigate(`/support/transactions?q=${query}`);
+                                } else {
+                                    navigate(-1);
+                                }
+                            }}
                             style={{
                                 background: 'white', color: '#5b21b6', border: '1px solid #c4b5fd',
                                 padding: '6px 12px', borderRadius: 6, fontWeight: 600,
@@ -558,7 +569,7 @@ const HelpTickets = () => {
                             ← Back to list
                         </button>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#5b21b6' }}>
+                            <h2 style={{ ...supportSectionTitleStyle, fontSize: '1.25rem' }}>
                                 #{selectedTicket.ticketId}
                             </h2>
                             <span style={{ cursor: 'pointer', fontSize: '1.2rem', color: '#6b7280' }}>⋮</span>
@@ -842,7 +853,7 @@ const HelpTickets = () => {
                             ✕
                         </button>
 
-                        <h2 style={{ textAlign: 'center', color: '#374151', fontSize: '1.5rem', fontWeight: 700, marginTop: 0, marginBottom: 32 }}>Create a new ticket</h2>
+                        <h2 style={supportModalTitleStyle}>Create a new ticket</h2>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                             

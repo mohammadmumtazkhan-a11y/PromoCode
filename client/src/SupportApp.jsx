@@ -9,6 +9,8 @@ import TransactionSearch from './pages/Support/TransactionSearch';
 import HelpTickets from './pages/Support/HelpTickets';
 import SupportRates from './pages/Support/SupportRates';
 import ChangePassword from './pages/Support/ChangePassword';
+import TransactionDetails from './pages/Support/TransactionDetails';
+import { supportSectionTitleStyle } from './pages/Support/supportTypography';
 
 // Auth Context
 export const SupportAuthContext = createContext(null);
@@ -81,7 +83,7 @@ const SupportSidebar = ({ isOpen, onClose }) => {
             {/* Brand */}
             <div style={{ height: 64, display: 'flex', alignItems: 'center', padding: '0 24px', borderBottom: '1px solid #f3f4f6', marginBottom: 16 }}>
                 <img src={logo} alt="Mito.Money" style={{ height: 32, width: 'auto', marginRight: 12 }} />
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#1f2937' }}>Support Portal</h2>
+                <h2 style={supportSectionTitleStyle}>Support Portal</h2>
             </div>
 
             {/* Nav */}
@@ -142,7 +144,7 @@ const SupportLayout = () => {
     const [mobileOpen, setMobileOpen] = useState(false);
 
     return (
-        <div className="app-layout">
+        <div className="app-layout support-shell">
             <SupportSidebar isOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
             {mobileOpen && (
                 <div className="sidebar-overlay" onClick={() => setMobileOpen(false)}></div>
@@ -164,6 +166,7 @@ function SupportApp() {
                 <Route element={<ProtectedRoute />}>
                     <Route index element={<SupportDashboard />} />
                     <Route path="transactions" element={<TransactionSearch />} />
+                    <Route path="transactions/:reference" element={<TransactionDetails />} />
                     <Route path="help-tickets" element={<HelpTickets />} />
                     <Route path="help-tickets/:ticketId" element={<HelpTickets />} />
                     <Route path="rates" element={<SupportRates />} />
@@ -175,4 +178,3 @@ function SupportApp() {
 }
 
 export default SupportApp;
-

@@ -13,7 +13,7 @@ test.describe('Bonus & Wallet Ledger', () => {
         // Sidebar Navigation
         await page.click('text=Bonus Scheme Manager');
 
-        await expect(page.getByText('Bonus Scheme Manager')).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('heading', { name: 'Bonus Scheme Manager' })).toBeVisible({ timeout: 15000 });
 
         // Create Scheme - Use REQUEST_MONEY (simpler, no extra fields)
         const schemeName = `Test Scheme ${Date.now()}`;
