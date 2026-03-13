@@ -436,7 +436,7 @@ const SupportRates = () => {
                         )}
                     </div>
 
-                    <div style={{ position: 'relative', flex: '1 1 180px' }}>
+                    <div style={{ position: 'relative', gridColumn: 'span 2' }}>
                         <input
                             list="country-list"
                             type="text"
@@ -556,7 +556,7 @@ const SupportRates = () => {
                                 <th style={thStyle}>Send Country</th>
                                 <th style={thStyle}>Receive Country</th>
                                 <th style={thStyle}>From-To</th>
-                                <th style={thStyle}>Rates</th>
+                                <th style={{ ...thStyle, fontSize: '0.85rem' }}>Rates</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
                             </tr>
                         </thead>
@@ -577,7 +577,7 @@ const SupportRates = () => {
                                         {rate.receiveCountry}
                                     </td>
                                     <td style={{ ...tdStyle, fontWeight: 800, color: '#0f172a' }}>{rate.from} - {rate.to}</td>
-                                    <td style={{ ...tdStyle, fontFamily: "'Consolas', 'Courier New', monospace", fontSize: '0.92rem', fontWeight: 700, color: '#334155' }}>
+                                    <td style={{ ...tdStyle, fontFamily: "'Consolas', 'Courier New', monospace", fontSize: '1.01rem', fontWeight: 700, color: '#334155' }}>
                                         {rate.moneyR}
                                         {rate.override && <OverrideBadge />}
                                     </td>
