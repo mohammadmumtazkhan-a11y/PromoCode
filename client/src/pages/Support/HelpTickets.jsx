@@ -548,7 +548,7 @@ const HelpTickets = () => {
                     {/* Detail Header */}
                     <div style={{ padding: '20px 28px', borderBottom: '1px solid #f3f4f6' }}>
                         <button
-                            onClick={() => navigate('/support/help-tickets')}
+                            onClick={() => navigate(-1)}
                             style={{
                                 background: 'white', color: '#5b21b6', border: '1px solid #c4b5fd',
                                 padding: '6px 12px', borderRadius: 6, fontWeight: 600,
@@ -581,7 +581,7 @@ const HelpTickets = () => {
                             <span style={{ fontWeight: 600, color: '#374151' }}>User type</span>
                             <span style={{ color: '#1f2937' }}>{selectedTicket.userType}</span>
 
-                            <span style={{ fontWeight: 600, color: '#374151' }}>Order number</span>
+                            <span style={{ fontWeight: 600, color: '#374151' }}>Transaction Ref#</span>
                             <span style={{ color: '#1f2937' }}>{selectedTicket.orderNumber}</span>
 
                             <span style={{ fontWeight: 600, color: '#374151' }}>Platform</span>

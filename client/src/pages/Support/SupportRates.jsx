@@ -1,24 +1,50 @@
 import React, { useState } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import logo from '../../assets/logo.png';
 
-// Mock rates data (from existing RateManager)
 const MOCK_RATES = [
-    { id: 1246, from: 'EUR', to: 'SGD', moneyR: '1.0000 / 1.3900', mobileR: '1.0000 / 1.3900', billR: '1.0000 / 1.3900', moneyW: '1.2000 / 1.6680', plFactor: '+2.5%', plCommBase: 'N/A', plCommPct: '+1.0%', active: true },
-    { id: 2309, from: 'GBP', to: 'INR', moneyR: '1.0000 / 105.0000', mobileR: '1.0000 / 0.0000', billR: '1.0000 / 0.0000', moneyW: '1.0000 / 105.0000', plFactor: '+15.2%', plCommBase: 'N/A', plCommPct: '+0.5%', active: true, override: true },
-    { id: 2269, from: 'EUR', to: 'TRY', moneyR: '0.9800 / 4.2826', mobileR: '1.0000 / 4.3700', billR: '1.0000 / 4.3700', moneyW: '1.0000 / 800.0000', plFactor: '-1.5%', plCommBase: 'N/A', plCommPct: '+0.0%', active: true, override: true },
-    { id: 1203, from: 'NGN', to: 'USD', moneyR: '1.0000 / 0.0000', mobileR: '1.0000 / 0.0000', billR: '1.0000 / 0.0000', moneyW: '1.0000 / 643.0000', plFactor: '0.0%', plCommBase: 'N/A', plCommPct: '+0.0%', active: true, override: true },
-    { id: 3101, from: 'GBP', to: 'NGN', moneyR: '1.0000 / 1160.0000', mobileR: '1.0000 / 1155.0000', billR: '1.0000 / 1150.0000', moneyW: '1.0000 / 1165.0000', plFactor: '+8.3%', plCommBase: 'N/A', plCommPct: '+1.5%', active: true },
-    { id: 3205, from: 'USD', to: 'KES', moneyR: '1.0000 / 152.0000', mobileR: '1.0000 / 151.5000', billR: '1.0000 / 150.0000', moneyW: '1.0000 / 153.0000', plFactor: '+4.1%', plCommBase: 'N/A', plCommPct: '+0.8%', active: true },
-    { id: 3302, from: 'EUR', to: 'GHS', moneyR: '1.0000 / 14.2000', mobileR: '1.0000 / 14.0000', billR: '1.0000 / 13.8000', moneyW: '1.0000 / 14.5000', plFactor: '+3.7%', plCommBase: 'N/A', plCommPct: '+0.5%', active: false },
+    { id: 1246, affiliate: 'Rhemito', from: 'EUR', to: 'SGD', sendCountry: 'ALL', receiveCountry: 'ALL', moneyR: '1.0000 / 1.3900', active: true },
+    { id: 2309, affiliate: 'Rhemito', from: 'GBP', to: 'INR', sendCountry: 'United Kingdom', receiveCountry: 'India', moneyR: '1.0000 / 105.0000', active: true, override: true },
+    { id: 2269, affiliate: 'Rhemito', from: 'EUR', to: 'TRY', sendCountry: 'ALL', receiveCountry: 'Turkey', moneyR: '0.9800 / 4.2826', active: true, override: true },
+    { id: 1203, affiliate: 'BasketMouth', from: 'NGN', to: 'USD', sendCountry: 'Nigeria', receiveCountry: 'ALL', moneyR: '1.0000 / 0.0000', active: true, override: true },
+    { id: 3101, affiliate: 'Sika', from: 'GBP', to: 'NGN', sendCountry: 'ALL', receiveCountry: 'ALL', moneyR: '1.0000 / 1160.0000', active: true },
+    { id: 3205, affiliate: 'Rhemito', from: 'USD', to: 'KES', sendCountry: 'ALL', receiveCountry: 'ALL', moneyR: '1.0000 / 152.0000', active: true },
+    { id: 3302, affiliate: 'Rhemito', from: 'EUR', to: 'GHS', sendCountry: 'Europe', receiveCountry: 'Ghana', moneyR: '1.0000 / 14.2000', active: false },
+];
+
+const AFFILIATES = ['Rhemito', 'BasketMouth', 'Sika', 'FastPay', 'GlobalSend'];
+
+const PAGE_FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+
+const surfaceShadow = '0 24px 64px rgba(15, 23, 42, 0.08)';
+const panelBorder = '1px solid rgba(148, 163, 184, 0.18)';
+const mitoNavy = [7, 20, 53];
+const mitoOrange = [234, 88, 12];
+
+const exportColumns = [
+    { label: 'Ref', value: (rate) => rate.id },
+    { label: 'Send Country', value: (rate) => rate.sendCountry },
+    { label: 'Receive Country', value: (rate) => rate.receiveCountry },
+    { label: 'From-To', value: (rate) => `${rate.from} - ${rate.to}` },
+    { label: 'Rates', value: (rate) => `${rate.moneyR}${rate.override ? ' (Override)' : ''}` },
+    { label: 'Status', value: (rate) => (rate.active ? 'Active' : 'Inactive') },
 ];
 
 const StatusBadge = ({ active }) => (
     <span style={{
-        background: active ? '#dcfce7' : '#fee2e2',
-        color: active ? '#15803d' : '#b91c1c',
-        padding: '4px 12px',
-        borderRadius: 99,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 88,
+        padding: '6px 12px',
+        borderRadius: 999,
         fontSize: '0.75rem',
-        fontWeight: 600,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+        background: active ? 'rgba(22, 163, 74, 0.12)' : 'rgba(220, 38, 38, 0.12)',
+        color: active ? '#166534' : '#991b1b',
+        border: `1px solid ${active ? 'rgba(22, 163, 74, 0.18)' : 'rgba(220, 38, 38, 0.18)'}`
     }}>
         {active ? 'Active' : 'Inactive'}
     </span>
@@ -26,77 +52,99 @@ const StatusBadge = ({ active }) => (
 
 const OverrideBadge = () => (
     <span style={{
-        background: '#ffedd5',
-        color: '#c2410c',
-        padding: '2px 8px',
-        borderRadius: 4,
-        fontSize: '0.7rem',
-        fontWeight: 600,
-        marginLeft: 8,
-        border: '1px solid #fdba74'
+        display: 'inline-flex',
+        alignItems: 'center',
+        marginLeft: 10,
+        padding: '4px 8px',
+        borderRadius: 999,
+        fontSize: '0.68rem',
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        color: '#b45309',
+        background: 'rgba(245, 158, 11, 0.12)',
+        border: '1px solid rgba(245, 158, 11, 0.18)'
     }}>
         Override
     </span>
 );
 
+const iconButtonStyle = (primary = false) => ({
+    padding: '13px 18px',
+    borderRadius: 14,
+    border: primary ? '1px solid #c2410c' : '1px solid rgba(148, 163, 184, 0.26)',
+    background: primary
+        ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)'
+        : 'rgba(255, 255, 255, 0.92)',
+    color: primary ? '#fff' : '#1e293b',
+    fontWeight: 700,
+    fontSize: '0.92rem',
+    letterSpacing: '0.01em',
+    cursor: 'pointer',
+    boxShadow: primary ? '0 16px 30px rgba(234, 88, 12, 0.22)' : '0 12px 24px rgba(15, 23, 42, 0.05)',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+});
+
+const formatCsvValue = (value) => `"${String(value).replaceAll('"', '""')}"`;
+
+const downloadBlob = (content, fileName, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
+const getImageDataUrl = async (src) => {
+    try {
+        const response = await fetch(src);
+        const blob = await response.blob();
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch {
+        return null;
+    }
+};
+
 const SupportRates = () => {
     const [fromFilter, setFromFilter] = useState('all');
     const [toFilter, setToFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [affiliateSearch, setAffiliateSearch] = useState('Rhemito');
 
-    // Get unique currencies
-    const fromCurrencies = [...new Set(MOCK_RATES.map(r => r.from))];
-    const toCurrencies = [...new Set(MOCK_RATES.map(r => r.to))];
+    const fromCurrencies = [...new Set(MOCK_RATES.map((rate) => rate.from))];
+    const toCurrencies = [...new Set(MOCK_RATES.map((rate) => rate.to))];
 
-    // Filter
-    const filtered = MOCK_RATES.filter(r => {
-        if (fromFilter !== 'all' && r.from !== fromFilter) return false;
-        if (toFilter !== 'all' && r.to !== toFilter) return false;
-        if (statusFilter === 'active' && !r.active) return false;
-        if (statusFilter === 'inactive' && r.active) return false;
+    const filtered = MOCK_RATES.filter((rate) => {
+        if (affiliateSearch && !rate.affiliate.toLowerCase().includes(affiliateSearch.toLowerCase())) return false;
+        if (fromFilter !== 'all' && rate.from !== fromFilter) return false;
+        if (toFilter !== 'all' && rate.to !== toFilter) return false;
+        if (statusFilter === 'active' && !rate.active) return false;
+        if (statusFilter === 'inactive' && rate.active) return false;
         return true;
     });
 
-    const thStyle = {
-        padding: '12px 16px', textAlign: 'left',
-        color: '#6b7280', fontWeight: 600, fontSize: '0.8rem',
-        whiteSpace: 'nowrap'
-    };
-
-    const tdStyle = {
-        padding: '12px 16px', fontSize: '0.85rem',
-        borderBottom: '1px solid #f3f4f6'
-    };
-
-    const exportColumns = [
-        { label: 'Ref', value: (rate) => rate.id },
-        { label: 'From-To', value: (rate) => `${rate.from} - ${rate.to}` },
-        { label: 'Money-R', value: (rate) => rate.moneyR },
-        { label: 'Mobile-R', value: (rate) => rate.mobileR },
-        { label: 'Bill-R', value: (rate) => rate.billR },
-        { label: 'Money-W', value: (rate) => rate.moneyW },
-        { label: 'Status', value: (rate) => (rate.active ? 'Active' : 'Inactive') },
-    ];
-
-    const formatCsvValue = (value) => `"${String(value).replaceAll('"', '""')}"`;
-
-    const downloadBlob = (content, fileName, mimeType) => {
-        const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    };
+    const filterSummary = [
+        `Affiliate: ${affiliateSearch || 'All'}`,
+        `From: ${fromFilter === 'all' ? 'All' : fromFilter}`,
+        `To: ${toFilter === 'all' ? 'All' : toFilter}`,
+        `Status: ${statusFilter === 'all' ? 'All' : statusFilter}`,
+    ].join(' | ');
 
     const handleDownloadCsv = () => {
         const headerRow = exportColumns.map((column) => formatCsvValue(column.label)).join(',');
         const dataRows = filtered.map((rate) =>
             exportColumns.map((column) => formatCsvValue(column.value(rate))).join(',')
         );
+
         downloadBlob(
             [headerRow, ...dataRows].join('\n'),
             'exchange-rates-corridors.csv',
@@ -104,197 +152,368 @@ const SupportRates = () => {
         );
     };
 
-    const handleDownloadPdf = () => {
-        const printableRows = filtered.map((rate) => `
-            <tr>
-                ${exportColumns.map((column) => `<td>${column.value(rate)}</td>`).join('')}
-            </tr>
-        `).join('');
-        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
-        if (!printWindow) return;
+    const handleDownloadPdf = async () => {
+        const doc = new jsPDF({
+            orientation: 'landscape',
+            unit: 'pt',
+            format: 'a4',
+        });
 
-        printWindow.document.write(`
-            <!doctype html>
-            <html>
-                <head>
-                    <title>Exchange Rates & Corridors</title>
-                    <style>
-                        body {
-                            font-family: Arial, sans-serif;
-                            margin: 24px;
-                            color: #111827;
-                        }
-                        h1 {
-                            margin: 0 0 8px;
-                            font-size: 24px;
-                        }
-                        p {
-                            margin: 0 0 20px;
-                            color: #4b5563;
-                            font-size: 14px;
-                        }
-                        table {
-                            width: 100%;
-                            border-collapse: collapse;
-                            font-size: 12px;
-                        }
-                        th, td {
-                            border: 1px solid #d1d5db;
-                            padding: 8px 10px;
-                            text-align: left;
-                            vertical-align: top;
-                        }
-                        th {
-                            background: #f3f4f6;
-                        }
-                        @media print {
-                            body {
-                                margin: 12px;
-                            }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <h1>Exchange Rates & Corridors</h1>
-                    <p>Exported ${new Date().toLocaleString()}</p>
-                    <table>
-                        <thead>
-                            <tr>${exportColumns.map((column) => `<th>${column.label}</th>`).join('')}</tr>
-                        </thead>
-                        <tbody>
-                            ${printableRows || `<tr><td colspan="${exportColumns.length}">No corridors match the current filters.</td></tr>`}
-                        </tbody>
-                    </table>
-                    <script>
-                        window.onload = function () {
-                            window.print();
-                        };
-                    </script>
-                </body>
-            </html>
-        `);
-        printWindow.document.close();
+        const generatedAt = new Date().toLocaleString();
+        const tableBody = filtered.length > 0
+            ? filtered.map((rate) => exportColumns.map((column) => String(column.value(rate))))
+            : [[`No corridors match the current filters.`, '', '', '', '', '']];
+
+        const logoDataUrl = await getImageDataUrl(logo);
+
+        doc.setFillColor(...mitoNavy);
+        doc.roundedRect(28, 22, 785, 86, 18, 18, 'F');
+        doc.setFillColor(...mitoOrange);
+        doc.roundedRect(28, 22, 8, 86, 8, 8, 'F');
+
+        if (logoDataUrl) {
+            doc.addImage(logoDataUrl, 'PNG', 46, 42, 26, 26);
+        }
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(24);
+        doc.text('MITO | Exchange Rates & Corridors', logoDataUrl ? 82 : 48, 58);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(`Exported ${generatedAt}`, 48, 80);
+        doc.text(filterSummary, 48, 96);
+
+        autoTable(doc, {
+            startY: 132,
+            head: [exportColumns.map((column) => column.label)],
+            body: tableBody,
+            margin: { left: 28, right: 28, bottom: 28 },
+            theme: 'grid',
+            styles: {
+                font: 'helvetica',
+                fontSize: 9,
+                cellPadding: 9,
+                lineColor: [226, 232, 240],
+                lineWidth: 1,
+                textColor: [30, 41, 59],
+            },
+            headStyles: {
+                fillColor: mitoOrange,
+                textColor: [255, 255, 255],
+                fontStyle: 'bold',
+                halign: 'left',
+            },
+            bodyStyles: {
+                fillColor: [255, 255, 255],
+            },
+            alternateRowStyles: {
+                fillColor: [248, 250, 252],
+            },
+        });
+
+        doc.save('exchange-rates-corridors.pdf');
+    };
+
+    const selectStyle = {
+        padding: '14px 16px',
+        border: '1px solid rgba(148, 163, 184, 0.3)',
+        borderRadius: 14,
+        minHeight: 52,
+        background: '#fff',
+        color: '#334155',
+        fontSize: '0.95rem',
+        outline: 'none',
+        boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.02)',
+        flex: '1 1 180px'
+    };
+
+    const thStyle = {
+        padding: '16px 18px',
+        textAlign: 'left',
+        color: '#64748b',
+        fontWeight: 700,
+        fontSize: '0.77rem',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+        borderBottom: '1px solid rgba(226, 232, 240, 0.85)'
+    };
+
+    const tdStyle = {
+        padding: '18px',
+        fontSize: '0.92rem',
+        borderBottom: '1px solid rgba(226, 232, 240, 0.65)'
     };
 
     return (
-        <div style={{ fontFamily: "'Inter', sans-serif" }}>
-            {/* Header */}
-            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <div>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1f2937', margin: '0 0 4px' }}>
-                        Exchange Rates & Corridors
-                    </h1>
-                    <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>
-                        View active rates and corridors (read-only)
-                    </p>
-                </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    <button
-                        onClick={handleDownloadCsv}
-                        style={{
-                            padding: '10px 14px',
-                            borderRadius: 8,
-                            border: '1px solid #d1d5db',
-                            background: 'white',
-                            color: '#374151',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                        }}
-                    >
-                        Download CSV
-                    </button>
-                    <button
-                        onClick={handleDownloadPdf}
-                        style={{
-                            padding: '10px 14px',
-                            borderRadius: 8,
-                            border: 'none',
-                            background: '#ea580c',
-                            color: 'white',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                        }}
-                    >
-                        Download PDF
-                    </button>
-                </div>
-            </div>
-
-            {/* Filters */}
-            <div style={{
-                background: 'white', padding: 16, borderRadius: 12,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                marginBottom: 20, display: 'flex', gap: 16,
-                alignItems: 'center', flexWrap: 'wrap'
+        <div style={{
+            fontFamily: PAGE_FONT,
+            color: '#0f172a',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 24
+        }}>
+            <section style={{
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: 28,
+                border: panelBorder,
+                background: 'linear-gradient(135deg, #fff8f2 0%, #ffffff 42%, #f8fafc 100%)',
+                boxShadow: surfaceShadow,
+                padding: '28px clamp(20px, 3vw, 34px)'
             }}>
-                <select
-                    id="filter-from"
-                    value={fromFilter}
-                    onChange={(e) => setFromFilter(e.target.value)}
-                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, width: 180, color: '#374151' }}
-                >
-                    <option value="all">&lt;All From Currency&gt;</option>
-                    {fromCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <div style={{
+                    position: 'absolute',
+                    inset: 'auto -80px -110px auto',
+                    width: 280,
+                    height: 280,
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(249, 115, 22, 0.18) 0%, rgba(249, 115, 22, 0) 72%)'
+                }} />
 
-                <select
-                    id="filter-to"
-                    value={toFilter}
-                    onChange={(e) => setToFilter(e.target.value)}
-                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, width: 180, color: '#374151' }}
-                >
-                    <option value="all">&lt;All To Currency&gt;</option>
-                    {toCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: 18,
+                    flexWrap: 'wrap',
+                    position: 'relative'
+                }}>
+                    <div style={{ maxWidth: 700 }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 14,
+                            marginBottom: 16,
+                        }}>
+                            <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 12,
+                                padding: '10px 14px',
+                                borderRadius: 18,
+                                background: 'rgba(255, 255, 255, 0.82)',
+                                border: '1px solid rgba(251, 146, 60, 0.18)',
+                                boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)'
+                            }}>
+                                <img src={logo} alt="MITO" style={{ height: 28, width: 'auto', display: 'block' }} />
+                                <div style={{
+                                    width: 1,
+                                    alignSelf: 'stretch',
+                                    background: 'rgba(148, 163, 184, 0.4)'
+                                }} />
+                                <div style={{
+                                    color: '#0f172a',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 800,
+                                    letterSpacing: '0.08em',
+                                    textTransform: 'uppercase'
+                                }}>
+                                    MITO Support
+                                </div>
+                            </div>
+                            <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '8px 12px',
+                                borderRadius: 999,
+                                background: 'rgba(255, 255, 255, 0.78)',
+                                border: '1px solid rgba(251, 146, 60, 0.22)',
+                                color: '#c2410c',
+                                fontSize: '0.77rem',
+                                fontWeight: 800,
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase'
+                            }}>
+                                Read Only
+                            </div>
+                        </div>
+                        <h1 style={{ fontSize: '2.35rem', lineHeight: 1.04, margin: '0 0 10px', fontWeight: 800 }}>
+                            Exchange Rates & Corridors
+                        </h1>
+                        <p style={{ margin: 0, color: '#475569', fontSize: '1rem', lineHeight: 1.6 }}>
+                            Review the exact table currently on screen, then export the filtered result set in CSV or PDF format.
+                        </p>
+                    </div>
 
-                <select
-                    id="filter-status"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, width: 150, color: '#374151' }}
-                >
-                    <option value="all">&lt;All Status&gt;</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </select>
-
-                <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-                    Showing {filtered.length} of {MOCK_RATES.length} corridors
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <button
+                            type="button"
+                            onClick={handleDownloadCsv}
+                            style={iconButtonStyle(false)}
+                            aria-label="Download CSV"
+                        >
+                            Download CSV
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleDownloadPdf}
+                            style={iconButtonStyle(true)}
+                            aria-label="Download PDF"
+                        >
+                            Download PDF
+                        </button>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            {/* Table */}
-            <div style={{
-                background: 'white', borderRadius: 12,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            <section style={{
+                borderRadius: 24,
+                border: panelBorder,
+                background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%)',
+                boxShadow: surfaceShadow,
+                padding: '24px clamp(18px, 3vw, 34px)'
+            }}>
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: 16,
+                    alignItems: 'center'
+                }}>
+                    <div style={{ position: 'relative', gridColumn: 'span 1' }}>
+                        <input
+                            list="affiliate-list"
+                            type="text"
+                            placeholder="Search Affiliate..."
+                            value={affiliateSearch}
+                            onChange={(event) => setAffiliateSearch(event.target.value)}
+                            style={{
+                                width: '100%',
+                                minHeight: 52,
+                                padding: '0 44px 0 16px',
+                                borderRadius: 14,
+                                border: '1px solid rgba(148, 163, 184, 0.3)',
+                                background: '#fff',
+                                color: '#334155',
+                                fontSize: '0.95rem',
+                                boxSizing: 'border-box'
+                            }}
+                        />
+                        <datalist id="affiliate-list">
+                            {AFFILIATES.map((affiliate) => <option key={affiliate} value={affiliate} />)}
+                        </datalist>
+                        {affiliateSearch && (
+                            <button
+                                type="button"
+                                onClick={() => setAffiliateSearch('')}
+                                aria-label="Clear affiliate search"
+                                style={{
+                                    position: 'absolute',
+                                    right: 12,
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: 'pointer',
+                                    color: '#94a3b8',
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                x
+                            </button>
+                        )}
+                    </div>
+
+                    <select id="filter-from" value={fromFilter} onChange={(event) => setFromFilter(event.target.value)} style={selectStyle}>
+                        <option value="all">&lt;All From Currency&gt;</option>
+                        {fromCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                    </select>
+
+                    <select id="filter-to" value={toFilter} onChange={(event) => setToFilter(event.target.value)} style={selectStyle}>
+                        <option value="all">&lt;All To Currency&gt;</option>
+                        {toCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                    </select>
+
+                    <select id="filter-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={selectStyle}>
+                        <option value="all">&lt;All Status&gt;</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+
+                <div style={{
+                    marginTop: 20,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    alignItems: 'center',
+                    flexWrap: 'wrap'
+                }}>
+                    <div style={{ color: '#475569', fontSize: '0.95rem' }}>
+                        Showing <strong style={{ color: '#0f172a' }}>{filtered.length}</strong> of <strong style={{ color: '#0f172a' }}>{MOCK_RATES.length}</strong> corridors
+                    </div>
+                    <div style={{
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        background: 'rgba(15, 23, 42, 0.04)',
+                        color: '#64748b',
+                        fontSize: '0.8rem',
+                        fontWeight: 600
+                    }}>
+                        {filterSummary}
+                    </div>
+                </div>
+            </section>
+
+            <section style={{
+                borderRadius: 24,
+                border: panelBorder,
+                background: '#fff',
+                boxShadow: surfaceShadow,
                 overflow: 'hidden'
             }}>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    padding: '20px 24px',
+                    borderBottom: '1px solid rgba(226, 232, 240, 0.75)',
+                    background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
+                }}>
+                    <div>
+                        <h2 style={{ margin: '0 0 4px', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                            Current Corridor Snapshot
+                        </h2>
+                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
+                            Exports always use the same filtered rows shown below.
+                        </p>
+                    </div>
+                </div>
+
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+                        <thead style={{ background: '#fcfdff' }}>
                             <tr>
                                 <th style={thStyle}>Ref</th>
+                                <th style={thStyle}>Send Country</th>
+                                <th style={thStyle}>Receive Country</th>
                                 <th style={thStyle}>From-To</th>
-                                <th style={thStyle}>Money-R</th>
-                                <th style={thStyle}>Mobile-R</th>
-                                <th style={thStyle}>Bill-R</th>
-                                <th style={thStyle}>Money-W</th>
+                                <th style={thStyle}>Rates</th>
                                 <th style={{ ...thStyle, textAlign: 'center' }}>Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.map(rate => (
-                                <tr key={rate.id} style={{ borderBottom: '1px solid #f3f4f6', background: 'white' }}>
-                                    <td style={{ ...tdStyle, color: '#2563eb', fontWeight: 500 }}>{rate.id}</td>
-                                    <td style={{ ...tdStyle, fontWeight: 600, color: '#111827' }}>{rate.from} - {rate.to}</td>
-                                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                                        {rate.moneyR}
-                                        {rate.override && <OverrideBadge />}
+                            {filtered.map((rate, index) => (
+                                <tr
+                                    key={rate.id}
+                                    style={{
+                                        background: index % 2 === 0 ? '#ffffff' : '#fbfdff',
+                                        transition: 'background 0.2s ease'
+                                    }}
+                                >
+                                    <td style={{ ...tdStyle, color: '#ea580c', fontWeight: 800 }}>{rate.id}</td>
+                                    <td style={{ ...tdStyle, color: rate.sendCountry === 'ALL' ? '#64748b' : '#0f172a', fontWeight: rate.sendCountry === 'ALL' ? 500 : 700 }}>
+                                        {rate.sendCountry}
                                     </td>
-                                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.8rem' }}>{rate.mobileR}</td>
-                                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.8rem' }}>{rate.billR}</td>
-                                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                                        {rate.moneyW}
+                                    <td style={{ ...tdStyle, color: rate.receiveCountry === 'ALL' ? '#64748b' : '#0f172a', fontWeight: rate.receiveCountry === 'ALL' ? 500 : 700 }}>
+                                        {rate.receiveCountry}
+                                    </td>
+                                    <td style={{ ...tdStyle, fontWeight: 800, color: '#0f172a' }}>{rate.from} - {rate.to}</td>
+                                    <td style={{ ...tdStyle, fontFamily: "'Consolas', 'Courier New', monospace", fontSize: '0.85rem', color: '#334155' }}>
+                                        {rate.moneyR}
                                         {rate.override && <OverrideBadge />}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -304,7 +523,7 @@ const SupportRates = () => {
                             ))}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} style={{ padding: '40px 16px', textAlign: 'center', color: '#9ca3af' }}>
+                                    <td colSpan={6} style={{ padding: '56px 18px', textAlign: 'center', color: '#94a3b8', fontWeight: 600 }}>
                                         No corridors match your filters
                                     </td>
                                 </tr>
@@ -312,7 +531,7 @@ const SupportRates = () => {
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
     );
 };

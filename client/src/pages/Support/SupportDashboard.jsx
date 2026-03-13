@@ -7,6 +7,8 @@ const mockData = {
     week: { transactions: { total: 710, successful: 650, failed: 22, inProgress: 38 }, queries: { new: 8, open: 18, resolved: 54, spam: 3 } },
     month: { transactions: { total: 1420, successful: 1300, failed: 45, inProgress: 75 }, queries: { new: 12, open: 34, resolved: 108, spam: 5 } },
     year: { transactions: { total: 17040, successful: 15600, failed: 540, inProgress: 900 }, queries: { new: 144, open: 408, resolved: 1296, spam: 60 } },
+    // Metrics for the last 30 minutes to trigger escalation ( > 3% failure/in-progress)
+    recent: { transactions: { total: 100, successful: 96, failed: 2, inProgress: 2 } } // 4/100 = 4% (Triggers alert)
 };
 
 // SVG Donut Chart
@@ -80,15 +82,94 @@ const KpiCard = ({ title, value, color, icon }) => (
     </div>
 );
 
+const EscalationPopup = ({ onClose, rate }) => {
+    // Play sound on mount
+    React.useEffect(() => {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.5); // 0.5s beep
+    }, []);
+
+    return (
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, backdropFilter: 'blur(4px)'
+        }}>
+            <div style={{
+                background: 'white', borderRadius: 16, width: '400px', padding: '32px',
+                textAlign: 'center', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+                border: '1px solid #fee2e2'
+            }}>
+                <div style={{
+                    width: '64px', height: '64px', background: '#fee2e2', borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+                    fontSize: '32px', color: '#ef4444'
+                }}>
+                    ⚠️
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#991b1b', margin: '0 0 12px' }}>
+                    Escalation Required!
+                </h3>
+                <p style={{ color: '#4b5563', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 24px' }}>
+                    The transaction failure/in-progress rate has reached <span style={{ fontWeight: 700, color: '#ef4444' }}>{rate}%</span> in the last 30 minutes. 
+                    <br/><br/>
+                    <strong>Escalate to the management and Technical Support immediately.</strong>
+                </p>
+                <button
+                    onClick={onClose}
+                    style={{
+                        padding: '12px 24px', background: '#ef4444', color: 'white',
+                        border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer',
+                        width: '100%', transition: 'background 0.2s'
+                    }}
+                    onMouseOver={(e) => e.target.style.background = '#dc2626'}
+                    onMouseOut={(e) => e.target.style.background = '#ef4444'}
+                >
+                    Acknowledge
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const SupportDashboard = () => {
     const [period, setPeriod] = useState('month');
+    const [showAlert, setShowAlert] = useState(false);
     const { agent } = useSupportAuth();
     const data = mockData[period];
+    const recentData = mockData.recent;
+
+    // Check escalation threshold on mount
+    React.useEffect(() => {
+        const total = recentData.transactions.total;
+        const critical = recentData.transactions.failed + recentData.transactions.inProgress;
+        const rate = (critical / total) * 100;
+
+        if (rate > 3) {
+            // Delay slightly for better UX after login
+            const timer = setTimeout(() => setShowAlert(true), 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [recentData]);
+
+    const criticalRate = ((recentData.transactions.failed + recentData.transactions.inProgress) / recentData.transactions.total * 100).toFixed(1);
 
     const periods = ['day', 'week', 'month', 'year'];
 
     return (
         <div style={{ fontFamily: "'Inter', sans-serif" }}>
+            {showAlert && <EscalationPopup rate={criticalRate} onClose={() => setShowAlert(false)} />}
             {/* Header */}
             <div style={{ marginBottom: 32 }}>
                 <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1f2937', margin: '0 0 4px' }}>

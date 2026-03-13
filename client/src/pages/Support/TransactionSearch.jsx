@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 // Mock transaction data
 const MOCK_TRANSACTIONS = [
@@ -30,7 +31,10 @@ const MOCK_TRANSACTIONS = [
         payout: 'NGN 103734',
         settle: 'EUR 63.06',
         total: 'EUR 63.76',
-        comments: '11/03/2026 09:48:45: [FTP] New Transaction added',
+        messageHistory: [
+            { timestamp: '11 Mar 2026, 09:48', user: 'System', message: '[FTP] New Transaction added', type: 'system' },
+            { timestamp: '11 Mar 2026, 10:15', user: 'Support Agent', message: 'Verifying payout status with partner.', type: 'agent' }
+        ],
         notes: '',
         auditTrail: [
             { time: '09:48 AM', event: 'Transaction Initiated', status: 'complete' },
@@ -67,7 +71,10 @@ const MOCK_TRANSACTIONS = [
         payout: 'KES 47200',
         settle: 'GBP 200.00',
         total: 'GBP 200.00',
-        comments: 'Regular transfer to Kenya',
+        messageHistory: [
+            { timestamp: '08 Mar 2026, 14:10', user: 'System', message: 'Transaction created via Direct channel', type: 'system' },
+            { timestamp: '08 Mar 2026, 14:45', user: 'Agent Smith', message: 'Customer called inquiring about delay. Escalated to partner.', type: 'agent' }
+        ],
         notes: '',
         auditTrail: [
             { time: '09:00 AM', event: 'Transaction Initiated', status: 'complete' },
@@ -112,6 +119,18 @@ const maskPII = (value, type) => {
             const parts = value.split(',');
             if (parts.length <= 1) return '***';
             return '***, ' + parts.slice(1).join(',').trim();
+        }
+        case 'name': {
+            const parts = value.trim().split(/\s+/);
+            return parts.map(part => {
+                if (part.length <= 2) return part;
+                return part.slice(0, 2) + '*'.repeat(part.length - 2);
+            }).join(' ');
+        }
+        case 'account': {
+            const clean = value.replace(/\s+/g, '');
+            if (clean.length <= 4) return value;
+            return '*'.repeat(clean.length - 4) + clean.slice(-4);
         }
         case 'balance':
             return '****';
@@ -160,19 +179,53 @@ const AuditTrail = ({ trail }) => (
 );
 
 const TransactionSearch = () => {
-    const [query, setQuery] = useState('');
-    const [result, setResult] = useState(null);
-    const [searched, setSearched] = useState(false);
-    const [activeTab, setActiveTab] = useState('Details');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const queryParam = searchParams.get('q') || '';
+    const tabParam = searchParams.get('tab') || 'Details';
+
+    const [query, setQuery] = useState(queryParam);
+    const [newComment, setNewComment] = useState('');
+    const [localComments, setLocalComments] = useState({}); // { mtn: [messages] }
+    const [isCreateTicketModalOpen, setIsCreateTicketModalOpen] = useState(false);
+    const [unreadTabs, setUnreadTabs] = useState({ 'Comments': true, 'Help Tickets': true });
+
+    // Derived state from URL parameters
+    const result = React.useMemo(() => {
+        if (!queryParam) return null;
+        return MOCK_TRANSACTIONS.find(
+            t => t.reference.toLowerCase() === queryParam.toLowerCase() || 
+                 t.senderEmail.toLowerCase() === queryParam.toLowerCase()
+        ) || null;
+    }, [queryParam]);
+
+    const searched = !!queryParam;
+    const activeTab = tabParam;
+
+    // Sync input field with URL (e.g. browser back button)
+    useEffect(() => {
+        setQuery(queryParam);
+    }, [queryParam]);
 
     const handleSearch = (e) => {
         e.preventDefault();
-        const found = MOCK_TRANSACTIONS.find(
-            t => t.reference.toLowerCase() === query.trim().toLowerCase()
-        );
-        setResult(found || null);
-        setSearched(true);
-        setActiveTab('Details'); // Always reset tab on new search
+        const searchTerm = query.trim();
+        if (searchTerm) {
+            setSearchParams({ q: searchTerm, tab: 'Details' });
+        }
+    };
+
+    const handleTabChange = (newTab) => {
+        setSearchParams({ q: queryParam, tab: newTab });
+        if (unreadTabs[newTab]) {
+            setUnreadTabs(prev => ({ ...prev, [newTab]: false }));
+        }
+    };
+
+    const inputStyle = {
+        width: '100%', padding: '10px 14px',
+        border: '1px solid #d1d5db', borderRadius: 6,
+        fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box',
+        color: '#374151'
     };
 
     return (
@@ -183,7 +236,7 @@ const TransactionSearch = () => {
                     Transaction Search
                 </h1>
                 <p style={{ color: '#64748b', margin: 0, fontSize: '0.9rem' }}>
-                    Search by reference number to view transaction details
+                    Search by reference number or sender email to view transaction details
                 </p>
             </div>
 
@@ -196,7 +249,7 @@ const TransactionSearch = () => {
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Enter Biller Ref, Top-up Ref, or Pickup Code"
+                    placeholder="Enter Biller Ref, Top-up Ref, Pickup Code, or Sender Email"
                     required
                     style={{
                         flex: 1, padding: '12px 16px',
@@ -229,7 +282,7 @@ const TransactionSearch = () => {
                 </button>
             </form>
             <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 32 }}>
-                Try searching for these mock references: <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('05023676980')}>05023676980</strong> or <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('MITO-7721003')}>MITO-7721003</strong>
+                Try searching for these mock references: <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('05023676980')}>05023676980</strong>, <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('MITO-7721003')}>MITO-7721003</strong> or email <strong style={{ color: '#ea580c', cursor: 'pointer' }} onClick={() => setQuery('ogbeide.sender@example.com')}>ogbeide.sender@example.com</strong>
             </div>
 
             {/* Results Section */}
@@ -242,7 +295,7 @@ const TransactionSearch = () => {
                         border: '1px solid #f1f5f9'
                     }}>
                         <div style={{
-                            display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr 1fr',
+                            display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr 1fr 1.2fr',
                             padding: '14px 20px', borderBottom: '1px solid #e5e7eb',
                             fontSize: '0.75rem', fontWeight: 700, color: '#64748b',
                             textTransform: 'uppercase', letterSpacing: '0.025em'
@@ -252,9 +305,10 @@ const TransactionSearch = () => {
                             <div>Status</div>
                             <div>Date</div>
                             <div>Channel</div>
+                            <div>Sender Email</div>
                         </div>
                         <div style={{
-                            display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr 1fr',
+                            display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr 1fr 1.2fr',
                             padding: '14px 20px', fontSize: '0.85rem', color: '#1e293b',
                             alignItems: 'center'
                         }}>
@@ -271,6 +325,7 @@ const TransactionSearch = () => {
                             </div>
                             <div>{result.lastUpdated}</div>
                             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{result.channel}</div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{maskPII(result.senderEmail, 'email')}</div>
                         </div>
                     </div>
 
@@ -285,20 +340,33 @@ const TransactionSearch = () => {
                             display: 'flex', borderBottom: '1px solid #f1f5f9',
                             background: '#f8fafc'
                         }}>
-                            {['Details', 'Trail', 'KYC'].map(tab => (
+                            {['Details', 'Trail', 'KYC', 'Comments', 'Help Tickets'].map(tab => (
                                 <button
                                     key={tab}
-                                    onClick={() => setActiveTab(tab)}
+                                    id={`tab-${tab.toLowerCase().replace(' ', '-')}`}
+                                    onClick={() => handleTabChange(tab)}
                                     style={{
                                         padding: '14px 28px', border: 'none', background: 'none',
                                         fontSize: '0.9rem', fontWeight: activeTab === tab ? 700 : 500,
                                         color: activeTab === tab ? '#ea580c' : '#64748b',
                                         borderBottom: activeTab === tab ? '3px solid #ea580c' : '3px solid transparent',
                                         cursor: 'pointer', transition: 'all 0.2s',
-                                        outline: 'none'
+                                        outline: 'none',
+                                        position: 'relative'
                                     }}
                                 >
                                     {tab}
+                                    {unreadTabs[tab] && (
+                                        <span id={`notifier-${tab.toLowerCase().replace(' ', '-')}`} style={{
+                                            position: 'absolute',
+                                            top: 12,
+                                            right: 14,
+                                            width: 8,
+                                            height: 8,
+                                            background: '#ef4444',
+                                            borderRadius: '50%',
+                                        }} />
+                                    )}
                                 </button>
                             ))}
                         </div>
@@ -327,7 +395,7 @@ const TransactionSearch = () => {
 
                                         {/* Beneficiary Details (Masked) */}
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Beneficiary Name:</div>
-                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{result.beneficiaryFirstName} {result.beneficiaryLastName}</div>
+                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{maskPII(`${result.beneficiaryFirstName} ${result.beneficiaryLastName}`, 'name')}</div>
 
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Beneficiary Contact:</div>
                                         <div style={{ color: '#ea580c', fontWeight: 600 }}>{maskPII(result.beneficiaryPhone, 'phone')}</div>
@@ -342,7 +410,7 @@ const TransactionSearch = () => {
 
                                         {/* Sender Details (Masked) */}
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Sender Name:</div>
-                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{result.senderFirstName} {result.senderLastName}</div>
+                                        <div style={{ color: '#1e293b', fontWeight: 600 }}>{maskPII(`${result.senderFirstName} ${result.senderLastName}`, 'name')}</div>
 
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Sender Contact:</div>
                                         <div style={{ color: '#ea580c', fontWeight: 600 }}>{maskPII(result.senderPhone, 'phone')}</div>
@@ -365,7 +433,7 @@ const TransactionSearch = () => {
                                         <div>{result.collectionMethod}</div>
 
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Account Number:</div>
-                                        <div style={{ fontWeight: 600 }}>{result.account}</div>
+                                        <div style={{ fontWeight: 600 }}>{maskPII(result.account, 'account')}</div>
 
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Rate:</div>
                                         <div>{result.rate}</div>
@@ -379,8 +447,10 @@ const TransactionSearch = () => {
                                         <div style={{ color: '#64748b', fontWeight: 500 }}>Total Paid:</div>
                                         <div style={{ fontWeight: 700 }}>{result.total}</div>
 
-                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Comments:</div>
-                                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{result.comments}</div>
+                                        <div style={{ color: '#64748b', fontWeight: 500 }}>Latest Comment:</div>
+                                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                            {result.messageHistory?.[result.messageHistory.length - 1]?.message || 'No comments'}
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -415,6 +485,144 @@ const TransactionSearch = () => {
                                     <p style={{ marginTop: 24, color: '#94a3b8', fontSize: '0.9rem' }}>
                                         Last updated: {result.lastUpdated}
                                     </p>
+                                </div>
+                            )}
+
+                            {activeTab === 'Comments' && (
+                                <div id="comments-tab">
+                                    <div style={{ marginBottom: 24 }}>
+                                        <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#1f2937', marginBottom: 16 }}>💬 Agent Comments Thread</h3>
+                                        <div style={{ border: '1px solid #f1f5f9', borderRadius: 12, overflow: 'hidden' }}>
+                                            <div style={{ maxHeight: 300, overflowY: 'auto', padding: 20, background: '#fcfcfc' }}>
+                                                {[...(result.messageHistory || []), ...(localComments[result.mtn] || [])].map((msg, i) => (
+                                                    <div key={i} style={{ 
+                                                        marginBottom: 16, 
+                                                        textAlign: msg.type === 'agent' ? 'left' : 'center',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: msg.type === 'agent' ? 'flex-start' : 'center'
+                                                    }}>
+                                                        <div style={{ 
+                                                            fontSize: '0.75rem', 
+                                                            color: '#94a3b8', 
+                                                            marginBottom: 4,
+                                                            display: 'flex',
+                                                            gap: 8
+                                                        }}>
+                                                            <strong>{msg.user}</strong> • {msg.timestamp}
+                                                        </div>
+                                                        <div style={{ 
+                                                            padding: msg.type === 'agent' ? '10px 16px' : '6px 14px',
+                                                            background: msg.type === 'agent' ? '#fff' : '#f1f5f9',
+                                                            border: msg.type === 'agent' ? '1px solid #e2e8f0' : 'none',
+                                                            borderRadius: 12,
+                                                            fontSize: '0.9rem',
+                                                            color: msg.type === 'agent' ? '#334155' : '#64748b',
+                                                            maxWidth: '85%',
+                                                            boxShadow: msg.type === 'agent' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                                                            fontStyle: msg.type === 'system' ? 'italic' : 'normal'
+                                                        }}>
+                                                            {msg.message}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div style={{ padding: 16, background: 'white', borderTop: '1px solid #f1f5f9' }}>
+                                                <div style={{ display: 'flex', gap: 12 }}>
+                                                    <input 
+                                                        type="text" 
+                                                        id="new-comment-input"
+                                                        value={newComment}
+                                                        onChange={(e) => setNewComment(e.target.value)}
+                                                        placeholder="Add a comment to this transaction..." 
+                                                        style={{ 
+                                                            flex: 1, 
+                                                            padding: '10px 14px', 
+                                                            border: '1px solid #e2e8f0', 
+                                                            borderRadius: 8, 
+                                                            fontSize: '0.9rem',
+                                                            outline: 'none'
+                                                        }}
+                                                    />
+                                                    <button 
+                                                        id="post-comment-btn"
+                                                        onClick={() => {
+                                                            if (!newComment.trim()) return;
+                                                            const msg = {
+                                                                timestamp: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                                                                user: 'Support Agent',
+                                                                message: newComment.trim(),
+                                                                type: 'agent'
+                                                            };
+                                                            setLocalComments(prev => ({
+                                                                ...prev,
+                                                                [result.mtn]: [...(prev[result.mtn] || []), msg]
+                                                            }));
+                                                            setNewComment('');
+                                                        }}
+                                                        style={{ 
+                                                            background: '#ea580c', 
+                                                            color: 'white', 
+                                                            border: 'none', 
+                                                            padding: '0 20px', 
+                                                            borderRadius: 8, 
+                                                            fontWeight: 600, 
+                                                            cursor: 'pointer' 
+                                                        }}
+                                                    >
+                                                        Post
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'Help Tickets' && (
+                                <div id="tickets-tab">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                        <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#1f2937', margin: 0 }}>🎟️ Linked Help Tickets</h3>
+                                        <button 
+                                            id="start-communication-btn"
+                                            onClick={() => setIsCreateTicketModalOpen(true)}
+                                            style={{ 
+                                                background: '#ea580c', color: 'white', border: 'none', 
+                                                padding: '8px 16px', borderRadius: 6, fontWeight: 600, 
+                                                fontSize: '0.85rem', cursor: 'pointer' 
+                                            }}
+                                        >
+                                            Create a New Ticket
+                                        </button>
+                                    </div>
+                                    
+                                    {result.mtn === 'MITO-7721003' ? (
+                                        <div style={{ border: '1px solid #f1f5f9', borderRadius: 12, overflow: 'hidden' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 100px', padding: '12px 20px', background: '#f8fafc', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                                                <div>ID</div>
+                                                <div>Subject</div>
+                                                <div>Created</div>
+                                                <div>Status</div>
+                                            </div>
+                                            <div 
+                                                id="linked-ticket-2651"
+                                                onClick={() => window.location.href = `/support/help-tickets/2651`}
+                                                style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 100px', padding: '16px 20px', fontSize: '0.85rem', color: '#1e293b', borderTop: '1px solid #f1f5f9', cursor: 'pointer' }}
+                                            >
+                                                <div style={{ color: '#ea580c', fontWeight: 600 }}>#2651</div>
+                                                <div>Transaction stuck in processing for 6 hours</div>
+                                                <div style={{ color: '#64748b' }}>08 Mar 2026</div>
+                                                <div>
+                                                    <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: '0.75rem', fontWeight: 600, background: '#eff6ff', color: '#1d4ed8' }}>Open</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ textAlign: 'center', padding: '40px 0', border: '1px dashed #e2e8f0', borderRadius: 12 }}>
+                                            <div style={{ fontSize: '2rem', marginBottom: 12 }}>🎫</div>
+                                            <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0 }}>No help tickets linked to this transaction yet.</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -458,8 +666,91 @@ const TransactionSearch = () => {
                     <div style={{ fontSize: '3rem', marginBottom: 16 }}>🔍</div>
                     <h3 style={{ color: '#334155', fontWeight: 700, marginBottom: 8, fontSize: '1.25rem' }}>Search for a Transaction</h3>
                     <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-                        Enter an exact reference number to view transaction details and audit trail.
+                        Enter an exact reference number or sender email to view transaction details and audit trail.
                     </p>
+                </div>
+            )}
+
+            {/* Create Ticket Modal */}
+            {isCreateTicketModalOpen && (
+                <div id="create-ticket-modal" style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 1000, padding: 20
+                }}>
+                    <div style={{
+                        background: 'white', borderRadius: 12, padding: 32,
+                        width: '100%', maxWidth: 800, maxHeight: '90vh', overflowY: 'auto',
+                        position: 'relative', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+                    }}>
+                        <button 
+                            id="close-modal-btn"
+                            onClick={() => setIsCreateTicketModalOpen(false)}
+                            style={{ position: 'absolute', top: 20, right: 24, background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#6b7280' }}
+                        >
+                            ✕
+                        </button>
+
+                        <h2 style={{ textAlign: 'center', color: '#374151', fontSize: '1.5rem', fontWeight: 700, marginTop: 0, marginBottom: 32 }}>Create a new ticket</h2>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#4b5563', marginBottom: 8 }}>Transaction Reference</label>
+                                <input id="modal-txn-ref" type="text" value={result?.mtn || ''} readOnly style={{ ...inputStyle, background: '#f8fafc' }} />
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#4b5563', marginBottom: 8 }}>Select user <span style={{ color: '#ea580c' }}>*</span></label>
+                                <select id="modal-user-select" style={{ ...inputStyle, appearance: 'none', background: 'white url("data:image/svg+xml,%3Csvg stroke=\'%236b7280\' fill=\'none\' stroke-width=\'2\' viewBox=\'0 0 24 24\' stroke-linecap=\'round\' stroke-linejoin=\'round\' height=\'1em\' width=\'1em\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 12px center' }}>
+                                    <option value="">Select...</option>
+                                    <option value="user1" selected>{result?.senderFirstName} {result?.senderLastName}</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#4b5563', marginBottom: 8 }}>Subject <span style={{ color: '#ea580c' }}>*</span></label>
+                                <input id="modal-subject-input" type="text" placeholder="Enter subject" style={inputStyle} defaultValue={result?.mtn ? `Issue with Transaction ${result.mtn}` : ''} />
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#4b5563', marginBottom: 8 }}>Message <span style={{ color: '#ea580c' }}>*</span></label>
+                                <div style={{ border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden' }}>
+                                    <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', gap: 16, alignItems: 'center', color: '#374151', fontSize: '0.9rem', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', gap: 12, fontWeight: 700, fontFamily: 'serif' }}>
+                                            <span style={{ cursor: 'pointer' }}>B</span>
+                                            <span style={{ cursor: 'pointer', fontStyle: 'italic' }}>I</span>
+                                            <span style={{ cursor: 'pointer', textDecoration: 'underline' }}>U</span>
+                                            <span style={{ cursor: 'pointer', textDecoration: 'line-through' }}>S</span>
+                                        </div>
+                                        <span style={{ cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1 }}>"</span>
+                                        <span style={{ cursor: 'pointer' }}>🔗</span>
+                                        <div style={{ display: 'flex', gap: 12 }}>
+                                            <span style={{ cursor: 'pointer' }}>≡</span>
+                                            <span style={{ cursor: 'pointer', fontStyle: 'italic' }}>•≡</span>
+                                        </div>
+                                    </div>
+                                    <textarea id="modal-message-textarea" placeholder="Message" rows={8} style={{ width: '100%', border: 'none', padding: 16, outline: 'none', resize: 'vertical', fontFamily: "'Inter', sans-serif", fontSize: '0.9rem', boxSizing: 'border-box' }}></textarea>
+                                </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 12 }}>
+                                <button 
+                                    id="cancel-modal-btn"
+                                    onClick={() => setIsCreateTicketModalOpen(false)}
+                                    style={{ background: 'white', color: '#64748b', border: '1px solid #cbd5e1', padding: '10px 24px', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    id="submit-ticket-btn"
+                                    onClick={() => setIsCreateTicketModalOpen(false)}
+                                    style={{ background: '#ea580c', color: 'white', border: 'none', padding: '10px 32px', borderRadius: 6, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(234, 88, 12, 0.2)' }}
+                                >
+                                    Create Ticket
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
