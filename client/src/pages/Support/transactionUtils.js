@@ -241,8 +241,9 @@ export const maskPII = (value, type) => {
         case 'name': {
             const parts = value.trim().split(/\s+/);
             return parts.map(part => {
-                if (part.length <= 4) return part;
-                return part.slice(0, 2) + '*'.repeat(part.length - 4) + part.slice(-2);
+                // Show only first character to ensure 75%+ masking
+                // e.g., "John" → "J***" (75%), "Smith" → "S****" (80%)
+                return part[0] + '*'.repeat(part.length - 1);
             }).join(' ');
         }
         case 'account': {
