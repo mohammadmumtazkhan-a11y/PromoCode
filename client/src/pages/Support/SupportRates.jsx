@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../../assets/logo.png';
+import { supportPageTitleStyle, supportSectionTitleStyle } from './supportTypography';
 
 const MOCK_RATES = [
     { id: 1246, affiliate: 'Rhemito', from: 'EUR', to: 'SGD', sendCountry: 'ALL', receiveCountry: 'ALL', moneyR: '1.0000 / 1.3900', active: true },
@@ -14,6 +15,17 @@ const MOCK_RATES = [
 ];
 
 const AFFILIATES = ['Rhemito', 'BasketMouth', 'Sika', 'FastPay', 'GlobalSend'];
+const COUNTRY_DEFAULT_CURRENCY = {
+    'United Kingdom': 'GBP',
+    India: 'INR',
+    Nigeria: 'NGN',
+    Europe: 'EUR',
+    Turkey: 'TRY',
+    Ghana: 'GHS',
+    Kenya: 'KES',
+    Singapore: 'SGD',
+    'United States': 'USD',
+};
 
 const PAGE_FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
 
@@ -115,16 +127,23 @@ const getImageDataUrl = async (src) => {
 };
 
 const SupportRates = () => {
+    const [countryFilter, setCountryFilter] = useState('');
     const [fromFilter, setFromFilter] = useState('all');
     const [toFilter, setToFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
     const [affiliateSearch, setAffiliateSearch] = useState('Rhemito');
 
+    const countryOptions = Object.keys(COUNTRY_DEFAULT_CURRENCY);
     const fromCurrencies = [...new Set(MOCK_RATES.map((rate) => rate.from))];
     const toCurrencies = [...new Set(MOCK_RATES.map((rate) => rate.to))];
 
     const filtered = MOCK_RATES.filter((rate) => {
         if (affiliateSearch && !rate.affiliate.toLowerCase().includes(affiliateSearch.toLowerCase())) return false;
+        if (countryFilter) {
+            const normalizedCountryFilter = countryFilter.toLowerCase();
+            const normalizedSendCountry = rate.sendCountry.toLowerCase();
+            if (!normalizedSendCountry.includes(normalizedCountryFilter)) return false;
+        }
         if (fromFilter !== 'all' && rate.from !== fromFilter) return false;
         if (toFilter !== 'all' && rate.to !== toFilter) return false;
         if (statusFilter === 'active' && !rate.active) return false;
@@ -134,6 +153,7 @@ const SupportRates = () => {
 
     const filterSummary = [
         `Affiliate: ${affiliateSearch || 'All'}`,
+        `Send Country: ${countryFilter || 'All'}`,
         `From: ${fromFilter === 'all' ? 'All' : fromFilter}`,
         `To: ${toFilter === 'all' ? 'All' : toFilter}`,
         `Status: ${statusFilter === 'all' ? 'All' : statusFilter}`,
@@ -330,7 +350,7 @@ const SupportRates = () => {
                                 Read Only
                             </div>
                         </div>
-                        <h1 style={{ fontSize: '2.35rem', lineHeight: 1.04, margin: '0 0 10px', fontWeight: 800 }}>
+                        <h1 style={{ ...supportPageTitleStyle, margin: '0 0 10px' }}>
                             Exchange Rates & Corridors
                         </h1>
                         <p style={{ margin: 0, color: '#475569', fontSize: '1rem', lineHeight: 1.6 }}>
@@ -416,6 +436,51 @@ const SupportRates = () => {
                         )}
                     </div>
 
+                    <div style={{ position: 'relative', flex: '1 1 180px' }}>
+                        <input
+                            list="country-list"
+                            type="text"
+                            placeholder="Search Send Country..."
+                            value={countryFilter}
+                            onChange={(event) => setCountryFilter(event.target.value)}
+                            style={{
+                                width: '100%',
+                                minHeight: 52,
+                                padding: '0 44px 0 16px',
+                                borderRadius: 14,
+                                border: '1px solid rgba(148, 163, 184, 0.3)',
+                                background: '#fff',
+                                color: '#334155',
+                                fontSize: '0.95rem',
+                                boxSizing: 'border-box',
+                                boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.02)',
+                            }}
+                        />
+                        <datalist id="country-list">
+                            {countryOptions.map((country) => <option key={country} value={country} />)}
+                        </datalist>
+                        {countryFilter && (
+                            <button
+                                type="button"
+                                onClick={() => setCountryFilter('')}
+                                aria-label="Clear country filter"
+                                style={{
+                                    position: 'absolute',
+                                    right: 12,
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: 'pointer',
+                                    color: '#94a3b8',
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                x
+                            </button>
+                        )}
+                    </div>
+
                     <select id="filter-from" value={fromFilter} onChange={(event) => setFromFilter(event.target.value)} style={selectStyle}>
                         <option value="all">&lt;All From Currency&gt;</option>
                         {fromCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
@@ -474,7 +539,7 @@ const SupportRates = () => {
                     background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
                 }}>
                     <div>
-                        <h2 style={{ margin: '0 0 4px', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                        <h2 style={{ ...supportSectionTitleStyle, margin: '0 0 4px', color: '#0f172a' }}>
                             Current Corridor Snapshot
                         </h2>
                         <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
@@ -512,7 +577,7 @@ const SupportRates = () => {
                                         {rate.receiveCountry}
                                     </td>
                                     <td style={{ ...tdStyle, fontWeight: 800, color: '#0f172a' }}>{rate.from} - {rate.to}</td>
-                                    <td style={{ ...tdStyle, fontFamily: "'Consolas', 'Courier New', monospace", fontSize: '0.85rem', color: '#334155' }}>
+                                    <td style={{ ...tdStyle, fontFamily: "'Consolas', 'Courier New', monospace", fontSize: '0.92rem', fontWeight: 700, color: '#334155' }}>
                                         {rate.moneyR}
                                         {rate.override && <OverrideBadge />}
                                     </td>
