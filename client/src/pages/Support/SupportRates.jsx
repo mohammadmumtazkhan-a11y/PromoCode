@@ -164,23 +164,16 @@ const getImageDataUrl = async (src) => {
 };
 
 const SupportRates = () => {
-    const [countryFilter, setCountryFilter] = useState('');
     const [fromFilter, setFromFilter] = useState('all');
     const [toFilter, setToFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
     const [affiliateSearch, setAffiliateSearch] = useState('Rhemito');
 
-    const countryOptions = Object.keys(COUNTRY_DEFAULT_CURRENCY);
     const fromCurrencies = [...new Set(MOCK_RATES.map((rate) => rate.from))];
     const toCurrencies = [...new Set(MOCK_RATES.map((rate) => rate.to))];
 
     const filtered = MOCK_RATES.filter((rate) => {
         if (affiliateSearch && !rate.affiliate.toLowerCase().includes(affiliateSearch.toLowerCase())) return false;
-        if (countryFilter) {
-            const normalizedCountryFilter = countryFilter.toLowerCase();
-            const normalizedSendCountry = rate.sendCountry.toLowerCase();
-            if (!normalizedSendCountry.includes(normalizedCountryFilter)) return false;
-        }
         if (fromFilter !== 'all' && rate.from !== fromFilter) return false;
         if (toFilter !== 'all' && rate.to !== toFilter) return false;
         if (statusFilter === 'active' && !rate.active) return false;
@@ -190,7 +183,6 @@ const SupportRates = () => {
 
     const filterSummary = [
         `Affiliate: ${affiliateSearch || 'All'}`,
-        `Send Country: ${countryFilter || 'All'}`,
         `From: ${fromFilter === 'all' ? 'All' : fromFilter}`,
         `To: ${toFilter === 'all' ? 'All' : toFilter}`,
         `Status: ${statusFilter === 'all' ? 'All' : statusFilter}`,
@@ -626,27 +618,6 @@ const tdStyle = {
                             ...AFFILIATES.map(aff => ({ value: aff, label: aff }))
                         ]}
                         style={{ gridColumn: 'span 1' }}
-                    />
-
-                    <SearchableSelect
-                        placeholder="Search Send Country..."
-                        value={countryFilter}
-                        onChange={setCountryFilter}
-                        options={[
-                            { value: '', label: 'All Countries', icon: '🌍' },
-                            ...countryOptions.map(country => {
-                                const currCode = COUNTRY_DEFAULT_CURRENCY[country];
-                                const curr = CURRENCY_DETAILS[currCode];
-                                return {
-                                    value: country,
-                                    label: country,
-                                    icon: COUNTRY_DETAILS[country]?.flag,
-                                    subtext: currCode,
-                                    currencySymbol: curr ? `${curr.name} (${curr.symbol})` : undefined,
-                                };
-                            })
-                        ]}
-                        style={{ gridColumn: 'span 2' }}
                     />
 
                     <SearchableSelect

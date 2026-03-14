@@ -128,39 +128,9 @@ describe('SupportRates exports', () => {
         expect(screen.queryByText('1246')).not.toBeInTheDocument();
     });
 
-    it('filters corridors by send country', () => {
-        render(<SupportRates />);
-
-        // Clear affiliate filter first
-        selectOption('Rhemito', 'All Affiliates');
-        // Select United Kingdom from country dropdown
-        selectOption('All Countries', 'United Kingdom');
-
-        expect(screen.getByText('2309')).toBeInTheDocument();
-        expect(screen.queryByText('1246')).not.toBeInTheDocument();
-    });
 });
 
 describe('SupportRates premium dropdown features', () => {
-    it('shows country flags and currency info in the country dropdown', () => {
-        render(<SupportRates />);
-
-        const container = openDropdownByText('All Countries');
-
-        // Verify dropdown shows country with flag, ISO code badge, and currency symbol subtitle
-        const dropdown = container.querySelector('[style*="max-height"]');
-        expect(dropdown).toBeTruthy();
-
-        expect(within(dropdown).getByText('GBP')).toBeInTheDocument();
-        expect(within(dropdown).getByText('British Pound (£)')).toBeInTheDocument();
-
-        expect(within(dropdown).getByText('INR')).toBeInTheDocument();
-        expect(within(dropdown).getByText('Indian Rupee (₹)')).toBeInTheDocument();
-
-        expect(within(dropdown).getByText('NGN')).toBeInTheDocument();
-        expect(within(dropdown).getByText('Nigerian Naira (₦)')).toBeInTheDocument();
-    });
-
     it('shows currency flags, ISO codes and symbols in From Currency dropdown', () => {
         render(<SupportRates />);
 
@@ -194,43 +164,20 @@ describe('SupportRates premium dropdown features', () => {
     it('filters dropdown options via search input', () => {
         render(<SupportRates />);
 
-        openDropdownByText('All Countries');
+        openDropdownByText('All From Currency');
         const searchInput = screen.getByPlaceholderText('Type to search...');
-        fireEvent.change(searchInput, { target: { value: 'Kenya' } });
+        fireEvent.change(searchInput, { target: { value: 'Euro' } });
 
-        expect(screen.getByText('Kenya')).toBeInTheDocument();
-        expect(screen.getByText('Kenyan Shilling (KSh)')).toBeInTheDocument();
-        // Other countries should be filtered out
-        expect(screen.queryByText('British Pound (£)')).not.toBeInTheDocument();
-        expect(screen.queryByText('Indian Rupee (₹)')).not.toBeInTheDocument();
-    });
-
-    it('searches by currency code in country dropdown', () => {
-        render(<SupportRates />);
-
-        openDropdownByText('All Countries');
-        const searchInput = screen.getByPlaceholderText('Type to search...');
-        fireEvent.change(searchInput, { target: { value: 'GBP' } });
-
-        expect(screen.getByText('British Pound (£)')).toBeInTheDocument();
-        expect(screen.queryByText('Indian Rupee (₹)')).not.toBeInTheDocument();
-    });
-
-    it('searches by currency symbol text in country dropdown', () => {
-        render(<SupportRates />);
-
-        openDropdownByText('All Countries');
-        const searchInput = screen.getByPlaceholderText('Type to search...');
-        fireEvent.change(searchInput, { target: { value: 'Rupee' } });
-
-        expect(screen.getByText('Indian Rupee (₹)')).toBeInTheDocument();
-        expect(screen.queryByText('British Pound (£)')).not.toBeInTheDocument();
+        expect(screen.getByText('Euro')).toBeInTheDocument();
+        expect(screen.getByText('EUR')).toBeInTheDocument();
+        // Other currencies should be filtered out
+        expect(screen.queryByText('British Pound')).not.toBeInTheDocument();
     });
 
     it('shows "No results found" when search has no matches', () => {
         render(<SupportRates />);
 
-        openDropdownByText('All Countries');
+        openDropdownByText('All From Currency');
         const searchInput = screen.getByPlaceholderText('Type to search...');
         fireEvent.change(searchInput, { target: { value: 'zzzzzzz' } });
 
@@ -240,10 +187,10 @@ describe('SupportRates premium dropdown features', () => {
     it('highlights selected option with checkmark', () => {
         render(<SupportRates />);
 
-        const container = openDropdownByText('All Countries');
+        const container = openDropdownByText('All From Currency');
         const dropdown = container.querySelector('[style*="max-height"]');
 
-        // The selected "All Countries" option should have the checkmark
+        // The selected "All From Currency" option should have the checkmark
         const checkmark = within(dropdown).getByText('✓');
         expect(checkmark).toBeInTheDocument();
 
