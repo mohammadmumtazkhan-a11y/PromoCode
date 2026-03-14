@@ -27,6 +27,43 @@ const COUNTRY_DEFAULT_CURRENCY = {
     'United States': 'USD',
 };
 
+const CURRENCY_DETAILS = {
+    GBP: { name: 'British Pound', flag: '🇬🇧', symbol: '£' },
+    INR: { name: 'Indian Rupee', flag: '🇮🇳', symbol: '₹' },
+    EUR: { name: 'Euro', flag: '🇪🇺', symbol: '€' },
+    TRY: { name: 'Turkish Lira', flag: '🇹🇷', symbol: '₺' },
+    NGN: { name: 'Nigerian Naira', flag: '🇳🇬', symbol: '₦' },
+    USD: { name: 'US Dollar', flag: '🇺🇸', symbol: '$' },
+    KES: { name: 'Kenyan Shilling', flag: '🇰🇪', symbol: 'KSh' },
+    GHS: { name: 'Ghanaian Cedi', flag: '🇬🇭', symbol: '₵' },
+    SGD: { name: 'Singapore Dollar', flag: '🇸🇬', symbol: 'S$' },
+    JPY: { name: 'Japanese Yen', flag: '🇯🇵', symbol: '¥' },
+    MXN: { name: 'Mexican Peso', flag: '🇲🇽', symbol: 'MX$' },
+    KWD: { name: 'Kuwaiti Dinar', flag: '🇰🇼', symbol: 'د.ك' },
+    AED: { name: 'UAE Dirham', flag: '🇦🇪', symbol: 'د.إ' },
+    CAD: { name: 'Canadian Dollar', flag: '🇨🇦', symbol: 'C$' },
+    AUD: { name: 'Australian Dollar', flag: '🇦🇺', symbol: 'A$' },
+    CHF: { name: 'Swiss Franc', flag: '🇨🇭', symbol: 'CHF' },
+    ZAR: { name: 'South African Rand', flag: '🇿🇦', symbol: 'R' },
+    CNY: { name: 'Chinese Yuan', flag: '🇨🇳', symbol: '¥' },
+    PKR: { name: 'Pakistani Rupee', flag: '🇵🇰', symbol: '₨' },
+    BDT: { name: 'Bangladeshi Taka', flag: '🇧🇩', symbol: '৳' },
+    PHP: { name: 'Philippine Peso', flag: '🇵🇭', symbol: '₱' },
+    EGP: { name: 'Egyptian Pound', flag: '🇪🇬', symbol: 'E£' },
+};
+
+const COUNTRY_DETAILS = {
+    'United Kingdom': { flag: '🇬🇧' },
+    India: { flag: '🇮🇳' },
+    Nigeria: { flag: '🇳🇬' },
+    Europe: { flag: '🇪🇺' },
+    Turkey: { flag: '🇹🇷' },
+    Ghana: { flag: '🇬🇭' },
+    Kenya: { flag: '🇰🇪' },
+    Singapore: { flag: '🇸🇬' },
+    'United States': { flag: '🇺🇸' },
+};
+
 const PAGE_FONT = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
 
 const surfaceShadow = '0 24px 64px rgba(15, 23, 42, 0.08)';
@@ -261,7 +298,195 @@ const SupportRates = () => {
         borderBottom: '1px solid rgba(226, 232, 240, 0.85)'
     };
 
-    const tdStyle = {
+    const SearchableSelect = ({ label, options, value, onChange, placeholder, style = {} }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const dropdownRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filteredOptions = options.filter(opt =>
+        opt.label.toLowerCase().includes(search.toLowerCase()) ||
+        (opt.subtext && opt.subtext.toLowerCase().includes(search.toLowerCase())) ||
+        (opt.currencySymbol && opt.currencySymbol.toLowerCase().includes(search.toLowerCase()))
+    );
+
+    const selectedOption = options.find(opt => opt.value === value) || options[0];
+
+    return (
+        <div ref={dropdownRef} style={{ position: 'relative', flex: '1 1 180px', ...style }}>
+            <div
+                onClick={() => setIsOpen(!isOpen)}
+                style={{
+                    padding: '0 16px',
+                    border: isOpen ? '1.5px solid #ea580c' : '1px solid rgba(148, 163, 184, 0.3)',
+                    borderRadius: 14,
+                    minHeight: 52,
+                    background: '#fff',
+                    color: '#334155',
+                    fontSize: '0.95rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    boxShadow: isOpen ? '0 0 0 3px rgba(234, 88, 12, 0.1)' : 'inset 0 1px 2px rgba(15, 23, 42, 0.02)',
+                    transition: 'border 0.2s, box-shadow 0.2s',
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+                    {selectedOption.icon && <span style={{ fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>{selectedOption.icon}</span>}
+                    <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {selectedOption.label}
+                        {selectedOption.subtext && <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: 4 }}>({selectedOption.subtext})</span>}
+                        {selectedOption.currencySymbol && <span style={{ color: '#ea580c', fontWeight: 700, marginLeft: 6 }}>{selectedOption.currencySymbol}</span>}
+                    </span>
+                </div>
+                <span style={{ fontSize: '0.65rem', color: '#94a3b8', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s ease', flexShrink: 0, marginLeft: 8 }}>▼</span>
+            </div>
+
+            {isOpen && (
+                <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: 0,
+                    right: 0,
+                    minWidth: 260,
+                    background: '#fff',
+                    border: '1px solid rgba(148, 163, 184, 0.15)',
+                    borderRadius: 16,
+                    boxShadow: '0 20px 50px -12px rgba(0, 0, 0, 0.15), 0 8px 20px -8px rgba(0, 0, 0, 0.08)',
+                    zIndex: 100,
+                    overflow: 'hidden',
+                    animation: 'fadeInDown 0.15s ease-out',
+                }}>
+                    <div style={{ padding: '10px 10px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem', pointerEvents: 'none' }}>🔍</span>
+                            <input
+                                autoFocus
+                                type="text"
+                                placeholder="Type to search..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px 10px 36px',
+                                    border: '1.5px solid #e2e8f0',
+                                    borderRadius: 10,
+                                    fontSize: '0.9rem',
+                                    outline: 'none',
+                                    boxSizing: 'border-box',
+                                    transition: 'border 0.2s',
+                                    background: '#fafbfc',
+                                }}
+                                onFocus={(e) => { e.target.style.borderColor = '#ea580c'; e.target.style.background = '#fff'; }}
+                                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafbfc'; }}
+                            />
+                        </div>
+                    </div>
+                    <div style={{ maxHeight: 280, overflowY: 'auto', padding: '4px 0' }}>
+                        {filteredOptions.length === 0 && (
+                            <div style={{ padding: '20px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' }}>
+                                No results found
+                            </div>
+                        )}
+                        {filteredOptions.map((opt) => {
+                            const isSelected = opt.value === value;
+                            return (
+                                <div
+                                    key={opt.value}
+                                    onClick={() => {
+                                        onChange(opt.value);
+                                        setIsOpen(false);
+                                        setSearch('');
+                                    }}
+                                    style={{
+                                        padding: '11px 16px',
+                                        fontSize: '0.93rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 12,
+                                        background: isSelected ? 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)' : 'transparent',
+                                        color: isSelected ? '#fff' : '#1e293b',
+                                        transition: 'background 0.15s, padding-left 0.15s',
+                                        borderLeft: isSelected ? '3px solid #0284c7' : '3px solid transparent',
+                                        margin: '1px 4px',
+                                        borderRadius: 10,
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (!isSelected) {
+                                            e.currentTarget.style.background = '#f8fafc';
+                                            e.currentTarget.style.borderLeftColor = '#e2e8f0';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (!isSelected) {
+                                            e.currentTarget.style.background = 'transparent';
+                                            e.currentTarget.style.borderLeftColor = 'transparent';
+                                        }
+                                    }}
+                                >
+                                    {opt.icon && (
+                                        <span style={{
+                                            fontSize: '1.35rem',
+                                            lineHeight: 1,
+                                            flexShrink: 0,
+                                            width: 28,
+                                            textAlign: 'center',
+                                        }}>{opt.icon}</span>
+                                    )}
+                                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{opt.label}</span>
+                                            {opt.subtext && (
+                                                <span style={{
+                                                    fontWeight: 700,
+                                                    fontSize: '0.78rem',
+                                                    color: isSelected ? 'rgba(255,255,255,0.8)' : '#64748b',
+                                                    background: isSelected ? 'rgba(255,255,255,0.15)' : 'rgba(100, 116, 139, 0.08)',
+                                                    padding: '2px 7px',
+                                                    borderRadius: 6,
+                                                    letterSpacing: '0.04em',
+                                                }}>
+                                                    {opt.subtext}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {opt.currencySymbol && (
+                                            <span style={{
+                                                fontSize: '0.76rem',
+                                                color: isSelected ? 'rgba(255,255,255,0.7)' : '#94a3b8',
+                                                fontWeight: 500,
+                                                marginTop: 1,
+                                            }}>
+                                                {opt.currencySymbol}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {isSelected && (
+                                        <span style={{ fontSize: '0.9rem', flexShrink: 0, marginLeft: 'auto' }}>✓</span>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const tdStyle = {
         padding: '18px',
         fontSize: '0.92rem',
         borderBottom: '1px solid rgba(226, 232, 240, 0.65)'
@@ -392,110 +617,80 @@ const SupportRates = () => {
                     gap: 16,
                     alignItems: 'center'
                 }}>
-                    <div style={{ position: 'relative', gridColumn: 'span 1' }}>
-                        <input
-                            list="affiliate-list"
-                            type="text"
-                            placeholder="Search Affiliate..."
-                            value={affiliateSearch}
-                            onChange={(event) => setAffiliateSearch(event.target.value)}
-                            style={{
-                                width: '100%',
-                                minHeight: 52,
-                                padding: '0 44px 0 16px',
-                                borderRadius: 14,
-                                border: '1px solid rgba(148, 163, 184, 0.3)',
-                                background: '#fff',
-                                color: '#334155',
-                                fontSize: '0.95rem',
-                                boxSizing: 'border-box'
-                            }}
-                        />
-                        <datalist id="affiliate-list">
-                            {AFFILIATES.map((affiliate) => <option key={affiliate} value={affiliate} />)}
-                        </datalist>
-                        {affiliateSearch && (
-                            <button
-                                type="button"
-                                onClick={() => setAffiliateSearch('')}
-                                aria-label="Clear affiliate search"
-                                style={{
-                                    position: 'absolute',
-                                    right: 12,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    border: 'none',
-                                    background: 'transparent',
-                                    cursor: 'pointer',
-                                    color: '#94a3b8',
-                                    fontSize: '1rem'
-                                }}
-                            >
-                                x
-                            </button>
-                        )}
-                    </div>
+                    <SearchableSelect
+                        placeholder="Search Affiliate..."
+                        value={affiliateSearch}
+                        onChange={setAffiliateSearch}
+                        options={[
+                            { value: '', label: 'All Affiliates' },
+                            ...AFFILIATES.map(aff => ({ value: aff, label: aff }))
+                        ]}
+                        style={{ gridColumn: 'span 1' }}
+                    />
 
-                    <div style={{ position: 'relative', gridColumn: 'span 2' }}>
-                        <input
-                            list="country-list"
-                            type="text"
-                            placeholder="Search Send Country..."
-                            value={countryFilter}
-                            onChange={(event) => setCountryFilter(event.target.value)}
-                            style={{
-                                width: '100%',
-                                minHeight: 52,
-                                padding: '0 44px 0 16px',
-                                borderRadius: 14,
-                                border: '1px solid rgba(148, 163, 184, 0.3)',
-                                background: '#fff',
-                                color: '#334155',
-                                fontSize: '0.95rem',
-                                boxSizing: 'border-box',
-                                boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.02)',
-                            }}
-                        />
-                        <datalist id="country-list">
-                            {countryOptions.map((country) => <option key={country} value={country} />)}
-                        </datalist>
-                        {countryFilter && (
-                            <button
-                                type="button"
-                                onClick={() => setCountryFilter('')}
-                                aria-label="Clear country filter"
-                                style={{
-                                    position: 'absolute',
-                                    right: 12,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    border: 'none',
-                                    background: 'transparent',
-                                    cursor: 'pointer',
-                                    color: '#94a3b8',
-                                    fontSize: '1rem'
-                                }}
-                            >
-                                x
-                            </button>
-                        )}
-                    </div>
+                    <SearchableSelect
+                        placeholder="Search Send Country..."
+                        value={countryFilter}
+                        onChange={setCountryFilter}
+                        options={[
+                            { value: '', label: 'All Countries', icon: '🌍' },
+                            ...countryOptions.map(country => {
+                                const currCode = COUNTRY_DEFAULT_CURRENCY[country];
+                                const curr = CURRENCY_DETAILS[currCode];
+                                return {
+                                    value: country,
+                                    label: country,
+                                    icon: COUNTRY_DETAILS[country]?.flag,
+                                    subtext: currCode,
+                                    currencySymbol: curr ? `${curr.name} (${curr.symbol})` : undefined,
+                                };
+                            })
+                        ]}
+                        style={{ gridColumn: 'span 2' }}
+                    />
 
-                    <select id="filter-from" value={fromFilter} onChange={(event) => setFromFilter(event.target.value)} style={selectStyle}>
-                        <option value="all">&lt;All From Currency&gt;</option>
-                        {fromCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
-                    </select>
+                    <SearchableSelect
+                        placeholder="From Currency..."
+                        value={fromFilter}
+                        onChange={setFromFilter}
+                        options={[
+                            { value: 'all', label: 'All From Currency', icon: '💱' },
+                            ...fromCurrencies.map(curr => ({
+                                value: curr,
+                                label: CURRENCY_DETAILS[curr]?.name || curr,
+                                subtext: curr,
+                                icon: CURRENCY_DETAILS[curr]?.flag,
+                                currencySymbol: CURRENCY_DETAILS[curr]?.symbol,
+                            }))
+                        ]}
+                    />
 
-                    <select id="filter-to" value={toFilter} onChange={(event) => setToFilter(event.target.value)} style={selectStyle}>
-                        <option value="all">&lt;All To Currency&gt;</option>
-                        {toCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
-                    </select>
+                    <SearchableSelect
+                        placeholder="To Currency..."
+                        value={toFilter}
+                        onChange={setToFilter}
+                        options={[
+                            { value: 'all', label: 'All To Currency', icon: '💱' },
+                            ...toCurrencies.map(curr => ({
+                                value: curr,
+                                label: CURRENCY_DETAILS[curr]?.name || curr,
+                                subtext: curr,
+                                icon: CURRENCY_DETAILS[curr]?.flag,
+                                currencySymbol: CURRENCY_DETAILS[curr]?.symbol,
+                            }))
+                        ]}
+                    />
 
-                    <select id="filter-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={selectStyle}>
-                        <option value="all">&lt;All Status&gt;</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
+                    <SearchableSelect
+                        placeholder="Select Status..."
+                        value={statusFilter}
+                        onChange={setStatusFilter}
+                        options={[
+                            { value: 'all', label: '<All Status>' },
+                            { value: 'active', label: 'Active' },
+                            { value: 'inactive', label: 'Inactive' }
+                        ]}
+                    />
                 </div>
 
                 <div style={{
