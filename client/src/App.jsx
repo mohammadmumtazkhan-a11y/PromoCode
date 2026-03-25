@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import OnBehalfOfCustomer from './pages/Admin/OnBehalfOfCustomer';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import './index.css';
 
@@ -12,6 +13,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const location = useLocation();
   const isActive = (path) => location.pathname === path;
+  const [adminOpen, setAdminOpen] = useState(false);
 
   // New "Outlined Button" style
   const itemStyle = (active) => ({
@@ -109,9 +111,33 @@ const Sidebar = ({ isOpen, onClose }) => {
         <Link to="/integration" style={itemStyle(false)}>
           <span>🔌</span> Integration
         </Link>
-        <Link to="/admin" style={itemStyle(false)}>
-          <span>👤</span> Administration
-        </Link>
+        {/* Administration Section */}
+        <div style={{ ...itemStyle(false), flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0, border: '1px solid #ffedd5', overflow: 'hidden', marginBottom: 8 }}>
+          <div
+            onClick={() => setAdminOpen(o => !o)}
+            style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderBottom: adminOpen ? '1px solid #fff7ed' : 'none', userSelect: 'none' }}
+          >
+            <span>👤</span>
+            <span style={{ flex: 1 }}>Administration</span>
+            <span style={{ fontSize: '0.7rem', color: '#9ca3af', transition: 'transform 0.2s', display: 'inline-block', transform: adminOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+          </div>
+          {adminOpen && (
+            <div style={{ background: '#fff7ed', padding: '8px 0' }}>
+              <Link
+                to="/admin/on-behalf-of-customer"
+                onClick={onClose}
+                style={{
+                  display: 'block', padding: '8px 16px 8px 48px',
+                  color: location.pathname.startsWith('/admin/on-behalf-of-customer') ? '#c2410c' : '#4b5563',
+                  textDecoration: 'none', fontSize: '0.85rem',
+                  fontWeight: location.pathname.startsWith('/admin/on-behalf-of-customer') ? 600 : 400,
+                }}
+              >
+                On Behalf of Customer
+              </Link>
+            </div>
+          )}
+        </div>
 
         {/* Configuration Section */}
         <div style={{ ...itemStyle(false), flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0, border: '1px solid #ffedd5', overflow: 'hidden', marginTop: 16 }}>
@@ -331,6 +357,9 @@ function App() {
           <Route path="/growth/referral-settings" element={<ReferralSettings />} />
           <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
           <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
+
+          {/* Administration */}
+          <Route path="/admin/on-behalf-of-customer" element={<OnBehalfOfCustomer />} />
 
           {/* Configuration */}
           <Route path="/configuration/rate-manager" element={<RateManager />} />
