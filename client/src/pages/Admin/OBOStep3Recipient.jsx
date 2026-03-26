@@ -85,15 +85,16 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
   };
 
   const inputStyle = (hasErr) => ({
-    width: '100%', padding: '10px 14px',
-    border: `1px solid ${hasErr ? '#dc2626' : '#e5e7eb'}`,
-    borderRadius: 8, fontSize: '0.875rem', outline: 'none',
-    fontFamily: "'Inter', sans-serif",
-    color: '#1f2937', background: '#fff', boxSizing: 'border-box',
+    width: '100%', padding: '14px 16px',
+    border: `1px solid ${hasErr ? '#dc2626' : '#d1d5db'}`,
+    borderRadius: 10, fontSize: '0.95rem', outline: 'none',
+    fontFamily: "'Inter', sans-serif", fontWeight: 500,
+    color: '#111827', background: '#fff', boxSizing: 'border-box',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
   });
 
-  const labelStyle = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: 5 };
-  const errStyle = { fontSize: '0.72rem', color: '#dc2626', marginTop: 3 };
+  const labelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#374151', marginBottom: 8 };
+  const errStyle = { fontSize: '0.8rem', color: '#dc2626', fontWeight: 600, marginTop: 6 };
 
   const RecipientCard = ({ rec, isRecent }) => (
     <div
@@ -134,37 +135,40 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
   return (
     <div>
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1f2937', margin: 0 }}>Select Recipient</h2>
-        <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: '6px 0 0' }}>
-          Choose an existing beneficiary or add a new one for <strong>{customer.firstName} {customer.lastName}</strong>.
+      <div style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#111827', margin: 0, letterSpacing: '-0.01em' }}>Select Recipient</h2>
+        <p style={{ fontSize: '0.95rem', color: '#6b7280', margin: '8px 0 0' }}>
+          Choose an existing beneficiary or add a new one for <strong style={{ color: '#1f2937' }}>{customer.firstName} {customer.lastName}</strong>.
         </p>
       </div>
 
       {view === 'list' ? (
         <>
           {/* Recent Recipients — horizontal cards */}
-          <div style={{ display: 'flex', gap: 20, marginBottom: 24, justifyContent: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 24, marginBottom: 32, justifyContent: 'flex-start', overflowX: 'auto', paddingBottom: 12 }}>
             {recent.map(r => {
               const sel = selected?.id === r.id;
               return (
                 <div key={r.id} onClick={() => { setSelected(r); setDetailRelationship(r.relationship || ''); setDetailReason(r.reason || ''); setView('details'); }}
                   style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, cursor: 'pointer',
+                    minWidth: 80,
                   }}
                 >
                   <div style={{
-                    width: 52, height: 52, borderRadius: 10,
-                    border: sel ? '2px solid #ea580c' : '1px solid #d1d5db',
-                    background: sel ? '#fff7ed' : '#fff',
+                    width: 64, height: 64, borderRadius: '50%',
+                    border: sel ? 'none' : '2px solid #e5e7eb',
+                    background: sel ? 'linear-gradient(135deg, #f97316, #ea580c)' : '#fff',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: 700, fontSize: '0.9rem', color: sel ? '#ea580c' : '#374151',
-                    transition: 'all 0.15s',
+                    fontWeight: 800, fontSize: '1.25rem', color: sel ? '#fff' : '#111827',
+                    boxShadow: sel ? '0 8px 16px rgba(234,88,12,0.3)' : '0 2px 4px rgba(0,0,0,0.02)',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transform: sel ? 'scale(1.05)' : 'scale(1)',
                   }}>
                     {r.firstName[0]}{r.lastName[0]}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: sel ? '#ea580c' : '#374151', fontWeight: sel ? 700 : 500, textAlign: 'center', maxWidth: 90, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {r.firstName} {r.lastName}
+                  <div style={{ fontSize: '0.85rem', color: sel ? '#ea580c' : '#4b5563', fontWeight: sel ? 800 : 600, textAlign: 'center', maxWidth: 90, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {r.firstName}
                   </div>
                 </div>
               );
@@ -172,71 +176,87 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
           </div>
 
           {/* Search + Add New Recipient */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 24, alignItems: 'center' }}>
             <input
-              style={{ flex: 1, padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Inter', sans-serif" }}
-              placeholder="Search Recipients"
+              style={{ flex: 1, padding: '12px 18px', border: '1px solid #d1d5db', borderRadius: 12, fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box', fontFamily: "'Inter', sans-serif", boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}
+              placeholder="Search Recipients by name or nickname..."
               value={search}
+              onFocus={e => { e.target.style.borderColor = '#ea580c'; e.target.style.boxShadow = '0 0 0 3px rgba(234,88,12,0.1)'; }}
+              onBlur={e => { e.target.style.borderColor = '#d1d5db'; e.target.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)'; }}
               onChange={e => setSearch(e.target.value)}
             />
             <button
               onClick={() => setView('add')}
               style={{
-                padding: '10px 20px', whiteSpace: 'nowrap',
+                padding: '12px 24px', whiteSpace: 'nowrap',
                 background: 'linear-gradient(135deg, #f97316, #ea580c)',
-                color: '#fff', border: 'none', borderRadius: 8,
-                fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer',
+                color: '#fff', border: 'none', borderRadius: 12,
+                fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Inter', sans-serif",
-                boxShadow: '0 2px 8px rgba(234,88,12,0.25)',
+                boxShadow: '0 4px 12px rgba(234,88,12,0.25)',
+                transition: 'transform 0.1s ease',
               }}
+              onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
+              onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
             >
-              Add New Recipient
+              + Add New Recipient
             </button>
           </div>
 
           {/* Recipients Table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24 }}>
-            <thead>
-              <tr>
-                {['Recipient name', 'Bank', 'Account'].map(h => (
-                  <th key={h} style={{
-                    padding: '12px 16px', textAlign: 'center', fontWeight: 700,
-                    fontSize: '0.85rem', color: '#1f2937',
-                    borderBottom: '2px solid #e5e7eb', background: '#fff',
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(r => {
-                const sel = selected?.id === r.id;
-                return (
-                  <tr key={r.id} onClick={() => { setSelected(r); setDetailRelationship(r.relationship || ''); setDetailReason(r.reason || ''); setView('details'); }}
-                    style={{
-                      cursor: 'pointer',
-                      background: sel ? '#fff7ed' : '#fff',
-                      transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={e => { if (!sel) e.currentTarget.style.background = '#f9fafb'; }}
-                    onMouseLeave={e => { if (!sel) e.currentTarget.style.background = '#fff'; }}
-                  >
-                    <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '0.875rem', color: sel ? '#ea580c' : '#374151', fontWeight: sel ? 600 : 400, borderBottom: '1px solid #f3f4f6' }}>
-                      {r.firstName} {r.lastName}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '0.875rem', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
-                      {r.bank}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '0.875rem', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
-                      {r.accountNumber}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr><td colSpan={3} style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>No recipients found</td></tr>
-              )}
-            </tbody>
-          </table>
+          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)', marginBottom: 32 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                  {['Recipient name', 'Bank', 'Account Number'].map(h => (
+                    <th key={h} style={{
+                      padding: '16px 24px', textAlign: 'left', fontWeight: 700,
+                      fontSize: '0.75rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap'
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(r => {
+                  const sel = selected?.id === r.id;
+                  return (
+                    <tr key={r.id} onClick={() => { setSelected(r); setDetailRelationship(r.relationship || ''); setDetailReason(r.reason || ''); setView('details'); }}
+                      style={{
+                        cursor: 'pointer',
+                        background: sel ? '#fff7ed' : '#fff',
+                        transition: 'all 0.15s',
+                        borderBottom: '1px solid #f3f4f6'
+                      }}
+                      onMouseEnter={e => { if (!sel) e.currentTarget.style.background = '#f8fafc'; }}
+                      onMouseLeave={e => { if (!sel) e.currentTarget.style.background = '#fff'; }}
+                    >
+                      <td style={{ padding: '16px 24px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: '50%', background: sel ? 'linear-gradient(135deg, #f97316, #ea580c)' : '#f3f4f6', color: sel ? '#fff' : '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', boxShadow: sel ? '0 2px 8px rgba(234,88,12,0.3)' : 'none' }}>
+                            {r.firstName[0]}{r.lastName[0]}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: sel ? '#ea580c' : '#111827' }}>{r.firstName} {r.lastName}</div>
+                            {r.nickname && <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 2 }}>"{r.nickname}"</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px 24px', fontSize: '0.9rem', color: '#4b5563', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                        {r.bank}
+                      </td>
+                      <td style={{ padding: '16px 24px', fontSize: '0.9rem', color: '#4b5563', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                        {r.accountNumber}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr><td colSpan={3} style={{ padding: 48, textAlign: 'center', color: '#9ca3af', fontSize: '0.95rem', fontWeight: 500 }}>No recipients found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {/* Navigation */}
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
@@ -247,46 +267,46 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
         </>
       ) : view === 'details' ? (
         /* Recipient Details View */
-        <>
-          <button onClick={() => setView('list')} style={{ padding: '8px 18px', background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', marginBottom: 20 }}>
-            ← Back
+        <div style={{ animation: 'fadeIn 0.2s ease' }}>
+          <button onClick={() => setView('list')} style={{ padding: '8px 16px', background: '#fff', color: '#4b5563', border: '1px solid #d1d5db', borderRadius: 8, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', marginBottom: 24, transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }} onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+            ← Back to List
           </button>
 
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#1f2937', margin: '0 0 24px' }}>Recipients Details</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#111827', margin: '0 0 24px' }}>Recipient Details</h2>
 
-          <div style={{ background: '#f9fafb', borderRadius: 10, padding: 24, marginBottom: 24 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16, padding: 32, marginBottom: 24, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
               <div>
-                <label style={labelStyle}>Recipient First Name *</label>
-                <div style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px' }}>{selected?.firstName || '—'}</div>
+                <label style={labelStyle}>Recipient First Name</label>
+                <div style={{ ...inputStyle(false), background: '#f9fafb', color: '#4b5563', borderColor: '#e5e7eb' }}>{selected?.firstName || '—'}</div>
               </div>
               <div>
-                <label style={labelStyle}>Recipient Last Name *</label>
-                <div style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px' }}>{selected?.lastName || '—'}</div>
+                <label style={labelStyle}>Recipient Last Name</label>
+                <div style={{ ...inputStyle(false), background: '#f9fafb', color: '#4b5563', borderColor: '#e5e7eb' }}>{selected?.lastName || '—'}</div>
               </div>
               <div>
-                <label style={labelStyle}>DOB</label>
-                <div style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px' }}>{selected?.dob || '25/07/1987'}</div>
+                <label style={labelStyle}>Date of Birth</label>
+                <div style={{ ...inputStyle(false), background: '#f9fafb', color: '#4b5563', borderColor: '#e5e7eb' }}>{selected?.dob || '25/07/1987'}</div>
               </div>
               <div>
-                <label style={labelStyle}>Relationship *</label>
-                <select style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px', cursor: 'pointer' }} value={detailRelationship} onChange={e => setDetailRelationship(e.target.value)}>
-                  <option value="">Select…</option>
+                <label style={labelStyle}>Relationship to Sender *</label>
+                <select style={{ ...inputStyle(false), cursor: 'pointer' }} value={detailRelationship} onChange={e => setDetailRelationship(e.target.value)}>
+                  <option value="">Select Relationship…</option>
                   {RELATIONSHIPS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Unique Nick Name</label>
-                <div style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px' }}>{selected?.nickname || '—'}</div>
+                <label style={labelStyle}>Unique Nickname</label>
+                <div style={{ ...inputStyle(false), background: '#f9fafb', color: '#4b5563', borderColor: '#e5e7eb' }}>{selected?.nickname || '—'}</div>
               </div>
               <div>
-                <label style={labelStyle}>Mobile Number *</label>
-                <div style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px' }}>{selected?.mobile || '—'}</div>
+                <label style={labelStyle}>Mobile Number</label>
+                <div style={{ ...inputStyle(false), background: '#f9fafb', color: '#4b5563', borderColor: '#e5e7eb' }}>{selected?.mobile || '—'}</div>
               </div>
-              <div>
-                <label style={labelStyle}>Reason *</label>
-                <select style={{ ...inputStyle(false), background: '#fff', padding: '12px 14px', cursor: 'pointer' }} value={detailReason} onChange={e => setDetailReason(e.target.value)}>
-                  <option value="">Select…</option>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>Reason for Transfer *</label>
+                <select style={{ ...inputStyle(false), cursor: 'pointer' }} value={detailReason} onChange={e => setDetailReason(e.target.value)}>
+                  <option value="">Select Transfer Reason…</option>
                   {TRANSFER_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
@@ -296,50 +316,59 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
           <button
             onClick={() => selected && onContinue({ ...selected, relationship: detailRelationship, reason: detailReason })}
             style={{
-              padding: '13px 40px',
+              width: '100%', padding: '16px',
               background: 'linear-gradient(135deg, #f97316, #ea580c)',
-              color: '#fff', border: 'none', borderRadius: 8,
-              fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer',
+              color: '#fff', border: 'none', borderRadius: 12,
+              fontSize: '1rem', fontWeight: 700, cursor: 'pointer',
               fontFamily: "'Inter', sans-serif",
-              boxShadow: '0 2px 8px rgba(234,88,12,0.25)',
+              boxShadow: '0 4px 12px rgba(234,88,12,0.25)',
+              transition: 'transform 0.1s ease',
             }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.98)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
           >
-            Continue
+            Continue with {selected?.firstName} →
           </button>
-        </>
+        </div>
       ) : (
         /* Add New Recipient Form */
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-            <button onClick={() => setView('list')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '1.1rem' }}>←</button>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1f2937', margin: 0 }}>Add New Recipient</h3>
+        <div style={{ animation: 'fadeIn 0.2s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <button onClick={() => setView('list')} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: 36, height: 36, cursor: 'pointer', color: '#4b5563', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'} onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}>←</button>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#111827', margin: 0 }}>Add New Recipient</h3>
           </div>
 
-          {/* Method Toggle */}
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Transfer Method</label>
-            <div style={{ display: 'flex', gap: 10 }}>
+          {/* Section: Transfer Method */}
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid #e5e7eb', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '1.2rem' }}>⚡</span> Transfer Route
+            </div>
+            <div style={{ display: 'flex', gap: 16 }}>
               {['Direct to bank', 'SWIFT'].map(m => (
                 <button key={m} onClick={() => setAddMethod(m)} style={{
-                  flex: 1, padding: '11px 16px',
-                  border: addMethod === m ? '2px solid #ea580c' : '1px solid #e5e7eb',
-                  borderRadius: 8, background: addMethod === m ? '#fff7ed' : '#fff',
-                  color: addMethod === m ? '#ea580c' : '#374151',
-                  fontWeight: addMethod === m ? 700 : 400,
-                  fontSize: '0.82rem', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                  flex: 1, padding: '16px 20px',
+                  border: addMethod === m ? '2px solid #ea580c' : '1px solid #d1d5db',
+                  borderRadius: 12, background: addMethod === m ? '#fff7ed' : '#fff',
+                  color: addMethod === m ? '#ea580c' : '#4b5563',
+                  fontWeight: addMethod === m ? 700 : 500,
+                  fontSize: '0.95rem', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                  boxShadow: addMethod === m ? '0 4px 12px rgba(234,88,12,0.1)' : '0 1px 2px rgba(0,0,0,0.02)',
+                  transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
                 }}>
-                  <div style={{ fontWeight: 700 }}>{m}</div>
-                  <div style={{ fontSize: '0.7rem', opacity: 0.7 }}>{m === 'Direct to bank' ? '~30 mins · Local' : '~24 hours · International'}</div>
+                  <div style={{ fontWeight: 800, color: addMethod === m ? '#c2410c' : '#111827', marginBottom: 4 }}>{m}</div>
+                  <div style={{ fontSize: '0.75rem', color: addMethod === m ? '#ea580c' : '#6b7280' }}>{m === 'Direct to bank' ? '~30 mins processing · Local route' : '~24 hours processing · International route'}</div>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Section: Bank Details */}
-          <div style={{ background: '#f9fafb', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>🏦 Bank Details</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {/* Bank Name with autocomplete */}
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid #e5e7eb', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '1.2rem' }}>🏦</span> Bank Information
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
               <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
                 <label style={labelStyle}>Bank Name *</label>
                 <input
@@ -347,15 +376,15 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
                   value={bankSearch}
                   placeholder="Search bank name…"
                   onChange={e => handleBankSearch(e.target.value)}
-                  onFocus={() => { setBankFocused(true); if (!bankSearch) setBankSearchResults(MOCK_BANKS); }}
-                  onBlur={() => setTimeout(() => setBankFocused(false), 200)}
+                  onFocus={e => { setBankFocused(true); if (!bankSearch) setBankSearchResults(MOCK_BANKS); e.target.style.borderColor = '#ea580c'; e.target.style.boxShadow = '0 0 0 3px rgba(234,88,12,0.1)'; }}
+                  onBlur={e => { setTimeout(() => setBankFocused(false), 200); e.target.style.borderColor = errors.bank ? '#dc2626' : '#d1d5db'; e.target.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)'; }}
                 />
                 {errors.bank && <div style={errStyle}>{errors.bank}</div>}
                 {bankFocused && bankSearchResults.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 180, overflowY: 'auto' }}>
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, zIndex: 10, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', maxHeight: 220, overflowY: 'auto', marginTop: 8 }}>
                     {bankSearchResults.map(b => (
                       <div key={b} onClick={() => { setNR('bank', b); setBankSearch(b); setBankSearchResults([]); setBankFocused(false); }}
-                        style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '0.875rem', color: '#1f2937' }}
+                        style={{ padding: '12px 16px', cursor: 'pointer', fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}
                         onMouseEnter={e => e.currentTarget.style.background = '#fff7ed'}
                         onMouseLeave={e => e.currentTarget.style.background = '#fff'}
                       >{b}</div>
@@ -365,21 +394,22 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
               </div>
 
               <div>
-                <label style={labelStyle}>Account Number * <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>(max 40 chars)</span></label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <label style={labelStyle}>Account Number * <span style={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: 500 }}>(max 40 chars)</span></label>
+                <div style={{ display: 'flex', gap: 12 }}>
                   <input
-                    style={{ ...inputStyle(errors.accountNumber), flex: 1 }}
+                    style={{ ...inputStyle(errors.accountNumber), flex: 1, fontFamily: 'monospace', fontSize: '1rem' }}
                     maxLength={40}
                     value={newRecipient.accountNumber}
-                    placeholder="Account number"
+                    placeholder="0000000000"
                     onChange={e => { setNR('accountNumber', e.target.value); setAccountValidated(false); setNR('accountHolder', ''); setErrors(er => ({ ...er, accountNumber: null })); }}
                   />
                   <button onClick={handleValidateAccount} style={{
-                    padding: '0 14px', background: '#1f2937', color: '#fff',
-                    border: 'none', borderRadius: 8, fontSize: '0.78rem', fontWeight: 600,
+                    padding: '0 20px', background: accountValidated ? '#10b981' : '#1f2937', color: '#fff',
+                    border: 'none', borderRadius: 10, fontSize: '0.85rem', fontWeight: 700,
                     cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                    transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                   }}>
-                    {validatingAccount ? '…' : 'Verify'}
+                    {validatingAccount ? 'Verifying...' : accountValidated ? '✓ Verified' : 'Verify'}
                   </button>
                 </div>
                 {errors.accountNumber && <div style={errStyle}>{errors.accountNumber}</div>}
@@ -388,20 +418,21 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
               <div>
                 <label style={labelStyle}>Account Holder Name</label>
                 <input
-                  style={{ ...inputStyle(false), background: '#f3f4f6', color: accountValidated ? '#16a34a' : '#9ca3af' }}
+                  style={{ ...inputStyle(false), background: '#f9fafb', color: accountValidated ? '#059669' : '#9ca3af', borderColor: '#e5e7eb', fontWeight: accountValidated ? 700 : 500 }}
                   value={newRecipient.accountHolder}
                   readOnly
                   placeholder="Auto-filled after verification"
                 />
-                {accountValidated && <div style={{ fontSize: '0.72rem', color: '#16a34a', marginTop: 3 }}>✓ Account verified</div>}
               </div>
             </div>
           </div>
 
           {/* Section: Personal Details */}
-          <div style={{ background: '#f9fafb', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>👤 Personal Details</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, border: '1px solid #e5e7eb', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '1.2rem' }}>👤</span> Personal Details
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
               {[
                 { label: 'First Name *', key: 'firstName' },
                 { label: 'Last Name *', key: 'lastName' },
@@ -423,21 +454,23 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
           </div>
 
           {/* Section: Transfer Details */}
-          <div style={{ background: '#f9fafb', borderRadius: 10, padding: 16, marginBottom: 20 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }}>💬 Transfer Details</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 32, border: '1px solid #e5e7eb', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '1.2rem' }}>💬</span> Transfer Context
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
               <div>
-                <label style={labelStyle}>Relationship *</label>
-                <select style={inputStyle(errors.relationship)} value={newRecipient.relationship} onChange={e => setNR('relationship', e.target.value)}>
-                  <option value="">Select…</option>
+                <label style={labelStyle}>Relationship to Sender *</label>
+                <select style={{...inputStyle(errors.relationship), cursor: 'pointer'}} value={newRecipient.relationship} onChange={e => setNR('relationship', e.target.value)}>
+                  <option value="">Select Relationship…</option>
                   {RELATIONSHIPS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
                 {errors.relationship && <div style={errStyle}>{errors.relationship}</div>}
               </div>
               <div>
                 <label style={labelStyle}>Reason for Transfer *</label>
-                <select style={inputStyle(errors.reason)} value={newRecipient.reason} onChange={e => setNR('reason', e.target.value)}>
-                  <option value="">Select…</option>
+                <select style={{...inputStyle(errors.reason), cursor: 'pointer'}} value={newRecipient.reason} onChange={e => setNR('reason', e.target.value)}>
+                  <option value="">Select Reason…</option>
                   {TRANSFER_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
                 {errors.reason && <div style={errStyle}>{errors.reason}</div>}
@@ -445,21 +478,25 @@ const OBOStep3Recipient = ({ customer, txData, onBack, onContinue }) => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <button onClick={() => setView('list')} style={{ padding: '10px 20px', background: '#fff', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>
-              ← Back
+          <div style={{ display: 'flex', gap: 16 }}>
+            <button onClick={() => setView('list')} style={{ padding: '16px 32px', background: '#fff', color: '#4b5563', border: '1px solid #d1d5db', borderRadius: 12, fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }} onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'} onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+              Cancel
             </button>
             <button onClick={handleAddRecipient} style={{
-              padding: '11px 28px',
+              flex: 1, padding: '16px',
               background: 'linear-gradient(135deg, #f97316, #ea580c)',
-              color: '#fff', border: 'none', borderRadius: 8,
-              fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(234,88,12,0.25)',
-            }}>
-              Save & Continue →
+              color: '#fff', border: 'none', borderRadius: 12,
+              fontSize: '1rem', fontWeight: 800, cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(234,88,12,0.25)',
+              transition: 'transform 0.1s ease',
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.98)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+              Save New Recipient & Continue →
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

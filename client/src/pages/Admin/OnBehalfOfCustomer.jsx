@@ -15,43 +15,48 @@ const STEPS = [
   { number: 4, label: 'Summary' },
 ];
 
-const StepIndicator = ({ currentStep }) => (
-  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 36 }}>
+const StepIndicator = ({ currentStep, onStepClick }) => (
+  <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 44, padding: '0 8px', maxWidth: 800, margin: '0 auto 44px' }}>
     {STEPS.map((step, idx) => {
       const isDone = currentStep > step.number;
       const isActive = currentStep === step.number;
+      const canClick = isDone;
       return (
         <React.Fragment key={step.number}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: idx < STEPS.length - 1 ? 'none' : 1 }}>
+          <div
+            onClick={() => canClick && onStepClick(step.number)}
+            style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+              flex: idx < STEPS.length - 1 ? 'none' : 1, width: 80,
+              cursor: canClick ? 'pointer' : 'default',
+            }}
+          >
             <div style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: isDone
-                ? 'linear-gradient(135deg, #f97316, #ea580c)'
-                : isActive
-                  ? 'linear-gradient(135deg, #f97316, #ea580c)'
-                  : '#f3f4f6',
-              color: isActive || isDone ? '#fff' : '#9ca3af',
+              width: 44, height: 44, borderRadius: '50%',
+              background: isDone ? 'linear-gradient(135deg, #f97316, #ea580c)' : isActive ? '#fff' : '#f9fafb',
+              border: isActive ? '2px solid #ea580c' : isDone ? '2px solid #ea580c' : '2px solid #e5e7eb',
+              color: isDone ? '#fff' : isActive ? '#ea580c' : '#9ca3af',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: '0.875rem',
-              boxShadow: isActive ? '0 0 0 4px rgba(249,115,22,0.2)' : 'none',
-              transition: 'all 0.3s',
+              fontWeight: 800, fontSize: '1rem',
+              boxShadow: isActive ? '0 0 0 4px rgba(234,88,12,0.15)' : 'none',
+              transition: 'all 0.3s ease',
             }}>
               {isDone ? '✓' : step.number}
             </div>
             <span style={{
-              fontSize: '0.72rem', fontWeight: isActive ? 700 : 400,
-              color: isActive ? '#ea580c' : isDone ? '#374151' : '#9ca3af',
+              fontSize: '0.8rem', fontWeight: isActive ? 700 : 600,
+              color: isActive ? '#1f2937' : isDone ? '#4b5563' : '#9ca3af',
               whiteSpace: 'nowrap',
+              textAlign: 'center'
             }}>
               {step.label}
             </span>
           </div>
           {idx < STEPS.length - 1 && (
             <div style={{
-              flex: 1, height: 2, margin: '0 8px',
-              background: isDone ? 'linear-gradient(90deg, #f97316, #ea580c)' : '#e5e7eb',
-              marginBottom: 18,
-              transition: 'background 0.3s',
+              flex: 1, height: 3, margin: '20px 4px 0', borderRadius: 2,
+              background: isDone ? '#ea580c' : '#e5e7eb',
+              transition: 'background 0.3s ease',
             }} />
           )}
         </React.Fragment>
@@ -93,9 +98,10 @@ const OnBehalfOfCustomer = () => {
     setSubView('kyc');
   };
 
-  // Called from Search — "Complete KYC" button for Not Done customers
+  // Called from Search — "Complete KYC" button for Not Done customers (Full KYC only, no DD)
   const handleCompleteKyc = (c) => {
     setPendingKycCustomer(c);
+    setKycType('full');
     setKycReturnTo('step1');
     setSubView('kyc');
   };
@@ -103,18 +109,23 @@ const OnBehalfOfCustomer = () => {
   const handleKycComplete = (updatedCustomer) => {
     setSubView('search');
     setPendingKycCustomer(null);
-    // Track if DD was completed during KYC
-    if (kycType === 'ddOnly' || kycType === 'fullWithDD') {
-      setDdCompleted(true);
-    }
-    // Always advance to Transaction Details after KYC completion
     setCustomer(updatedCustomer);
-    setStep(2);
+    if (kycReturnTo === 'step3') {
+      // If DD was requested on Step 2 and not yet done, show DD form before proceeding
+      if (txData?.addDD && !ddCompleted) {
+        setStep(2);
+        setShowTxDD(true);
+      } else {
+        setStep(3);
+      }
+    } else {
+      setStep(2);
+    }
   };
 
   const handleKycSkip = () => {
     setSubView('search');
-    if (kycReturnTo === 'step2' && pendingKycCustomer) {
+    if ((kycReturnTo === 'step2' || kycReturnTo === 'step3') && pendingKycCustomer) {
       setCustomer(pendingKycCustomer);
       setStep(2);
     }
@@ -123,6 +134,15 @@ const OnBehalfOfCustomer = () => {
 
   const handleTxContinue = (data) => {
     setTxData(data);
+
+    if (data.requiresFullKyc) {
+      setPendingKycCustomer(customer);
+      setKycType(data.kycType || 'full');
+      setKycReturnTo('step3');
+      setSubView('kyc');
+      return;
+    }
+
     // If DD was requested on Step 2 and not already done, show DD form first
     if (data.addDD && !ddCompleted) {
       setShowTxDD(true);
@@ -146,6 +166,15 @@ const OnBehalfOfCustomer = () => {
     setStep(4); // Summary
   };
 
+  const handleStepClick = (targetStep) => {
+    if (targetStep < step) {
+      setStep(targetStep);
+      if (targetStep === 1) {
+        setSubView('search');
+      }
+    }
+  };
+
   const handleDone = () => {
     // Reset everything
     setStep(1);
@@ -157,40 +186,57 @@ const OnBehalfOfCustomer = () => {
     setShowTxDD(false);
   };
 
+  if (subView === 'kyc') {
+    return (
+      <div style={{ fontFamily: "'Inter', sans-serif", background: '#fff', border: '1px solid #f3f4f6', borderRadius: 16, padding: 32, boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+        <OBOKYCWizard
+          customer={pendingKycCustomer}
+          kycType={kycType}
+          onComplete={handleKycComplete}
+          onSkip={handleKycSkip}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{
       fontFamily: "'Inter', sans-serif",
+      maxWidth: 1140, margin: '0 auto', padding: '0 16px', boxSizing: 'border-box'
     }}>
       {/* Page Title */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+      <div style={{ marginBottom: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
+            width: 44, height: 44, borderRadius: 12,
             background: 'linear-gradient(135deg, #f97316, #ea580c)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '1.1rem',
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.25rem', boxShadow: '0 4px 12px rgba(234,88,12,0.3)'
           }}>
             🤝
           </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1f2937', margin: 0 }}>
-            Create Transactions On Behalf of Customers
+          <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: '#111827', margin: 0, letterSpacing: '-0.02em' }}>
+            On Behalf Of Customer
           </h1>
         </div>
-        <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: 0, paddingLeft: 46 }}>
-          Manage the full transaction lifecycle as a concierge for your customers.
+        <p style={{ fontSize: '0.95rem', color: '#6b7280', margin: 0, maxWidth: 460 }}>
+          Manage the full transaction lifecycle seamlessly on behalf of your customers.
         </p>
       </div>
 
       {/* Step Indicator */}
-      <StepIndicator currentStep={step} />
+      <StepIndicator currentStep={step} onStepClick={handleStepClick} />
 
       {/* Step Card */}
       <div style={{
         background: '#fff',
-        border: '1px solid #f3f4f6',
+        border: '1px solid #e5e7eb',
         borderRadius: 16,
-        padding: 32,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+        padding: '24px 28px',
+        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01)',
+        width: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden'
       }}>
         {step === 1 && subView === 'search' && (
           <OBOStep1Search
@@ -204,14 +250,6 @@ const OnBehalfOfCustomer = () => {
             onBack={() => setSubView('search')}
             onRegistered={handleRegistered}
             onKycByAdmin={handleKycByAdmin}
-          />
-        )}
-        {subView === 'kyc' && (
-          <OBOKYCWizard
-            customer={pendingKycCustomer}
-            kycType={kycType}
-            onComplete={handleKycComplete}
-            onSkip={handleKycSkip}
           />
         )}
         {step === 2 && !showTxDD && (
@@ -259,7 +297,7 @@ const OnBehalfOfCustomer = () => {
             txData={txData}
             recipient={recipient}
             onBack={() => setStep(3)}
-            onContinue={(action) => handleDone()}
+            onContinue={() => handleDone()}
           />
         )}
       </div>

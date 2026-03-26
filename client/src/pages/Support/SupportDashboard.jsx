@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSupportAuth } from '../../SupportApp';
+import { supportPageTitleStyle, supportSectionTitleStyle } from './supportTypography';
 
 // Mock data sets for different time periods
 const mockData = {
@@ -152,6 +153,9 @@ const SupportDashboard = () => {
 
     // Check escalation threshold on mount
     React.useEffect(() => {
+        // Skip alert if disabled via localStorage (for E2E tests)
+        if (localStorage.getItem('disableAlerts') === 'true') return;
+
         const total = recentData.transactions.total;
         const critical = recentData.transactions.failed + recentData.transactions.inProgress;
         const rate = (critical / total) * 100;
@@ -172,7 +176,7 @@ const SupportDashboard = () => {
             {showAlert && <EscalationPopup rate={criticalRate} onClose={() => setShowAlert(false)} />}
             {/* Header */}
             <div style={{ marginBottom: 32 }}>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1f2937', margin: '0 0 4px' }}>
+                <h1 style={supportPageTitleStyle}>
                     Welcome back, {agent?.name || 'Support Agent'}
                 </h1>
                 <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>Operations overview</p>
@@ -192,7 +196,7 @@ const SupportDashboard = () => {
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
             }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-                    <h2 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1f2937', margin: 0 }}>
+                    <h2 style={supportSectionTitleStyle}>
                         🎫 Help Tickets
                     </h2>
 

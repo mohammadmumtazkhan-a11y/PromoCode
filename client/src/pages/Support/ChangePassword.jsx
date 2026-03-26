@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSupportAuth } from '../../SupportApp';
+import { supportPageTitleStyle } from './supportTypography';
 
 const ChangePassword = () => {
     const { agent } = useSupportAuth();
@@ -45,7 +46,7 @@ const ChangePassword = () => {
         <div style={{ fontFamily: "'Inter', sans-serif", maxWidth: 500 }}>
             {/* Header */}
             <div style={{ marginBottom: 24 }}>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#1f2937', margin: '0 0 4px' }}>
+                <h1 style={supportPageTitleStyle}>
                     Change Password
                 </h1>
                 <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>

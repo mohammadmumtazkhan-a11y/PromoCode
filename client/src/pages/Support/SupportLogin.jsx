@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSupportAuth } from '../../SupportApp';
 import logo from '../../assets/logo.png';
+import { supportPageTitleStyle } from './supportTypography';
 
 // Mock credentials
 const VALID_AGENTS = [
@@ -41,7 +42,7 @@ const SupportLogin = () => {
     };
 
     return (
-        <div style={{
+        <div className="support-shell" style={{
             minHeight: '100vh',
             background: 'linear-gradient(135deg, #f9fafb 0%, #fff7ed 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -56,7 +57,7 @@ const SupportLogin = () => {
                 <div style={{ marginBottom: 8 }}>
                     <img src={logo} alt="Mito.Money" style={{ height: 48, width: 'auto' }} />
                 </div>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1f2937', margin: '0 0 4px' }}>
+                <h1 style={supportPageTitleStyle}>
                     Customer Support Portal
                 </h1>
                 <p style={{ fontSize: '0.9rem', color: '#6b7280', margin: '0 0 32px' }}>

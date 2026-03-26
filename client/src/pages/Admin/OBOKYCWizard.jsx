@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { COUNTRIES } from './oboMockData';
-import OBODueDiligence from './OBODueDiligence';
 
 const DOCUMENT_TYPES = [
   'Passport',
@@ -8,18 +7,39 @@ const DOCUMENT_TYPES = [
 ];
 
 // Mock OCR/scrape results keyed by document type
+// Assumes the uploaded document contains all personal details
 const MOCK_OCR = {
   'Passport': {
     idNumber: 'P3178775',
     issuingCountry: 'United Kingdom',
     issueDate: '2019-03-15',
     expiryDate: '2029-03-14',
+    dob: '1992-08-14',
+    gender: 'Male',
+    nationality: 'United Kingdom',
+    birthCountry: 'United Kingdom',
+    residentCountry: 'United Kingdom',
+    occupation: 'Engineer',
+    city: 'London',
+    buildingNo: '42',
+    street: 'Victoria Road',
+    postcode: 'SW1A 1AA',
   },
   'Driving Licence': {
     idNumber: 'KHAN912347AB9CD',
     issuingCountry: 'United Kingdom',
     issueDate: '2018-06-20',
     expiryDate: '2028-06-19',
+    dob: '1992-08-14',
+    gender: 'Male',
+    nationality: 'United Kingdom',
+    birthCountry: 'United Kingdom',
+    residentCountry: 'United Kingdom',
+    occupation: 'Engineer',
+    city: 'London',
+    buildingNo: '42',
+    street: 'Victoria Road',
+    postcode: 'SW1A 1AA',
   },
 };
 
@@ -170,24 +190,8 @@ const MiniKycConfirmation = ({ customer, onComplete }) => {
   );
 };
 
-const CustomerBanner = ({ customer, badge, badgeColor, badgeBg, onSkip }) => (
-  <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #f97316, #ea580c)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem', flexShrink: 0 }}>
-      {customer?.firstName?.[0]}{customer?.lastName?.[0]}
-    </div>
-    <div>
-      <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1f2937' }}>{customer?.firstName} {customer?.lastName}</div>
-      <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{customer?.id} · {customer?.email}</div>
-    </div>
-    <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 600, color: badgeColor, background: badgeBg, padding: '2px 10px', borderRadius: 20 }}>{badge}</span>
-    <button onClick={onSkip} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '5px 14px', fontSize: '0.78rem', color: '#6b7280', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Skip</button>
-  </div>
-);
-
 const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) => {
   const [step, setStep] = useState(1);
-  const [subView, setSubView] = useState('aml'); // 'aml' | 'dueDiligence'
-
   // Step 1 — KYC Document
   const [docFile, setDocFile] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -198,6 +202,7 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
   const [expiryDate, setExpiryDate] = useState('');
   const [kycComments, setKycComments] = useState('');
   const [kycErrors, setKycErrors] = useState({});
+  const [ocrData, setOcrData] = useState(null);
   const fileRef = useRef();
 
   const handleDocUpload = (file) => {
@@ -211,33 +216,30 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
       setIssuingCountry(ocr.issuingCountry);
       setIssueDate(ocr.issueDate);
       setExpiryDate(ocr.expiryDate);
+      setOcrData(ocr);
       if (!docType) setDocType('Passport');
       setScanning(false);
     }, 1800);
   };
 
-  // Step 2 — AML
+  // Step 2 — AML (auto-prefill Essential Information from customer record)
   const [aml, setAml] = useState({
     firstName: customer?.firstName || '',
-    middleName: '',
     lastName: customer?.lastName || '',
-    occupation: '',
-    dob: '',
-    gender: '',
-    birthCountry: '',
-    buildingNo: '',
-    buildingName: '',
-    street: '',
-    subStreet: '',
-    postcode: '',
-    city: '',
-    nationality: '',
-    residentCountry: '',
+    occupation: customer?.occupation || '',
+    dob: customer?.dob || '',
+    gender: customer?.gender || '',
+    birthCountry: customer?.birthCountry || '',
+    buildingNo: customer?.buildingNo || '',
+    street: customer?.street || '',
+    postcode: customer?.postcode || '',
+    city: customer?.city || '',
+    nationality: customer?.nationality || '',
+    residentCountry: customer?.residentCountry || '',
     amlIdNumber: '',
     amlIssuingCountry: '',
     amlIssueDate: '',
     amlExpiryDate: '',
-    amlComments: '',
   });
   // Dynamic additional documents list: [{ type, file }]
   const [addDocs, setAddDocs] = useState([{ type: '', file: null }]);
@@ -247,7 +249,6 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
   // Step 3 — Result
   const [processing, setProcessing] = useState(false);
   const [amlResult, setAmlResult] = useState(null);
-  const [linkCopied, setLinkCopied] = useState(false);
 
   const setA = (key, val) => setAml(prev => ({ ...prev, [key]: val }));
 
@@ -270,9 +271,21 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
     const e = validateKyc();
     if (Object.keys(e).length) { setKycErrors(e); return; }
     setKycErrors({});
-    // Pre-fill AML ID fields from Step 1 data
+    // Pre-fill ALL AML fields from document OCR data, customer record, and Step 1 fields
     setAml(prev => ({
       ...prev,
+      firstName: prev.firstName || ocrData?.firstName || customer?.firstName || '',
+      lastName: prev.lastName || ocrData?.lastName || customer?.lastName || '',
+      dob: prev.dob || ocrData?.dob || customer?.dob || '',
+      gender: prev.gender || ocrData?.gender || customer?.gender || '',
+      nationality: prev.nationality || ocrData?.nationality || customer?.nationality || '',
+      occupation: prev.occupation || ocrData?.occupation || customer?.occupation || '',
+      birthCountry: prev.birthCountry || ocrData?.birthCountry || customer?.birthCountry || '',
+      residentCountry: prev.residentCountry || ocrData?.residentCountry || customer?.residentCountry || '',
+      city: prev.city || ocrData?.city || customer?.city || '',
+      buildingNo: prev.buildingNo || ocrData?.buildingNo || customer?.buildingNo || '',
+      street: prev.street || ocrData?.street || customer?.street || '',
+      postcode: prev.postcode || ocrData?.postcode || customer?.postcode || '',
       amlIdNumber: idNumber || prev.amlIdNumber,
       amlIssuingCountry: issuingCountry || prev.amlIssuingCountry,
       amlIssueDate: issueDate || prev.amlIssueDate,
@@ -289,10 +302,18 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
     return e;
   };
 
+  const [showSelfiePopup, setShowSelfiePopup] = useState(false);
+  const [selfieLinkCopied, setSelfieLinkCopied] = useState(false);
+
   const handleDoAml = () => {
     const e = validateAml();
     if (Object.keys(e).length) { setAmlErrors(e); return; }
     setAmlErrors({});
+    // For selfie flow, show selfie confirmation popup first
+    if (kycType === 'fullWithSelfie') {
+      setShowSelfiePopup(true);
+      return;
+    }
     setStep(3);
     setProcessing(true);
     setTimeout(() => {
@@ -301,24 +322,20 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
     }, 2500);
   };
 
-  const handleSaveDueDiligence = () => {
-    const e = validateAml();
-    if (Object.keys(e).length) { setAmlErrors(e); return; }
-    setAmlErrors({});
-    setSubView('dueDiligence');
-  };
-
-  const handleDueDiligenceAml = () => {
-    setSubView('aml');
+  const handleSelfiePopupContinue = () => {
+    setShowSelfiePopup(false);
     setStep(3);
     setProcessing(true);
-    setTimeout(() => { setProcessing(false); setAmlResult('Refer'); }, 2500);
+    setTimeout(() => {
+      setProcessing(false);
+      setAmlResult('Passed');
+    }, 2500);
   };
 
-  const handleCopyFacialLink = () => {
+  const handleCopySelfieLink = () => {
     navigator.clipboard?.writeText('https://app.mito.com/facial-verify?token=mock456');
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2500);
+    setSelfieLinkCopied(true);
+    setTimeout(() => setSelfieLinkCopied(false), 3000);
   };
 
   const handleComplete = () => {
@@ -339,16 +356,6 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
   // ── Mini KYC: auto-advance confirmation ──
   if (kycType === 'mini') {
     return <MiniKycConfirmation customer={customer} onComplete={onComplete} />;
-  }
-
-  // ── Due Diligence Only ──
-  if (kycType === 'ddOnly') {
-    return (
-      <div style={{ fontFamily: "'Inter', sans-serif" }}>
-        <CustomerBanner customer={customer} badge="Due Diligence Only" badgeColor="#7c3aed" badgeBg="#ede9fe" onSkip={onSkip} />
-        <OBODueDiligence customer={customer} onBack={onSkip} onDoAml={() => onComplete({ ...customer, kycStatus: 'Refer' })} />
-      </div>
-    );
   }
 
   return (
@@ -444,6 +451,7 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
                     setIssuingCountry(ocr.issuingCountry);
                     setIssueDate(ocr.issueDate);
                     setExpiryDate(ocr.expiryDate);
+                    setOcrData(ocr);
                     setScanning(false);
                   }, 1200);
                 }
@@ -515,107 +523,82 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
       )}
 
       {/* ══════════════════════════════════════════════ */}
-      {/* STEP 2 — Due Diligence sub-view               */}
-      {/* ══════════════════════════════════════════════ */}
-      {step === 2 && subView === 'dueDiligence' && (
-        <OBODueDiligence
-          customer={customer}
-          onBack={() => setSubView('aml')}
-          onDoAml={handleDueDiligenceAml}
-        />
-      )}
-
-      {/* ══════════════════════════════════════════════ */}
       {/* STEP 2 — AML: Personal & Address Details       */}
       {/* ══════════════════════════════════════════════ */}
-      {step === 2 && subView === 'aml' && (
+      {step === 2 && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1f2937', margin: 0 }}>AML</h3>
             <button onClick={() => setStep(1)} style={{ ...btnSecondary, padding: '6px 16px', fontSize: '0.8rem' }}>← Back</button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
-            {/* Row 1: Names */}
-            <FormField label="First Name" required error={amlErrors.firstName}>
-              <input style={inputStyle(amlErrors.firstName)} value={aml.firstName} onChange={e => setA('firstName', e.target.value)} />
-            </FormField>
-            <FormField label="Middle Name" error={amlErrors.middleName}>
-              <input style={inputStyle()} value={aml.middleName} onChange={e => setA('middleName', e.target.value)} />
-            </FormField>
-            <FormField label="Last Name" required error={amlErrors.lastName}>
-              <input style={inputStyle(amlErrors.lastName)} value={aml.lastName} onChange={e => setA('lastName', e.target.value)} />
-            </FormField>
+          {/* --- SECTION 1: MANDATORY INFORMATION --- */}
+          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24, marginBottom: 24, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            <h4 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#111827', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 16px' }}>
+              <span style={{ color: '#ea580c' }}>●</span> Essential Information
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              {/* Personal */}
+              <FormField label="First Name" required error={amlErrors.firstName}>
+                <input style={inputStyle(amlErrors.firstName)} value={aml.firstName} onChange={e => setA('firstName', e.target.value)} />
+              </FormField>
+              <FormField label="Last Name" required error={amlErrors.lastName}>
+                <input style={inputStyle(amlErrors.lastName)} value={aml.lastName} onChange={e => setA('lastName', e.target.value)} />
+              </FormField>
+              <FormField label="Date of Birth" required error={amlErrors.dob}>
+                <input type="date" style={inputStyle(amlErrors.dob)} value={aml.dob} onChange={e => setA('dob', e.target.value)} />
+              </FormField>
+              
+              <FormField label="Gender" required error={amlErrors.gender}>
+                <select style={inputStyle(amlErrors.gender)} value={aml.gender} onChange={e => setA('gender', e.target.value)}>
+                  <option value="">Select…</option>
+                  {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Nationality" required error={amlErrors.nationality}>
+                <SearchableSelect value={aml.nationality} onChange={v => setA('nationality', v)} options={COUNTRIES} placeholder="Search…" error={amlErrors.nationality} />
+              </FormField>
+              <FormField label="Occupation" required error={amlErrors.occupation}>
+                <select style={inputStyle(amlErrors.occupation)} value={aml.occupation} onChange={e => setA('occupation', e.target.value)}>
+                  <option value="">Select…</option>
+                  {OCCUPATIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </FormField>
 
-            {/* Row 2: Occupation / DOB / Gender */}
-            <FormField label="Occupation" required error={amlErrors.occupation}>
-              <select style={inputStyle(amlErrors.occupation)} value={aml.occupation} onChange={e => setA('occupation', e.target.value)}>
-                <option value="">Select…</option>
-                {OCCUPATIONS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Date of Birth" required error={amlErrors.dob}>
-              <input type="date" style={inputStyle(amlErrors.dob)} value={aml.dob} onChange={e => setA('dob', e.target.value)} />
-            </FormField>
-            <FormField label="Gender" required error={amlErrors.gender}>
-              <select style={inputStyle(amlErrors.gender)} value={aml.gender} onChange={e => setA('gender', e.target.value)}>
-                <option value="">Select…</option>
-                {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </FormField>
+              {/* Address */}
+              <FormField label="Birth Country" required error={amlErrors.birthCountry}>
+                <SearchableSelect value={aml.birthCountry} onChange={v => setA('birthCountry', v)} options={COUNTRIES} placeholder="Search country…" error={amlErrors.birthCountry} />
+              </FormField>
+              <FormField label="Resident Country" required error={amlErrors.residentCountry}>
+                <SearchableSelect value={aml.residentCountry} onChange={v => setA('residentCountry', v)} options={COUNTRIES} placeholder="Search…" error={amlErrors.residentCountry} />
+              </FormField>
+              <FormField label="City" required error={amlErrors.city}>
+                <input style={inputStyle(amlErrors.city)} value={aml.city} onChange={e => setA('city', e.target.value)} />
+              </FormField>
 
-            {/* Row 3: Birth Country / Building No / Building Name */}
-            <FormField label="Birth Country" required error={amlErrors.birthCountry}>
-              <SearchableSelect value={aml.birthCountry} onChange={v => setA('birthCountry', v)} options={COUNTRIES} placeholder="Search country…" error={amlErrors.birthCountry} />
-            </FormField>
-            <FormField label="Building No./Flat No." required error={amlErrors.buildingNo}>
-              <input style={inputStyle(amlErrors.buildingNo)} value={aml.buildingNo} onChange={e => setA('buildingNo', e.target.value)} />
-            </FormField>
-            <FormField label="Building Name" error={amlErrors.buildingName}>
-              <input style={inputStyle()} value={aml.buildingName} onChange={e => setA('buildingName', e.target.value)} />
-            </FormField>
+              <FormField label="Building No./Flat No." required error={amlErrors.buildingNo}>
+                <input style={inputStyle(amlErrors.buildingNo)} value={aml.buildingNo} onChange={e => setA('buildingNo', e.target.value)} />
+              </FormField>
+              <FormField label="Street" required error={amlErrors.street}>
+                <input style={inputStyle(amlErrors.street)} value={aml.street} onChange={e => setA('street', e.target.value)} />
+              </FormField>
+              <FormField label="Post code/Zip code" required error={amlErrors.postcode}>
+                <input style={inputStyle(amlErrors.postcode)} value={aml.postcode} onChange={e => setA('postcode', e.target.value)} />
+              </FormField>
 
-            {/* Row 4: Street / Sub Street / Postcode */}
-            <FormField label="Street" required error={amlErrors.street}>
-              <input style={inputStyle(amlErrors.street)} value={aml.street} onChange={e => setA('street', e.target.value)} />
-            </FormField>
-            <FormField label="Sub Street" error={amlErrors.subStreet}>
-              <input style={inputStyle()} value={aml.subStreet} onChange={e => setA('subStreet', e.target.value)} />
-            </FormField>
-            <FormField label="Post code/Zip code" required error={amlErrors.postcode}>
-              <input style={inputStyle(amlErrors.postcode)} value={aml.postcode} onChange={e => setA('postcode', e.target.value)} />
-            </FormField>
+              {/* ID Docs */}
+              <FormField label="ID Number" required error={amlErrors.amlIdNumber}>
+                <input style={{ ...inputStyle(amlErrors.amlIdNumber), background: aml.amlIdNumber && docFile ? '#f0fdf4' : '#fff' }} value={aml.amlIdNumber} onChange={e => setA('amlIdNumber', e.target.value)} />
+              </FormField>
+              <FormField label="Issuing Country" required error={amlErrors.amlIssuingCountry}>
+                <SearchableSelect value={aml.amlIssuingCountry} onChange={v => setA('amlIssuingCountry', v)} options={COUNTRIES} placeholder="Search…" error={amlErrors.amlIssuingCountry} />
+              </FormField>
+              <FormField label="ID Issue Date" required error={amlErrors.amlIssueDate}>
+                <input type="date" style={{ ...inputStyle(amlErrors.amlIssueDate), background: aml.amlIssueDate && docFile ? '#f0fdf4' : '#fff' }} value={aml.amlIssueDate} onChange={e => setA('amlIssueDate', e.target.value)} />
+              </FormField>
 
-            {/* Row 5: City / Nationality / Resident Country */}
-            <FormField label="City" required error={amlErrors.city}>
-              <input style={inputStyle(amlErrors.city)} value={aml.city} onChange={e => setA('city', e.target.value)} />
-            </FormField>
-            <FormField label="Nationality" required error={amlErrors.nationality}>
-              <SearchableSelect value={aml.nationality} onChange={v => setA('nationality', v)} options={COUNTRIES} placeholder="Search…" error={amlErrors.nationality} />
-            </FormField>
-            <FormField label="Resident Country" required error={amlErrors.residentCountry}>
-              <SearchableSelect value={aml.residentCountry} onChange={v => setA('residentCountry', v)} options={COUNTRIES} placeholder="Search…" error={amlErrors.residentCountry} />
-            </FormField>
-
-            {/* Row 6: ID Number / Issuing Country / ID Issue Date */}
-            <FormField label="ID Number" required error={amlErrors.amlIdNumber}>
-              <input style={{ ...inputStyle(amlErrors.amlIdNumber), background: aml.amlIdNumber && docFile ? '#f0fdf4' : '#fff' }} value={aml.amlIdNumber} onChange={e => setA('amlIdNumber', e.target.value)} />
-            </FormField>
-            <FormField label="Issuing Country" required error={amlErrors.amlIssuingCountry}>
-              <SearchableSelect value={aml.amlIssuingCountry} onChange={v => setA('amlIssuingCountry', v)} options={COUNTRIES} placeholder="Search…" error={amlErrors.amlIssuingCountry} />
-            </FormField>
-            <FormField label="ID Issue Date" required error={amlErrors.amlIssueDate}>
-              <input type="date" style={{ ...inputStyle(amlErrors.amlIssueDate), background: aml.amlIssueDate && docFile ? '#f0fdf4' : '#fff' }} value={aml.amlIssueDate} onChange={e => setA('amlIssueDate', e.target.value)} />
-            </FormField>
-
-            {/* Row 7: Expiry Date / Additional Comments */}
-            <FormField label="Expiry Date" required error={amlErrors.amlExpiryDate}>
-              <input type="date" style={{ ...inputStyle(amlErrors.amlExpiryDate), background: aml.amlExpiryDate && docFile ? '#f0fdf4' : '#fff' }} value={aml.amlExpiryDate} onChange={e => setA('amlExpiryDate', e.target.value)} />
-            </FormField>
-            <div style={{ gridColumn: '2 / -1' }}>
-              <FormField label="Additional comments (optional)">
-                <textarea style={{ ...inputStyle(), height: 72, resize: 'vertical', paddingTop: 8 }}
-                  value={aml.amlComments} onChange={e => setA('amlComments', e.target.value)} />
+              <FormField label="Expiry Date" required error={amlErrors.amlExpiryDate}>
+                <input type="date" style={{ ...inputStyle(amlErrors.amlExpiryDate), background: aml.amlExpiryDate && docFile ? '#f0fdf4' : '#fff' }} value={aml.amlExpiryDate} onChange={e => setA('amlExpiryDate', e.target.value)} />
               </FormField>
             </div>
           </div>
@@ -674,33 +657,99 @@ const OBOKYCWizard = ({ customer, onComplete, onSkip, kycType = 'fullWithDD' }) 
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            {/* For fullWithDD, Due Diligence is the primary action */}
-            {kycType === 'fullWithDD' ? (
-              <>
-                <button onClick={handleSaveDueDiligence} style={{ ...btnPrimary, padding: '11px 28px' }}>
-                  Continue to Due Diligence →
-                </button>
-                <span style={{ color: '#9ca3af', fontWeight: 600, fontSize: '0.875rem' }}>OR</span>
-                <button onClick={handleDoAml} style={{ padding: '11px 20px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 6, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
-                  Do AML Only
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={handleDoAml} style={{ ...btnPrimary, padding: '11px 28px' }}>
-                  Do AML
-                </button>
-              </>
-            )}
-            <button onClick={handleCopyFacialLink} style={{
-              marginLeft: 'auto', background: 'none', border: 'none',
-              color: linkCopied ? '#16a34a' : '#2563eb', fontSize: '0.82rem',
-              cursor: 'pointer', fontFamily: "'Inter', sans-serif", textDecoration: 'underline',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              {linkCopied ? '✓ Copied!' : 'Copy Facial verification link'} 🪪
+            <button onClick={handleDoAml} style={{ ...btnPrimary, padding: '11px 28px' }}>
+              {kycType === 'fullWithSelfie' ? 'Continue → Send Selfie Verification Link' : 'Do AML'}
             </button>
           </div>
+
+          {/* Selfie Verification Confirmation Popup */}
+          {showSelfiePopup && (
+            <div style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+            }}>
+              <div style={{
+                background: '#fff', borderRadius: 20, padding: '40px 36px 32px',
+                width: 480, maxWidth: '92vw', boxShadow: '0 24px 64px rgba(0,0,0,0.15)',
+                fontFamily: "'Inter', sans-serif", textAlign: 'center',
+                position: 'relative',
+              }}>
+                {/* Close Button */}
+                <button
+                  onClick={() => setShowSelfiePopup(false)}
+                  style={{
+                    position: 'absolute', top: 12, right: 12,
+                    width: 32, height: 32, borderRadius: '50%',
+                    background: '#f3f4f6', border: 'none', color: '#6b7280',
+                    fontSize: '1.1rem', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#e5e7eb'; e.currentTarget.style.color = '#1f2937'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#6b7280'; }}
+                >
+                  ×
+                </button>
+
+                <div style={{ fontSize: '3rem', marginBottom: 12 }}>✅</div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#15803d', margin: '0 0 8px' }}>
+                  Selfie Verification Link Sent!
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: '#166534', margin: '0 0 6px' }}>
+                  A selfie verification link has been successfully sent to
+                </p>
+                <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1f2937', margin: '0 0 20px' }}>
+                  {customer?.email || `${customer?.firstName} ${customer?.lastName}`}
+                </p>
+
+                {/* Copy Link Section */}
+                <div style={{
+                  background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10,
+                  padding: '12px 16px', marginBottom: 24, textAlign: 'left',
+                }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>
+                    Or copy the link to send manually:
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{
+                      flex: 1, padding: '8px 12px', background: '#fff', border: '1px solid #d1d5db',
+                      borderRadius: 6, fontSize: '0.8rem', color: '#4b5563',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      https://app.mito.com/facial-verify?token=mock456
+                    </div>
+                    <button
+                      onClick={handleCopySelfieLink}
+                      style={{
+                        padding: '8px 16px', background: selfieLinkCopied ? '#dcfce7' : '#fff',
+                        border: `1px solid ${selfieLinkCopied ? '#86efac' : '#d1d5db'}`,
+                        borderRadius: 6, fontSize: '0.8rem', fontWeight: 600,
+                        color: selfieLinkCopied ? '#15803d' : '#374151',
+                        cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                        whiteSpace: 'nowrap', transition: 'all 0.2s',
+                      }}
+                    >
+                      {selfieLinkCopied ? '✓ Copied!' : '📋 Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSelfiePopupContinue}
+                  style={{
+                    width: '100%', padding: '12px',
+                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                    color: '#fff', border: 'none', borderRadius: 10,
+                    fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer',
+                    fontFamily: "'Inter', sans-serif",
+                    boxShadow: '0 4px 12px rgba(234,88,12,0.25)',
+                  }}
+                >
+                  Continue to AML Check →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
