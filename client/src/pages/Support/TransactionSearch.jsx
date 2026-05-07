@@ -14,8 +14,10 @@ const TransactionSearch = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
     const queryParam = searchParams.get('q') || '';
+    const typeParam = searchParams.get('type') || 'reference';
 
     const [searchTerm, setSearchTerm] = useState(queryParam);
+    const [searchType, setSearchType] = useState(typeParam);
     const [startDate, setStartDate] = useState(formatDateInputValue(DEFAULT_START_DATE));
     const [endDate, setEndDate] = useState(formatDateInputValue(DEFAULT_END_DATE));
     const [statusFilter, setStatusFilter] = useState('All');
@@ -24,15 +26,16 @@ const TransactionSearch = () => {
     const [isSearching, setIsSearching] = useState(false);
     const [showResults, setShowResults] = useState(!!queryParam);
 
-    // Sync searchTerm with queryParam when URL changes
+    // Sync state with URL when it changes
     React.useEffect(() => {
         if (queryParam) {
             setSearchTerm(queryParam);
+            setSearchType(typeParam);
             setShowResults(true);
         } else if (!queryParam) {
             setShowResults(false);
         }
-    }, [queryParam]);
+    }, [queryParam, typeParam]);
 
     const handleSearch = (e) => {
         if (e) e.preventDefault();
@@ -44,29 +47,49 @@ const TransactionSearch = () => {
         }
 
         setIsSearching(true);
-        setSearchParams({ q: searchTerm });
+        setSearchParams({ q: searchTerm, type: searchType });
         setTimeout(() => {
             setIsSearching(false);
             setShowResults(true);
         }, 600);
     };
 
-    const isSearchingByEmail = searchTerm.toLowerCase().includes('@');
+    const showAdvancedFilters = ['payer', 'account', 'affiliate', 'email'].includes(searchType);
 
     const results = TRANSACTIONS.filter(t => {
-        const matchesQuery = !searchTerm ||
-            t.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.senderEmail.toLowerCase().includes(searchTerm.toLowerCase());
+        let matchesQuery = true;
+        if (searchTerm) {
+            const q = searchTerm.toLowerCase();
+            switch (searchType) {
+                case 'reference':
+                    matchesQuery = t.reference.toLowerCase().includes(q) || t.mtn.toLowerCase().includes(q);
+                    break;
+                case 'payer':
+                    matchesQuery = `${t.senderFirstName} ${t.senderLastName}`.toLowerCase().includes(q);
+                    break;
+                case 'account':
+                    matchesQuery = t.account && t.account.includes(q);
+                    break;
+                case 'affiliate':
+                    matchesQuery = t.affiliate.toLowerCase().includes(q);
+                    break;
+                case 'email':
+                    matchesQuery = t.senderEmail.toLowerCase().includes(q);
+                    break;
+                default:
+                    matchesQuery = t.reference.toLowerCase().includes(q) || t.senderEmail.toLowerCase().includes(q);
+            }
+        }
 
         let matchesDate = true;
-        if (isSearchingByEmail) {
+        if (showAdvancedFilters) {
             const tDate = t.lastUpdatedAt;
             const sDate = new Date(`${startDate}T00:00:00`);
             const eDate = new Date(`${endDate}T23:59:59`);
             matchesDate = tDate >= sDate && tDate <= eDate;
         }
 
-        const matchesStatus = !isSearchingByEmail || statusFilter === 'All' || t.status === statusFilter;
+        const matchesStatus = !showAdvancedFilters || statusFilter === 'All' || t.status === statusFilter;
 
         return matchesQuery && matchesDate && matchesStatus;
     });
@@ -103,7 +126,11 @@ const TransactionSearch = () => {
                                     <button
                                         key={idx}
                                         type="button"
-                                        onClick={() => setSearchTerm(tip.value)}
+                                        onClick={() => {
+                                            setSearchTerm(tip.value);
+                                            if (tip.value.includes('@')) setSearchType('email');
+                                            else setSearchType('reference');
+                                        }}
                                         style={{
                                             background: '#fff7ed', border: '1px solid #ffedd5', color: '#ea580c', cursor: 'pointer',
                                             padding: '4px 10px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600,
@@ -117,26 +144,46 @@ const TransactionSearch = () => {
                                 ))}
                             </div>
                         </div>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                id="transaction-search-input"
-                                type="text"
-                                placeholder="Transaction Ref or Email..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                        <div style={{ display: 'flex', gap: 12 }}>
+                            <select
+                                value={searchType}
+                                onChange={(e) => {
+                                    setSearchType(e.target.value);
+                                    if (e.target.value === 'email' && !searchTerm.includes('@')) setSearchTerm('');
+                                }}
                                 style={{
-                                    width: '100%', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0',
-                                    outline: 'none', fontSize: '1rem', background: '#f8fafc', height: '44px',
+                                    width: '180px', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0',
+                                    outline: 'none', fontSize: '0.9rem', background: '#f8fafc', height: '44px',
                                     transition: 'all 0.2s', boxSizing: 'border-box'
                                 }}
-                                onFocus={(e) => { e.currentTarget.style.borderColor = '#ea580c'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(234, 88, 12, 0.1)'; e.currentTarget.style.background = '#fff'; }}
-                                onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f8fafc'; }}
-                            />
+                            >
+                                <option value="reference">Ref / MTN</option>
+                                <option value="payer">Payer Name</option>
+                                <option value="account">Bank Account</option>
+                                <option value="affiliate">Affiliate</option>
+                                <option value="email">Sender Email</option>
+                            </select>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <input
+                                    id="transaction-search-input"
+                                    type="text"
+                                    placeholder={searchType === 'payer' ? 'Sender Name...' : searchType === 'account' ? 'Account Number...' : searchType === 'affiliate' ? 'Affiliate Name...' : searchType === 'email' ? 'Sender Email...' : 'Transaction Ref or MTN...'}
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    style={{
+                                        width: '100%', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0',
+                                        outline: 'none', fontSize: '1rem', background: '#f8fafc', height: '44px',
+                                        transition: 'all 0.2s', boxSizing: 'border-box'
+                                    }}
+                                    onFocus={(e) => { e.currentTarget.style.borderColor = '#ea580c'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(234, 88, 12, 0.1)'; e.currentTarget.style.background = '#fff'; }}
+                                    onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f8fafc'; }}
+                                />
+                            </div>
                         </div>
                     </div>
 
                     {/* Row 2: Dates, Status, and Button */}
-                    {isSearchingByEmail ? (
+                    {showAdvancedFilters ? (
                         <>
                             <div style={{ gridColumn: 'span 3' }}>
                                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Start Date</label>
@@ -222,6 +269,14 @@ const TransactionSearch = () => {
                     boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
                     border: '1px solid #f1f5f9', overflow: 'hidden'
                 }}>
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0, fontSize: '0.95rem', color: '#1e293b', fontWeight: 600 }}>
+                            Search Results for: <span style={{ color: '#ea580c' }}>"{searchTerm}"</span>
+                        </h3>
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 500 }}>
+                            {results.length} {results.length === 1 ? 'transaction' : 'transactions'} found
+                        </span>
+                    </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                         <thead style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
                             <tr>
@@ -237,9 +292,9 @@ const TransactionSearch = () => {
                                     onClick={() => {
                                         // Store search context for potential "Back to list" navigation
                                         if (searchTerm) {
-                                            sessionStorage.setItem('txnSearchContext', JSON.stringify({ query: searchTerm }));
+                                            sessionStorage.setItem('txnSearchContext', JSON.stringify({ query: searchTerm, type: searchType }));
                                         }
-                                        navigate(`/support/transactions/${t.reference}${searchTerm ? `?q=${searchTerm}` : ''}`);
+                                        navigate(`/support/transactions/${t.reference}${searchTerm ? `?q=${searchTerm}&type=${searchType}` : ''}`);
                                     }}
                                     style={{
                                         borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none', cursor: 'pointer',

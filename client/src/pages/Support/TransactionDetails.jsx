@@ -67,7 +67,17 @@ const TransactionDetails = () => {
     const [ticketSearchQuery, setTicketSearchQuery] = useState('');
     const [activeTicketTab, setActiveTicketTab] = useState('New');
 
+    // Proof of Payment State
+    const [isPopEmailed, setIsPopEmailed] = useState(false);
+    const [popAction, setPopAction] = useState('Download');
+    
     const transaction = TRANSACTIONS.find(t => t.reference === reference);
+
+    const [popForm, setPopForm] = useState({
+        sendTo: 'richa.lalcheta@instantcashworldwide.com,\niccomplaints@instantcashworldwide.com',
+        subject: `FGC POP Notification: ${transaction?.reference || ''}`,
+        message: ''
+    });
 
     if (!transaction) {
         return (
@@ -123,7 +133,7 @@ const TransactionDetails = () => {
                     display: 'flex', borderBottom: '1px solid #f1f5f9',
                     background: '#f8fafc'
                 }}>
-                    {['Details', 'Trail', 'KYC', 'Comments', 'Help Tickets'].map(tab => {
+                    {['Details', (transaction.status === 'Processed' || transaction.status === 'Completed') ? 'POP' : null, 'Trail', 'KYC', 'Comments', 'Help Tickets'].filter(Boolean).map(tab => {
                         const hasNotification = (
                             (tab === 'Comments' && transaction.hasUnseenComments && !clearedNotifications.Comments) ||
                             (tab === 'Help Tickets' && transaction.hasUnseenTickets && !clearedNotifications['Help Tickets'])
@@ -267,6 +277,109 @@ const TransactionDetails = () => {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    )}
+
+                    {activeTab === 'POP' && (transaction.status === 'Processed' || transaction.status === 'Completed') && (
+                        <div id="pop-tab">
+                            <div style={{ display: 'flex', gap: 24, padding: 20, border: '1px solid #e2e8f0', borderRadius: 8, background: 'white' }}>
+                                {/* Left Sidebar (Listbox) */}
+                                <div style={{ width: 140, flexShrink: 0 }}>
+                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, border: '1px solid #cbd5e1', borderRadius: 4, overflow: 'hidden' }}>
+                                        <li 
+                                            onClick={() => setPopAction('Download')}
+                                            style={{ 
+                                                padding: '6px 12px', cursor: 'pointer', fontSize: '0.85rem',
+                                                background: popAction === 'Download' ? '#0ea5e9' : 'white',
+                                                color: popAction === 'Download' ? 'white' : '#334155',
+                                                borderBottom: '1px solid #e2e8f0'
+                                            }}
+                                        >
+                                            Download
+                                        </li>
+                                        <li 
+                                            onClick={() => setPopAction('Send')}
+                                            style={{ 
+                                                padding: '6px 12px', cursor: 'pointer', fontSize: '0.85rem',
+                                                background: popAction === 'Send' ? '#0ea5e9' : 'white',
+                                                color: popAction === 'Send' ? 'white' : '#334155'
+                                            }}
+                                        >
+                                            Send
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                {/* Right Content */}
+                                <div style={{ flex: 1 }}>
+                                    {popAction === 'Download' && (
+                                        <div>
+                                            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: 16 }}>
+                                                Download the Proof of Payment for transaction {transaction.reference}.
+                                            </p>
+                                            <button 
+                                                onClick={() => {
+                                                    const link = document.createElement('a');
+                                                    link.href = 'data:text/plain;charset=utf-8,Mock%20POP%20Content';
+                                                    link.download = `POP_${transaction.reference}.pdf`;
+                                                    link.click();
+                                                }}
+                                                style={{
+                                                    background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1',
+                                                    padding: '8px 16px', borderRadius: 4, fontSize: '0.85rem', fontWeight: 500,
+                                                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8
+                                                }}
+                                            >
+                                                ⬇️ Download POP_{transaction.reference}.pdf
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {popAction === 'Send' && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
+                                            <div style={{ display: 'flex' }}>
+                                                <label style={{ width: 100, fontSize: '0.85rem', color: '#475569', paddingTop: 8 }}>Send to *:</label>
+                                                <textarea 
+                                                    value={popForm.sendTo}
+                                                    onChange={e => setPopForm({...popForm, sendTo: e.target.value})}
+                                                    style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 4, outline: 'none', resize: 'vertical', minHeight: 60, fontSize: '0.85rem', fontFamily: 'inherit' }}
+                                                />
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                <label style={{ width: 100, fontSize: '0.85rem', color: '#475569' }}>Subject *:</label>
+                                                <input 
+                                                    value={popForm.subject}
+                                                    onChange={e => setPopForm({...popForm, subject: e.target.value})}
+                                                    style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 4, outline: 'none', fontSize: '0.85rem' }}
+                                                />
+                                            </div>
+                                            <div style={{ display: 'flex' }}>
+                                                <label style={{ width: 100, fontSize: '0.85rem', color: '#475569', paddingTop: 8 }}>Message *</label>
+                                                <textarea 
+                                                    value={popForm.message}
+                                                    onChange={e => setPopForm({...popForm, message: e.target.value})}
+                                                    style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 4, outline: 'none', resize: 'vertical', minHeight: 120, fontSize: '0.85rem', fontFamily: 'inherit' }}
+                                                />
+                                            </div>
+                                            <div style={{ paddingLeft: 100, marginTop: 4 }}>
+                                                <button 
+                                                    onClick={() => {
+                                                        setIsPopEmailed(true);
+                                                        setTimeout(() => setIsPopEmailed(false), 3000); // reset after 3s
+                                                    }}
+                                                    style={{
+                                                        background: isPopEmailed ? '#16a34a' : '#65a30d', color: 'white', border: 'none',
+                                                        padding: '10px 16px', borderRadius: 4, fontSize: '0.85rem', fontWeight: 600,
+                                                        cursor: 'pointer', transition: 'background 0.2s'
+                                                    }}
+                                                >
+                                                    {isPopEmailed ? 'Sent Successfully ✓' : 'Send Email with POP Attached'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
 

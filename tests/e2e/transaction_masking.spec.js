@@ -37,7 +37,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await searchBtn.click();
 
     // Click the result in the table to navigate to details
-    await page.locator('#search-results').getByText('05023676980').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Verify Tabs are present
     await expect(page.getByRole('button', { name: 'Details' })).toBeVisible();
@@ -46,8 +46,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
 
     // Verify Sender Info is masked
     const summaryTable = page.locator('table').first();
-    await expect(summaryTable).toContainText('OG***DE'); // Sender First Name Masked
-    await expect(summaryTable).toContainText('OS****DE'); // Sender Last Name Masked
+    await expect(summaryTable).toContainText('O****** O*******'); // Sender Name Masked
     await expect(summaryTable).toContainText('*******3456'); // Sender Phone Masked
   });
 
@@ -56,7 +55,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click result
-    await page.locator('#search-results').getByText('05023676980').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Switch to Trail tab
     await page.getByRole('button', { name: 'Trail' }).click();
@@ -71,7 +70,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click result
-    await page.locator('#search-results').getByText('05023676980').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Switch to KYC tab
     await page.getByRole('button', { name: 'KYC' }).click();
@@ -86,7 +85,10 @@ test.describe('Transaction PII Masking and Tabs', () => {
     const searchBtn = page.locator('#transaction-search-btn');
 
     // Search for the sender email
+    await page.locator('select').selectOption('email');
     await searchInput.fill('ogbeide.sender@example.com');
+    // Change the dates to ensure the transaction is found
+    await page.locator('#transaction-date-from').fill('2026-01-01');
     await searchBtn.click();
 
     // Verify search results container is visible
@@ -113,7 +115,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click the result in the table to navigate to details
-    await page.locator('#search-results').getByText('05023676980').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Verify Comments tab exists and click it
     const commentsTab = page.locator('#tab-comments');
@@ -133,7 +135,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click the result in the table to navigate to details
-    await page.locator('#search-results').getByText('MITO-7721003').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Verify Help Tickets tab exists and click it
     const ticketsTab = page.locator('#tab-help-tickets');
@@ -153,7 +155,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click the result in the table to navigate to details
-    await page.locator('#search-results').getByText('MITO-7721003').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Switch to Help Tickets tab
     const ticketsTab = page.locator('#tab-help-tickets');
@@ -178,7 +180,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click the result in the table to navigate to details
-    await page.locator('#search-results').getByText('MITO-7721003').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Switch to Help Tickets tab
     const ticketsTab = page.locator('#tab-help-tickets');
@@ -201,7 +203,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.click('#transaction-search-btn');
 
     // Click the result in the table to navigate to details
-    await page.locator('#search-results').getByText('MITO-7721003').click();
+    await page.locator('#search-results tbody tr').first().click();
 
     // Verify notification dots are visible on Comments and Help Tickets tabs
     await expect(page.locator('#notifier-comments')).toBeVisible();
