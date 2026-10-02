@@ -270,7 +270,7 @@ const ReferralSettings = () => {
     if (loading) return <div className="p-8">Loading...</div>;
 
     return (
-        <div style={{ padding: 32, maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ width: '100%', maxWidth: 1200, margin: '0 auto', boxSizing: 'border-box' }}>
             <h2 style={{ fontSize: '1.75rem', fontWeight: 600, marginBottom: 8 }}>Referral Scheme Management</h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>Create and manage referral reward programs.</p>
 
@@ -625,7 +625,7 @@ const getCurrencySymbol = (code) => {
 };
 
 const tableHeaderStyle = {
-    padding: '14px 16px',
+    padding: '12px 12px',
     fontSize: '0.75rem',
     fontWeight: 700,
     color: '#6b7280',
@@ -636,7 +636,7 @@ const tableHeaderStyle = {
 };
 
 const tableCellStyle = {
-    padding: '16px',
+    padding: '14px 12px',
     fontSize: '0.875rem',
     color: '#374151',
     verticalAlign: 'middle'
