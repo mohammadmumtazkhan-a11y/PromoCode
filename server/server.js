@@ -219,12 +219,15 @@ function initializeDatabase() {
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
-            // Seed sample rules
-            const stmt = db.prepare(`INSERT OR IGNORE INTO referral_rules (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-            stmt.run('Default UK Program', 1, 50.0, 5.00, 10.00, 'BOTH', 'GBP');
-            stmt.run('US High Value', 1, 100.0, 10.00, 20.00, 'BOTH', 'USD');
-            stmt.run('Nigeria Special', 0, 20000.0, 2000.00, 5000.00, 'REFEREE', 'NGN');
-            stmt.finalize();
+            // Seed sample rules (only when the table is empty, so restarts don't duplicate them)
+            db.get("SELECT COUNT(*) AS c FROM referral_rules", [], (cErr, row) => {
+                if (cErr || (row && row.c > 0)) return;
+                const stmt = db.prepare(`INSERT INTO referral_rules (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+                stmt.run('Default UK Program', 1, 50.0, 5.00, 10.00, 'BOTH', 'GBP');
+                stmt.run('US High Value', 1, 100.0, 10.00, 20.00, 'BOTH', 'USD');
+                stmt.run('Nigeria Special', 0, 20000.0, 2000.00, 5000.00, 'REFEREE', 'NGN');
+                stmt.finalize();
+            });
         });
 
         // User Segments (New)
@@ -764,7 +767,7 @@ app.post('/api/referral-rules', (req, res) => {
 
     if (!name) return res.status(400).json({ error: "Name is required" });
 
-    // Check if currency already exists
+    // Only one rule is allowed per currency
     db.get("SELECT id, name FROM referral_rules WHERE base_currency = ?", [base_currency], (err, existing) => {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -776,7 +779,6 @@ app.post('/api/referral-rules', (req, res) => {
             });
         }
 
-        // Proceed with creation
         const enabledInt = is_enabled ? 1 : 0;
         const stmt = db.prepare(`INSERT INTO referral_rules 
             (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) 
@@ -795,7 +797,7 @@ app.put('/api/referral-rules/:id', (req, res) => {
     const { id } = req.params;
     const { name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency } = req.body;
 
-    // Check if another rule already uses this currency
+    // Only one rule is allowed per currency
     db.get("SELECT id, name FROM referral_rules WHERE base_currency = ? AND id != ?", [base_currency, id], (err, existing) => {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -807,7 +809,6 @@ app.put('/api/referral-rules/:id', (req, res) => {
             });
         }
 
-        // Proceed with update
         const enabledInt = is_enabled ? 1 : 0;
 
         const stmt = db.prepare(`UPDATE referral_rules SET 
