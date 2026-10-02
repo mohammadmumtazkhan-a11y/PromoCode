@@ -432,11 +432,11 @@ const ReferralSettings = () => {
                                 <th style={tableHeaderStyle}>Rule Name</th>
                                 <th style={tableHeaderStyle}>Status</th>
                                 <th style={tableHeaderStyle}>Type</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referrer Comm.</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referee Comm.</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Min Threshold</th>
-                                <th style={tableHeaderStyle}>Send Currency</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'center' }}>Actions</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referrer</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referee</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Min Amount</th>
+                                <th style={tableHeaderStyle}>Currency</th>
+                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -510,9 +510,10 @@ const ReferralSettings = () => {
                                         </td>
                                         <td style={tableCellStyle}>
                                             <span style={{
-                                                fontSize: '0.875rem',
+                                                fontSize: '0.8rem',
                                                 color: '#6b7280',
-                                                fontWeight: 500
+                                                fontWeight: 500,
+                                                whiteSpace: 'nowrap'
                                             }}>
                                                 {rule.reward_type === 'BOTH' ? '👥 Both Parties' :
                                                     rule.reward_type === 'REFERRER' ? '👤 Referrer Only' :
@@ -547,12 +548,13 @@ const ReferralSettings = () => {
                                             </span>
                                         </td>
                                         <td style={{ ...tableCellStyle, textAlign: 'center' }}>
-                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                                                 <button
                                                     onClick={() => handleEdit(rule)}
                                                     style={{
-                                                        padding: '6px 14px',
-                                                        fontSize: '0.8rem',
+                                                        padding: '5px 10px',
+                                                        fontSize: '0.75rem',
+                                                        whiteSpace: 'nowrap',
                                                         fontWeight: 600,
                                                         border: '1px solid #e5e7eb',
                                                         borderRadius: 6,
@@ -578,8 +580,9 @@ const ReferralSettings = () => {
                                                 <button
                                                     onClick={() => handleDelete(rule.id)}
                                                     style={{
-                                                        padding: '6px 14px',
-                                                        fontSize: '0.8rem',
+                                                        padding: '5px 10px',
+                                                        fontSize: '0.75rem',
+                                                        whiteSpace: 'nowrap',
                                                         fontWeight: 600,
                                                         border: '1px solid #fecaca',
                                                         borderRadius: 6,
