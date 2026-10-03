@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
-import { CURRENCIES, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
+import { CURRENCIES, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
 import StatusPill from './StatusPill';
 import { validateForm } from './referralValidation';
 import './referral.css';
@@ -15,7 +15,7 @@ const CURRENCY_DEFAULTS = {
 };
 
 const EMPTY_FORM = {
-    name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP',
+    name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP', receive_currency: '',
     referrer_reward: '5', referee_reward: '10', min_transaction_threshold: '50',
     qualification_window_days: '30', bonus_validity_days: '90', max_referrals_per_referrer: '',
     min_redeem_amount: '', start_date: '', end_date: '', notify: true,
@@ -82,6 +82,7 @@ const ReferralSettings = () => {
     // Only the enabled bonus field(s) and the Floor are pre-filled (AC-1.1.5)
     const onCurrencyChange = (currency) => {
         const patch = { base_currency: currency };
+        if (currency === form.receive_currency) patch.receive_currency = ''; // a corridor needs two different currencies
         const d = CURRENCY_DEFAULTS[currency];
         if (d && !editingId) {
             patch.min_transaction_threshold = String(d.floor);
@@ -112,11 +113,12 @@ const ReferralSettings = () => {
             if (!res.ok) {
                 if (data.fields) setErrors(data.fields);
                 if (data.error === 'DUPLICATE_NAME') setErrors((e) => ({ ...e, name: data.message }));
+                if (data.error === 'DUPLICATE_CORRIDOR') setErrors((e) => ({ ...e, receive_currency: data.message }));
                 push(data.message || "We couldn't save the rule. Please try again.", 'error');
                 return;
             }
             push(editingId ? 'Referral rule updated. Changes apply to new referrals only.' : `Referral rule '${form.name.trim()}' created.`);
-            if (data.notification) push(`Customers in ${form.base_currency} will be notified: "${data.notification.title}".`, 'info');
+            if (data.notification) push(`Customers sending ${corridorLabel(form.base_currency, form.receive_currency)} will be notified: "${data.notification.title}".`, 'info');
             resetForm();
             fetchRules();
         } catch {
@@ -167,6 +169,7 @@ const ReferralSettings = () => {
     const handleEdit = (rule) => {
         setForm({
             name: rule.name, is_enabled: !!rule.is_enabled, reward_type: rule.reward_type, base_currency: rule.base_currency,
+            receive_currency: rule.receive_currency || '', // blank = send-currency-only rule
             referrer_reward: String(rule.referrer_reward), referee_reward: String(rule.referee_reward),
             min_transaction_threshold: String(rule.min_transaction_threshold),
             qualification_window_days: String(rule.qualification_window_days ?? 30), bonus_validity_days: String(rule.bonus_validity_days ?? 90),
@@ -188,7 +191,7 @@ const ReferralSettings = () => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.message || "We couldn't update the rule status. Please try again.");
             push(enable ? 'Rule activated.' : 'Rule deactivated.');
-            if (data.notification) push(`Customers in ${rule.base_currency} will be notified: "${data.notification.title}".`, 'info');
+            if (data.notification) push(`Customers sending ${corridorLabel(rule.base_currency, rule.receive_currency)} will be notified: "${data.notification.title}".`, 'info');
         } catch (err) {
             push(err.message || "We couldn't update the rule status. Please try again.", 'error');
         } finally {
@@ -208,7 +211,7 @@ const ReferralSettings = () => {
             setDialogNotify(true);
             setDialog({
                 title: `Activate '${rule.name}'?`,
-                message: `Customers sending in ${rule.base_currency} will see the Refer & Earn offer.`,
+                message: `Customers sending ${corridorLabel(rule.base_currency, rule.receive_currency)} will see the Refer & Earn offer.`,
                 confirmLabel: 'Activate', withNotify: true,
                 onConfirm: (notify) => { setDialog(null); changeStatus(rule, true, notify); },
             });
@@ -243,7 +246,7 @@ const ReferralSettings = () => {
         <div className="rf-page">
             <ToastStack toasts={toasts} onDismiss={dismiss} />
             <h2 className="rf-title">Referral Scheme Management</h2>
-            <p className="rf-subtitle">Create and manage referral reward programmes. One rule per send currency.</p>
+            <p className="rf-subtitle">Create and manage referral reward programmes. Apply a rule to a whole send currency (e.g. GBP) or to one corridor (e.g. GBP → NGN). A corridor rule takes precedence.</p>
 
             <div className="rf-card rf-card-pad">
                 <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: '0 0 20px' }}>{editingId ? 'Edit Rule' : 'Create New Rule'}</h3>
@@ -261,7 +264,7 @@ const ReferralSettings = () => {
                         </Field>
                     </div>
 
-                    <div className="rf-grid rf-grid-2">
+                    <div className="rf-grid rf-grid-3">
                         <Field id="rf-reward_type" label="Who gets a bonus?" required>
                             <select id="rf-reward_type" className="rf-select" value={form.reward_type} onChange={(e) => onTypeChange(e.target.value)}>
                                 <option value="BOTH">Both Parties (Double-Sided)</option>
@@ -272,6 +275,13 @@ const ReferralSettings = () => {
                         <Field id="rf-base_currency" label="Send Currency" required error={err('base_currency')}>
                             <select id="rf-base_currency" className="rf-select" value={form.base_currency} onChange={(e) => onCurrencyChange(e.target.value)}>
                                 {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                            </select>
+                        </Field>
+                        <Field id="rf-receive_currency" label="Receive Currency" error={err('receive_currency')}
+                            hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to every ${form.base_currency} transfer, unless a specific corridor has its own rule.`}>
+                            <select {...aria('receive_currency')} className={`rf-select${err('receive_currency') ? ' rf-invalid' : ''}`} value={form.receive_currency} onChange={(e) => set({ receive_currency: e.target.value })}>
+                                <option value="">All destinations ({form.base_currency} only)</option>
+                                {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
                             </select>
                         </Field>
                     </div>
@@ -303,12 +313,12 @@ const ReferralSettings = () => {
                     <div className="rf-section-label">Limits &amp; timing</div>
                     <div className="rf-grid rf-grid-3">
                         <Field id="rf-qualification_window_days" label="Qualification Window (days)" required error={err('qualification_window_days')}
-                            hint="Days after joining for the friend to make a qualifying transfer.">
+                            hint="Days after joining the referrer can be rewarded for the friend's qualifying transfer.">
                             <input {...aria('qualification_window_days')} className={inputCls('qualification_window_days')} inputMode="numeric"
                                 value={form.qualification_window_days} onChange={(e) => set({ qualification_window_days: e.target.value })} />
                         </Field>
                         <Field id="rf-bonus_validity_days" label="Bonus Validity (days)" required error={err('bonus_validity_days')}
-                            hint="Days the bonus credit can be used before it expires.">
+                            hint="Days the bonus can be used. The friend can earn their bonus up to this long after joining.">
                             <input {...aria('bonus_validity_days')} className={inputCls('bonus_validity_days')} inputMode="numeric"
                                 value={form.bonus_validity_days} onChange={(e) => set({ bonus_validity_days: e.target.value })} />
                         </Field>
@@ -359,42 +369,51 @@ const ReferralSettings = () => {
                     </label>
                 </div>
                 <div className="rf-table-wrap">
-                    <table className="rf-table">
+                    <table className="rf-table rf-compact">
                         <thead>
                             <tr>
-                                <th>Rule Name</th><th>Status</th><th>Type</th>
-                                <th className="rf-num">Referrer Bonus</th><th className="rf-num">Referee Bonus</th><th className="rf-num">Min Amount (Floor)</th>
-                                <th>Currency</th><th className="rf-num">Window</th><th className="rf-num">Validity</th><th>Dates</th>
+                                <th>Rule</th><th>Corridor</th><th>Status</th><th>Bonus</th>
+                                <th className="rf-num">Floor</th><th>Timing</th>
                                 <th style={{ textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr><td colSpan="11" className="rf-empty">Loading referral rules...</td></tr>
+                                <tr><td colSpan="7" className="rf-empty">Loading referral rules...</td></tr>
                             ) : loadError ? (
-                                <tr><td colSpan="11" className="rf-empty">We couldn&apos;t load referral rules. Please refresh the page. <button type="button" className="rf-link" onClick={fetchRules}>Retry</button></td></tr>
+                                <tr><td colSpan="7" className="rf-empty">We couldn&apos;t load referral rules. Please refresh the page. <button type="button" className="rf-link" onClick={fetchRules}>Retry</button></td></tr>
                             ) : rules.length === 0 ? (
-                                <tr><td colSpan="11" className="rf-empty">No referral rules yet. Create your first rule above.</td></tr>
+                                <tr><td colSpan="7" className="rf-empty">No referral rules yet. Create your first rule above.</td></tr>
                             ) : rules.map((rule) => {
                                 const archived = rule.status === 'ARCHIVED';
+                                const c = rule.base_currency;
+                                const dates = rule.start_date || rule.end_date
+                                    ? `${formatUkDate(rule.start_date) === '—' ? 'Now' : formatUkDate(rule.start_date)} – ${rule.end_date ? formatUkDate(rule.end_date) : 'No end'}`
+                                    : 'Always on';
                                 return (
-                                    <tr key={rule.id} data-testid={`rule-row-${rule.base_currency}`}>
-                                        <td className="rf-strong">{rule.name}</td>
+                                    <tr key={rule.id} data-testid={`rule-row-${c}-${rule.receive_currency || 'ANY'}`}>
+                                        <td>
+                                            <div className="rf-strong">{rule.name}</div>
+                                            <span className="rf-sub">{TYPE_LABELS[rule.reward_type]}</span>
+                                        </td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
+                                            <span className="rf-chip">{corridorLabel(c, rule.receive_currency)}</span>
+                                            {!rule.receive_currency && <span className="rf-sub">Any destination</span>}
+                                        </td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 {!archived && <Toggle on={!!rule.is_enabled} onClick={() => handleToggle(rule)} label={`${rule.is_enabled ? 'Deactivate' : 'Activate'} ${rule.name}`} />}
                                                 <StatusPill status={rule.status} />
                                             </div>
                                         </td>
-                                        <td style={{ whiteSpace: 'nowrap', color: '#6b7280' }}>{TYPE_LABELS[rule.reward_type]}</td>
-                                        <td className="rf-num rf-strong">{rule.reward_type === 'REFEREE' ? <span className="rf-muted">—</span> : <span style={{ color: '#059669' }}>{formatMoney(rule.referrer_reward, rule.base_currency)}</span>}</td>
-                                        <td className="rf-num rf-strong">{rule.reward_type === 'REFERRER' ? <span className="rf-muted">—</span> : <span style={{ color: '#059669' }}>{formatMoney(rule.referee_reward, rule.base_currency)}</span>}</td>
-                                        <td className="rf-num">{formatMoney(rule.min_transaction_threshold, rule.base_currency)}</td>
-                                        <td><span className="rf-chip">{rule.base_currency}</span></td>
-                                        <td className="rf-num">{rule.qualification_window_days ?? 30} days</td>
-                                        <td className="rf-num">{rule.bonus_validity_days ?? 90} days</td>
-                                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
-                                            {rule.start_date || rule.end_date ? `${formatUkDate(rule.start_date) === '—' ? 'Now' : formatUkDate(rule.start_date)} – ${rule.end_date ? formatUkDate(rule.end_date) : 'No end'}` : <span className="rf-muted">Always on</span>}
+                                        <td style={{ whiteSpace: 'nowrap' }}>
+                                            <div className="rf-bonus"><span>Referrer</span><b>{rule.reward_type === 'REFEREE' ? '—' : formatMoney(rule.referrer_reward, c)}</b></div>
+                                            <div className="rf-bonus"><span>Referee</span><b>{rule.reward_type === 'REFERRER' ? '—' : formatMoney(rule.referee_reward, c)}</b></div>
+                                        </td>
+                                        <td className="rf-num">{formatMoney(rule.min_transaction_threshold, c)}</td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
+                                            <div>{rule.qualification_window_days ?? 30}d window · {rule.bonus_validity_days ?? 90}d valid</div>
+                                            <span className="rf-sub">{dates}</span>
                                         </td>
                                         <td>
                                             {!archived && (

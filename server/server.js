@@ -216,16 +216,18 @@ function initializeDatabase() {
             referee_reward REAL DEFAULT 10.0,
             reward_type TEXT DEFAULT 'BOTH',
             base_currency TEXT DEFAULT 'GBP',
+            receive_currency TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
             // Seed sample rules (only when the table is empty, so restarts don't duplicate them)
             db.get("SELECT COUNT(*) AS c FROM referral_rules", [], (cErr, row) => {
                 if (cErr || (row && row.c > 0)) return;
-                const stmt = db.prepare(`INSERT INTO referral_rules (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-                stmt.run('Default UK Program', 1, 50.0, 5.00, 10.00, 'BOTH', 'GBP');
-                stmt.run('US High Value', 1, 100.0, 10.00, 20.00, 'BOTH', 'USD');
-                stmt.run('Nigeria Special', 0, 20000.0, 2000.00, 5000.00, 'REFEREE', 'NGN');
+                // One rule per corridor: base_currency is the send currency, receive_currency the destination
+                const stmt = db.prepare(`INSERT INTO referral_rules (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, receive_currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+                stmt.run('Default UK Program', 1, 50.0, 5.00, 10.00, 'BOTH', 'GBP', 'NGN');
+                stmt.run('US High Value', 1, 100.0, 10.00, 20.00, 'BOTH', 'USD', 'NGN');
+                stmt.run('Nigeria Special', 0, 20000.0, 2000.00, 5000.00, 'REFEREE', 'NGN', 'GBP');
                 stmt.finalize();
             });
         });

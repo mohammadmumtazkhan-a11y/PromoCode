@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { CURRENCIES, formatMoney, formatUkDate, downloadUrl } from './referralUtils';
+import { CURRENCIES, corridorLabel, formatMoney, formatUkDate, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
@@ -24,7 +24,7 @@ const ReferralTracking = () => {
     const [reasonError, setReasonError] = useState('');
     const { toasts, push, dismiss } = useToasts();
 
-    const filters = Object.fromEntries(['status', 'status_group', 'currency', 'rule_id', 'from', 'to', 'q', 'page'].map((k) => [k, params.get(k) || '']));
+    const filters = Object.fromEntries(['status', 'status_group', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q', 'page'].map((k) => [k, params.get(k) || '']));
     const page = Number(filters.page || 1);
 
     const setFilter = (key, value) => {
@@ -78,7 +78,7 @@ const ReferralTracking = () => {
 
     const s = result.summary;
     const pages = Math.max(1, Math.ceil((result.total || 0) / PAGE_SIZE));
-    const hasFilters = ['status', 'status_group', 'currency', 'rule_id', 'from', 'to', 'q'].some((k) => filters[k]);
+    const hasFilters = ['status', 'status_group', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q'].some((k) => filters[k]);
 
     return (
         <div className="rf-page">
@@ -109,15 +109,20 @@ const ReferralTracking = () => {
                             {filters.status_group && <option value={`group:${filters.status_group}`}>{filters.status_group === 'pending' ? 'Registered or Pending' : 'Expired / Not eligible / Reversed'}</option>}
                             {STATUSES.map((st) => <option key={st} value={st}>{st.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</option>)}
                         </select></div>
-                    <div className="rf-field"><label htmlFor="rt-currency">Currency</label>
+                    <div className="rf-field"><label htmlFor="rt-currency">Send currency</label>
                         <select id="rt-currency" className="rf-select" value={filters.currency} onChange={(e) => setFilter('currency', e.target.value)}>
+                            <option value="">All currencies</option>
+                            {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+                        </select></div>
+                    <div className="rf-field"><label htmlFor="rt-receive-currency">Receive currency</label>
+                        <select id="rt-receive-currency" className="rf-select" value={filters.receive_currency} onChange={(e) => setFilter('receive_currency', e.target.value)}>
                             <option value="">All currencies</option>
                             {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
                         </select></div>
                     <div className="rf-field"><label htmlFor="rt-rule">Rule</label>
                         <select id="rt-rule" className="rf-select" value={filters.rule_id} onChange={(e) => setFilter('rule_id', e.target.value)}>
                             <option value="">All rules</option>
-                            {rules.map((r) => <option key={r.id} value={r.id}>{r.name}{r.status === 'ARCHIVED' ? ' (archived)' : ''}</option>)}
+                            {rules.map((r) => <option key={r.id} value={r.id}>{r.name} ({corridorLabel(r.base_currency, r.receive_currency)}){r.status === 'ARCHIVED' ? ' (archived)' : ''}</option>)}
                         </select></div>
                     <div className="rf-field"><label htmlFor="rt-from">Registered from</label>
                         <input id="rt-from" type="date" className="rf-input" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} /></div>
@@ -149,7 +154,7 @@ const ReferralTracking = () => {
                                     <td className="rf-strong" style={{ whiteSpace: 'nowrap' }}>{r.id}<span className="rf-sub">Code {r.code}</span></td>
                                     <td>{fullName(r.referrer_first_name, r.referrer_last_name)}<span className="rf-sub">ID: {r.referrer_id}</span></td>
                                     <td>{fullName(r.referee_first_name, r.referee_last_name)}<span className="rf-sub">ID: {r.referee_id}</span></td>
-                                    <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{r.currency}</span></td>
+                                    <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{corridorLabel(r.currency, r.receive_currency, '?')}</span></td>
                                     <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.registered_at)}</td>
                                     <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.qualification_deadline)}</td>
                                     <td>{r.qualifying_transfer_id || <span className="rf-muted">—</span>}{r.qualifying_amount ? <span className="rf-sub">{formatMoney(r.qualifying_amount, r.currency)}</span> : null}</td>

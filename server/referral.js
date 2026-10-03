@@ -25,6 +25,8 @@ const money = (amount, currency) => {
     const dp = ZERO_DECIMAL.includes(currency) ? 0 : 2;
     return `${SYMBOLS[currency] || currency + ' '}${Number(amount).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 };
+// A referral rule applies to a corridor: the currency the customer sends and the currency the recipient receives
+const corridorLabel = (send, receive) => (receive ? `${send} → ${receive}` : `${send} (all destinations)`);
 const maskName = (first, last) => `${first || 'Customer'}${last ? ' ' + last.trim()[0].toUpperCase() + '.' : ''}`;
 const fmtUkDate = (ymd) => (ymd ? ymd.split('-').reverse().join('/') : '');
 
@@ -57,6 +59,8 @@ async function initSchema(db) {
     await addColumnIfMissing(q, 'referral_rules', 'end_date', 'TEXT');
     await addColumnIfMissing(q, 'referral_rules', 'is_archived', 'INTEGER DEFAULT 0');
     await addColumnIfMissing(q, 'referral_rules', 'archived_at', 'TEXT');
+    // Corridor: the receive currency. NULL only on rules created before corridors existed ("any destination") until an admin edits them.
+    await addColumnIfMissing(q, 'referral_rules', 'receive_currency', 'TEXT');
 
     await q.run(`CREATE TABLE IF NOT EXISTS referral_rule_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER, field TEXT, old_value TEXT, new_value TEXT,
@@ -85,6 +89,11 @@ async function initSchema(db) {
 
     await q.run(`CREATE TABLE IF NOT EXISTS referral_offer_notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER, currency TEXT, kind TEXT, title TEXT, message TEXT, created_at TEXT)`);
+    await addColumnIfMissing(q, 'referral_offer_notifications', 'receive_currency', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'receive_currency', 'TEXT');
+    await addColumnIfMissing(q, 'referrals', 'receive_currency', 'TEXT');
+    await addColumnIfMissing(q, 'referrals', 'referrer_deadline', 'TEXT');
+    await addColumnIfMissing(q, 'referral_transfers', 'receive_currency', 'TEXT');
 
     // credit_ledger gains currency + referral linkage + per-credit tracking
     await q.run(`CREATE TABLE IF NOT EXISTS credit_ledger (
@@ -148,6 +157,14 @@ function ruleStatus(rule, today = ukToday()) {
 }
 const isLive = (rule) => !!rule && ruleStatus(rule) === 'ACTIVE';
 
+// Deadlines counted from the referee's registration day.
+// The referrer is only rewarded inside the Qualification Window. The referee's bonus can still be earned, on a transfer
+// of at least the Floor, until Bonus Validity ends. `qualification_deadline` is the later of the two (when the referee is rewarded).
+const referrerDeadlineFor = (rule, day) => addDays(day, rule.qualification_window_days || 30);
+const overallDeadlineFor = (rule, day) => addDays(day, rule.reward_type === 'REFERRER'
+    ? (rule.qualification_window_days || 30)
+    : Math.max(rule.qualification_window_days || 30, rule.bonus_validity_days || 90));
+
 const NAME_RE = /^[A-Za-z0-9 &-]{3,50}$/;
 function decimalsOk(v, currency) {
     const s = String(v);
@@ -160,6 +177,7 @@ const blank = (v) => v === undefined || v === null || String(v).trim() === '';
 function validateRule(body, { isNew }) {
     const errors = {};
     const currency = String(body.base_currency || '').toUpperCase();
+    const receive = String(body.receive_currency || '').toUpperCase();
     const name = String(body.name || '').trim();
     const type = body.reward_type || 'BOTH';
     const amountMsg = currency === 'JPY' ? 'Enter a whole amount greater than 0.' : 'Enter an amount greater than 0 with up to 2 decimal places.';
@@ -168,6 +186,11 @@ function validateRule(body, { isNew }) {
     else if (!NAME_RE.test(name)) errors.name = "Rule name must be 3–50 characters and use letters, numbers, spaces, '-' or '&' only.";
     if (!['BOTH', 'REFERRER', 'REFEREE'].includes(type)) errors.reward_type = 'Select who gets a bonus.';
     if (!SUPPORTED_CURRENCIES.includes(currency)) errors.base_currency = 'Select a send currency.';
+    // Receive currency is optional: blank makes a send-currency-only rule that covers every destination.
+    // A rule for a specific corridor (send + receive) takes precedence over it.
+    if (blank(body.receive_currency)) { /* all destinations */ }
+    else if (!SUPPORTED_CURRENCIES.includes(receive)) errors.receive_currency = 'Select a receive currency.';
+    else if (receive === currency) errors.receive_currency = 'Receive currency must be different from the send currency.';
 
     const checkAmount = (field, max) => {
         const v = body[field];
@@ -200,6 +223,7 @@ function validateRule(body, { isNew }) {
         is_enabled: body.is_enabled === false || body.is_enabled === 0 || body.is_enabled === '0' ? 0 : 1,
         reward_type: type,
         base_currency: currency,
+        receive_currency: receive || null,
         referrer_reward: type === 'REFEREE' ? 0 : round2(body.referrer_reward),
         referee_reward: type === 'REFERRER' ? 0 : round2(body.referee_reward),
         min_transaction_threshold: round2(floor),
@@ -213,7 +237,7 @@ function validateRule(body, { isNew }) {
     return { errors, clean };
 }
 
-const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'referrer_reward', 'referee_reward',
+const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'referrer_reward', 'referee_reward',
     'min_transaction_threshold', 'qualification_window_days', 'bonus_validity_days', 'max_referrals_per_referrer',
     'min_redeem_amount', 'start_date', 'end_date'];
 
@@ -221,14 +245,18 @@ function offerText(rule) {
     const c = rule.base_currency;
     const r = money(rule.referrer_reward, c), e = money(rule.referee_reward, c), f = money(rule.min_transaction_threshold, c);
     const days = rule.qualification_window_days || 30;
-    if (rule.reward_type === 'REFERRER') return `Invite friends with your link and get ${r} bonus credit when they send ${f} or more within ${days} days of joining.`;
-    if (rule.reward_type === 'REFEREE') return `Give your friends ${e} bonus credit when they join with your link and send ${f} or more within ${days} days.`;
-    return `Invite friends with your link. You get ${r} and your friend gets ${e} in bonus credit when they send ${f} or more within ${days} days of joining.`;
+    const to = rule.receive_currency ? ` to ${rule.receive_currency}` : '';
+    if (rule.reward_type === 'REFERRER') return `Invite friends with your link and get ${r} bonus credit when they send ${f} or more${to} within ${days} days of joining.`;
+    if (rule.reward_type === 'REFEREE') return `Give your friends ${e} bonus credit when they join with your link and send ${f} or more${to} within ${days} days.`;
+    const validity = rule.bonus_validity_days || 90;
+    const friendLonger = validity > days ? ` Your friend can still earn theirs for up to ${validity} days.` : '';
+    return `Invite friends with your link. You get ${r} and your friend gets ${e} in bonus credit when they send ${f} or more${to} within ${days} days of joining.${friendLonger}`;
 }
 
 function publicOffer(rule) {
     return {
-        rule_id: rule.id, name: rule.name, currency: rule.base_currency, reward_type: rule.reward_type,
+        rule_id: rule.id, name: rule.name, currency: rule.base_currency, receive_currency: rule.receive_currency,
+        corridor: corridorLabel(rule.base_currency, rule.receive_currency), reward_type: rule.reward_type,
         referrer_reward: rule.referrer_reward, referee_reward: rule.referee_reward,
         floor: rule.min_transaction_threshold, qualification_window_days: rule.qualification_window_days,
         bonus_validity_days: rule.bonus_validity_days, min_redeem_amount: rule.min_redeem_amount,
@@ -237,9 +265,33 @@ function publicOffer(rule) {
     };
 }
 
-async function liveRuleFor(q, currency) {
-    const rows = await q.all(`SELECT * FROM referral_rules WHERE base_currency = ? AND COALESCE(is_archived,0) = 0`, [currency]);
-    return rows.find(isLive) || null;
+// All live rules for a send currency (one per corridor)
+async function liveRulesForSend(q, currency) {
+    const rows = await q.all(`SELECT * FROM referral_rules WHERE base_currency = ? AND COALESCE(is_archived,0) = 0 ORDER BY receive_currency, id`, [currency]);
+    return rows.filter(isLive);
+}
+
+// The live rule for one corridor. A rule created before corridors existed (no receive currency) still covers any destination.
+async function liveRuleFor(q, currency, receiveCurrency) {
+    const live = await liveRulesForSend(q, currency);
+    const receive = String(receiveCurrency || '').toUpperCase();
+    return live.find((r) => r.receive_currency === receive) || live.find((r) => !r.receive_currency) || null;
+}
+
+// Rules to show for an offer: the exact corridor when the destination is known, otherwise every live rule for the send currency
+async function offerRulesFor(q, currency, receiveCurrency) {
+    if (receiveCurrency) {
+        const rule = await liveRuleFor(q, currency, String(receiveCurrency).toUpperCase());
+        return rule ? [rule] : [];
+    }
+    return liveRulesForSend(q, currency);
+}
+
+// Rule an existing referral should be judged against (admin approval of a not-eligible referral)
+async function ruleForReferral(q, r) {
+    if (r.receive_currency) return liveRuleFor(q, r.currency, r.receive_currency);
+    const live = await liveRulesForSend(q, r.currency);
+    return live.length === 1 ? live[0] : null;
 }
 
 // Offer notifications (US-6.1)
@@ -255,23 +307,24 @@ async function notifyOffer(q, rule, kind) {
         if (recent) return null; // AC-6.1.8: no repeat within 7 days
     }
     const c = rule.base_currency;
+    const to = rule.receive_currency ? ` to ${rule.receive_currency}` : '';
     let title, message;
     if (kind === 'LIVE') {
         title = 'New offer: Refer & Earn';
         message = rule.reward_type === 'REFEREE'
-            ? `Give friends ${money(rule.referee_reward, c)} when they join with your link and send ${money(rule.min_transaction_threshold, c)} or more.`
-            : `Invite friends and get ${money(rule.referrer_reward, c)} each time they send ${money(rule.min_transaction_threshold, c)} or more.${rule.reward_type === 'BOTH' ? ` Your friend gets ${money(rule.referee_reward, c)} too.` : ''}`;
+            ? `Give friends ${money(rule.referee_reward, c)} when they join with your link and send ${money(rule.min_transaction_threshold, c)} or more${to}.`
+            : `Invite friends and get ${money(rule.referrer_reward, c)} each time they send ${money(rule.min_transaction_threshold, c)} or more${to}.${rule.reward_type === 'BOTH' ? ` Your friend gets ${money(rule.referee_reward, c)} too.` : ''}`;
     } else if (kind === 'IMPROVED') {
         title = 'Better offer: Refer & Earn';
         message = rule.reward_type === 'REFEREE'
-            ? `Better offer: your friends now get ${money(rule.referee_reward, c)} when they send ${money(rule.min_transaction_threshold, c)} or more.`
-            : `Better offer: you now get ${money(rule.referrer_reward, c)} for every friend who sends ${money(rule.min_transaction_threshold, c)} or more.`;
+            ? `Better offer: your friends now get ${money(rule.referee_reward, c)} when they send ${money(rule.min_transaction_threshold, c)} or more${to}.`
+            : `Better offer: you now get ${money(rule.referrer_reward, c)} for every friend who sends ${money(rule.min_transaction_threshold, c)} or more${to}.`;
     } else {
         title = 'Refer & Earn ends soon';
         message = `Refer & Earn ends on ${fmtUkDate(rule.end_date)}. Share your link now.`;
     }
-    const r = await q.run(`INSERT INTO referral_offer_notifications (rule_id, currency, kind, title, message, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [rule.id, c, kind, title, message, nowIso()]);
+    const r = await q.run(`INSERT INTO referral_offer_notifications (rule_id, currency, receive_currency, kind, title, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [rule.id, c, rule.receive_currency || null, kind, title, message, nowIso()]);
     return { id: r.lastID, kind, title, message };
 }
 
@@ -389,24 +442,33 @@ async function createReferral(q, { code, referee }) {
         [referee.id, referee.email || '', referee.phone || '']);
     const refereeRow = await upsertCustomer(q, { ...(before || {}), ...referee });
 
+    // The rule is chosen by corridor. When the referee has not chosen a destination yet and there is more than one
+    // live corridor for their send currency, the rule is bound later, by the corridor of their qualifying transfer.
     const currency = (refereeRow.send_currency || 'GBP').toUpperCase();
-    const rule = await liveRuleFor(q, currency);
+    const receive = String(referee.receive_currency || '').toUpperCase() || null;
+    const liveForSend = await liveRulesForSend(q, currency);
+    let rule = null, deferred = false;
+    if (receive) rule = await liveRuleFor(q, currency, receive);
+    else if (liveForSend.length === 1) rule = liveForSend[0];
+    else if (liveForSend.length > 1) deferred = true;
     const registeredAt = nowIso();
     const regDay = ukToday();
     const id = `REF-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     let status = 'REGISTERED', reason = null;
     const match = sameIdentity(referrer, refereeRow);
-    if (!rule) { status = 'NOT_ELIGIBLE'; reason = `No active referral programme for ${currency}`; }
+    if (!rule && !deferred) { status = 'NOT_ELIGIBLE'; reason = `No active referral programme for ${corridorLabel(currency, receive)}`; }
     else if (match) { status = 'NOT_ELIGIBLE'; reason = `Self-referral: same ${match}`; }
     else if (returning) { status = 'NOT_ELIGIBLE'; reason = 'Returning customer'; }
 
-    await q.run(`INSERT INTO referrals (id, referrer_id, referee_id, code, rule_id, currency, reward_type, referrer_reward, referee_reward, floor,
-        qualification_window_days, bonus_validity_days, qualification_deadline, status, status_reason, registered_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, referrer.id, referee.id, look.code, rule ? rule.id : null, currency,
+    const latest = deferred ? liveForSend.map((x) => overallDeadlineFor(x, regDay)).sort().pop() : null;
+    const referrerBy = deferred ? liveForSend.map((x) => referrerDeadlineFor(x, regDay)).sort().pop() : null;
+    await q.run(`INSERT INTO referrals (id, referrer_id, referee_id, code, rule_id, currency, receive_currency, reward_type, referrer_reward, referee_reward, floor,
+        qualification_window_days, bonus_validity_days, qualification_deadline, referrer_deadline, status, status_reason, registered_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, referrer.id, referee.id, look.code, rule ? rule.id : null, currency, rule ? rule.receive_currency : receive,
         rule ? rule.reward_type : null, rule ? rule.referrer_reward : 0, rule ? rule.referee_reward : 0, rule ? rule.min_transaction_threshold : null,
         rule ? rule.qualification_window_days : null, rule ? rule.bonus_validity_days : null,
-        rule ? addDays(regDay, rule.qualification_window_days) : null, status, reason, registeredAt, registeredAt]);
+        rule ? overallDeadlineFor(rule, regDay) : latest, rule ? referrerDeadlineFor(rule, regDay) : referrerBy, status, reason, registeredAt, registeredAt]);
     return q.get(`SELECT * FROM referrals WHERE id = ?`, [id]);
 }
 
@@ -423,7 +485,10 @@ async function tryAward(q, referral) {
     if (!transfer || transfer.status !== 'COMPLETED') return r;
     const referrer = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referrer_id]);
     const referee = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referee_id]);
-    const rewardsReferrer = r.reward_type !== 'REFEREE' && r.referrer_reward > 0;
+    // The referee can earn their bonus until Bonus Validity ends; the referrer only inside the Qualification Window
+    const referrerLate = ukDate(transfer.created_at) > (r.referrer_deadline || r.qualification_deadline);
+    const referrerEntitled = r.reward_type !== 'REFEREE' && r.referrer_reward > 0;
+    const rewardsReferrer = referrerEntitled && !referrerLate;
     const rewardsReferee = r.reward_type !== 'REFERRER' && r.referee_reward > 0;
 
     if (rewardsReferee && referee.kyc_status !== 'PASSED') {
@@ -437,6 +502,7 @@ async function tryAward(q, referral) {
 
     const rule = await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [r.rule_id]);
     const notes = [];
+    if (referrerEntitled && referrerLate) notes.push('Referrer qualification window ended');
     let referrerCredited = 0, refereeCredited = 0;
     if (rewardsReferrer) {
         const cap = rule && rule.max_referrals_per_referrer;
@@ -477,6 +543,14 @@ async function voidReferralCredits(q, r) {
     }
 }
 
+// Fix a deferred referral to the rule of the corridor the referee actually sent on (terms are snapshotted now)
+async function bindRule(q, r, rule) {
+    await q.run(`UPDATE referrals SET rule_id = ?, receive_currency = ?, reward_type = ?, referrer_reward = ?, referee_reward = ?, floor = ?,
+        qualification_window_days = ?, bonus_validity_days = ?, qualification_deadline = ?, referrer_deadline = ?, updated_at = ? WHERE id = ?`,
+    [rule.id, rule.receive_currency, rule.reward_type, rule.referrer_reward, rule.referee_reward, rule.min_transaction_threshold,
+        rule.qualification_window_days, rule.bonus_validity_days, overallDeadlineFor(rule, ukDate(r.registered_at)), referrerDeadlineFor(rule, ukDate(r.registered_at)), nowIso(), r.id]);
+}
+
 const QUALIFY_STATUSES = ['PAID', 'COMPLETED'];
 const FAIL_STATUSES = ['CANCELLED', 'FAILED'];
 const REVERSE_STATUSES = ['REFUNDED', 'RECALLED', 'CHARGEBACK'];
@@ -486,9 +560,10 @@ async function handleTransferEvent(q, ev) {
     if (!ev.transfer_id || !ev.customer_id || !status) throw Object.assign(new Error('transfer_id, customer_id and status are required'), { status: 400 });
     const prev = await q.get(`SELECT * FROM referral_transfers WHERE transfer_id = ?`, [ev.transfer_id]);
     const createdAt = (prev && prev.created_at) || ev.created_at || nowIso();
-    await q.run(`INSERT INTO referral_transfers (transfer_id, customer_id, amount, currency, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    await q.run(`INSERT INTO referral_transfers (transfer_id, customer_id, amount, currency, receive_currency, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(transfer_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`,
-    [ev.transfer_id, ev.customer_id, Number(ev.amount || (prev && prev.amount) || 0), String(ev.currency || (prev && prev.currency) || '').toUpperCase(), status, createdAt, nowIso()]);
+    [ev.transfer_id, ev.customer_id, Number(ev.amount || (prev && prev.amount) || 0), String(ev.currency || (prev && prev.currency) || '').toUpperCase(),
+        String(ev.receive_currency || (prev && prev.receive_currency) || '').toUpperCase() || null, status, createdAt, nowIso()]);
     const transfer = await q.get(`SELECT * FROM referral_transfers WHERE transfer_id = ?`, [ev.transfer_id]);
 
     // A refunded transfer that used bonus gets the bonus back (AC-5.2.10)
@@ -498,8 +573,18 @@ async function handleTransferEvent(q, ev) {
     if (!r) return { referral: null };
 
     if (QUALIFY_STATUSES.includes(status) && r.status === 'REGISTERED') {
-        const qualifies = transfer.currency === r.currency && Number(transfer.amount) >= Number(r.floor) &&
-            ukDate(transfer.created_at) <= r.qualification_deadline;
+        // Referee joined before choosing a destination: the corridor of this transfer decides which rule applies
+        if (!r.rule_id && transfer.currency === r.currency && transfer.receive_currency) {
+            const rule = await liveRuleFor(q, r.currency, transfer.receive_currency);
+            if (rule && Number(transfer.amount) >= Number(rule.min_transaction_threshold) &&
+                ukDate(transfer.created_at) <= overallDeadlineFor(rule, ukDate(r.registered_at))) {
+                await bindRule(q, r, rule);
+                r = await q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
+            }
+        }
+        // The transfer must be on the rule's corridor: same send currency and, where the rule names one, the same receive currency
+        const qualifies = !!r.rule_id && transfer.currency === r.currency && (!r.receive_currency || transfer.receive_currency === r.receive_currency) &&
+            Number(transfer.amount) >= Number(r.floor) && ukDate(transfer.created_at) <= r.qualification_deadline;
         if (qualifies) {
             await q.run(`UPDATE referrals SET status = 'PENDING', status_reason = NULL, qualifying_transfer_id = ?, qualifying_amount = ?, pending_at = ?, updated_at = ? WHERE id = ?`,
                 [transfer.transfer_id, transfer.amount, nowIso(), nowIso(), r.id]);
@@ -520,13 +605,20 @@ async function handleTransferEvent(q, ev) {
     return { referral: r };
 }
 
-async function applyBonus(q, customerId, { amount, currency, transfer_id, send_amount }) {
+async function applyBonus(q, customerId, { amount, currency, receive_currency, transfer_id, send_amount }) {
     currency = String(currency || '').toUpperCase();
+    const receive = String(receive_currency || '').toUpperCase() || null;
     amount = round2(amount);
     if (!transfer_id || !(amount > 0)) throw Object.assign(new Error('transfer_id and a positive amount are required'), { status: 400 });
     const already = await q.get(`SELECT id FROM credit_ledger WHERE user_id = ? AND transfer_id = ? AND type = 'APPLIED'`, [customerId, transfer_id]);
     if (already) throw Object.assign(new Error('Bonus has already been applied to this transfer.'), { status: 409, code: 'ALREADY_APPLIED' });
-    const rule = await liveRuleFor(q, currency) || await q.get(`SELECT * FROM referral_rules WHERE base_currency = ? ORDER BY is_archived, id DESC LIMIT 1`, [currency]);
+    // Minimum-to-redeem follows the transfer's corridor. If the caller does not say where the money is going, use the most lenient live rule for the send currency.
+    let rule = receive ? await liveRuleFor(q, currency, receive) : null;
+    if (!rule && !receive) rule = (await liveRulesForSend(q, currency)).sort((a, b) => Number(a.min_redeem_amount || 0) - Number(b.min_redeem_amount || 0))[0] || null;
+    if (!rule) {
+        rule = await q.get(`SELECT * FROM referral_rules WHERE base_currency = ? ${receive ? 'AND (receive_currency = ? OR receive_currency IS NULL)' : ''} ORDER BY is_archived, id DESC LIMIT 1`,
+            receive ? [currency, receive] : [currency]);
+    }
     const minRedeem = rule ? Number(rule.min_redeem_amount || 0) : 0;
     if (minRedeem > 0 && Number(send_amount || 0) < minRedeem) {
         throw Object.assign(new Error(`Send ${money(minRedeem, currency)} or more to use your bonus.`), { status: 400, code: 'BELOW_MIN_REDEEM' });
@@ -607,6 +699,7 @@ function trackingWhere(f) {
     const cond = [], params = [];
     if (f.status) { cond.push('r.status = ?'); params.push(f.status); }
     if (f.currency) { cond.push('r.currency = ?'); params.push(f.currency); }
+    if (f.receive_currency) { cond.push('r.receive_currency = ?'); params.push(f.receive_currency); }
     if (f.rule_id) { cond.push('r.rule_id = ?'); params.push(Number(f.rule_id)); }
     if (f.status_group === 'pending') cond.push("r.status IN ('REGISTERED','PENDING')");
     if (f.status_group === 'closed') cond.push("r.status IN ('EXPIRED','NOT_ELIGIBLE','REVERSED')");
@@ -646,14 +739,16 @@ async function tracking(q, f) {
 }
 
 async function performance(q, { from, to, include_archived }) {
-    const rules = await q.all(`SELECT * FROM referral_rules ${include_archived ? '' : 'WHERE COALESCE(is_archived,0) = 0'} ORDER BY base_currency`);
+    const rules = await q.all(`SELECT * FROM referral_rules ${include_archived ? '' : 'WHERE COALESCE(is_archived,0) = 0'} ORDER BY base_currency, receive_currency`);
     const rangeCond = (col) => `${from ? ` AND date(${col}) >= date('${from.replace(/[^0-9-]/g, '')}')` : ''}${to ? ` AND date(${col}) <= date('${to.replace(/[^0-9-]/g, '')}')` : ''}`;
     const rows = [];
     for (const rule of rules) {
         const counts = await q.all(`SELECT status, COUNT(*) AS c FROM referrals WHERE rule_id = ?${rangeCond('registered_at')} GROUP BY status`, [rule.id]);
         const cnt = (st) => counts.filter((c) => st.includes(c.status)).reduce((s, c) => s + c.c, 0);
-        // Registrations through a link where the rule could not apply are still visits for that currency
-        const visits = (await q.get(`SELECT COUNT(*) AS c FROM referral_link_visits WHERE currency = ?${rangeCond('created_at')}`, [rule.base_currency])).c;
+        // Visits count for the rule's send currency. A visit that named a destination counts for that corridor only;
+        // one that did not (link opened without a destination) counts for every corridor of that send currency.
+        const visits = (await q.get(`SELECT COUNT(*) AS c FROM referral_link_visits WHERE currency = ?${rule.receive_currency ? ' AND (receive_currency IS NULL OR receive_currency = ?)' : ''}${rangeCond('created_at')}`,
+            rule.receive_currency ? [rule.base_currency, rule.receive_currency] : [rule.base_currency])).c;
         const registrations = cnt(['REGISTERED', 'PENDING', 'REWARDED', 'EXPIRED', 'NOT_ELIGIBLE', 'REVERSED']);
         const rewarded = cnt(['REWARDED']);
         const refIds = `SELECT id FROM referrals WHERE rule_id = ${Number(rule.id)}${rangeCond('registered_at')}`;
@@ -663,10 +758,12 @@ async function performance(q, { from, to, include_archived }) {
         const returned = await sum(`SELECT SUM(amount) AS s FROM credit_ledger WHERE reason_code = 'BONUS_RETURNED' AND referral_id IN (${refIds})`);
         const expired = -(await sum(`SELECT SUM(amount) AS s FROM credit_ledger WHERE type IN ('EXPIRED','VOIDED') AND referral_id IN (${refIds})`));
         const volume = await sum(`SELECT SUM(t.amount) AS s FROM referral_transfers t JOIN referrals r ON r.referee_id = t.customer_id
-            WHERE r.rule_id = ${Number(rule.id)} AND t.status = 'COMPLETED' AND t.currency = r.currency${rangeCond('r.registered_at')}`);
+            WHERE r.rule_id = ${Number(rule.id)} AND t.status = 'COMPLETED' AND t.currency = r.currency
+            AND (r.receive_currency IS NULL OR t.receive_currency = r.receive_currency)${rangeCond('r.registered_at')}`);
         const netUsed = round2(used - returned);
         rows.push({
-            rule_id: rule.id, name: rule.name, currency: rule.base_currency, status: ruleStatus(rule),
+            rule_id: rule.id, name: rule.name, currency: rule.base_currency, receive_currency: rule.receive_currency,
+            corridor: corridorLabel(rule.base_currency, rule.receive_currency), status: ruleStatus(rule),
             link_visits: visits, registrations, pending: cnt(['REGISTERED', 'PENDING']), rewarded,
             closed: cnt(['EXPIRED', 'NOT_ELIGIBLE', 'REVERSED']),
             conversion_rate: registrations ? Math.round((rewarded / registrations) * 1000) / 10 : null,
@@ -707,10 +804,11 @@ function registerReferralRoutes(app, db) {
     }));
 
     const checkDuplicates = async (clean, id) => {
-        const sameCurrency = await q.get(`SELECT id, name FROM referral_rules WHERE base_currency = ? AND COALESCE(is_archived,0) = 0 ${id ? 'AND id != ?' : ''}`,
-            id ? [clean.base_currency, id] : [clean.base_currency]);
-        if (sameCurrency) {
-            throw Object.assign(new Error(`A referral rule for ${clean.base_currency} already exists ('${sameCurrency.name}'). Edit or archive it first.`), { status: 409, code: 'DUPLICATE_CURRENCY' });
+        // One non-archived rule per corridor (send → receive)
+        const sameCorridor = await q.get(`SELECT id, name FROM referral_rules WHERE base_currency = ? AND receive_currency IS ? AND COALESCE(is_archived,0) = 0 ${id ? 'AND id != ?' : ''}`,
+            id ? [clean.base_currency, clean.receive_currency, id] : [clean.base_currency, clean.receive_currency]);
+        if (sameCorridor) {
+            throw Object.assign(new Error(`A referral rule for ${corridorLabel(clean.base_currency, clean.receive_currency)} already exists ('${sameCorridor.name}'). Edit or archive it first.`), { status: 409, code: 'DUPLICATE_CORRIDOR' });
         }
         const sameName = await q.get(`SELECT id FROM referral_rules WHERE lower(name) = lower(?) AND COALESCE(is_archived,0) = 0 ${id ? 'AND id != ?' : ''}`,
             id ? [clean.name, id] : [clean.name]);
@@ -794,32 +892,39 @@ function registerReferralRoutes(app, db) {
     }));
 
     // Offer + link for the Refer & Earn card (US-2.1)
+    // Pass receive_currency to get the offer for one corridor. Without it, `offer` is set only when the send currency has a single
+    // live corridor; otherwise `offers` lists them all (one per corridor).
     app.get('/api/referral/offer', wrap(async (req, res) => {
         let currency = String(req.query.currency || '').toUpperCase();
+        const receive = String(req.query.receive_currency || '').toUpperCase() || null;
         let customer = null;
         if (req.query.customer_id) {
             customer = await q.get(`SELECT * FROM customers WHERE id = ?`, [req.query.customer_id]);
             if (customer && !currency) currency = customer.send_currency;
         }
-        if (customer && customer.account_status !== 'ACTIVE') return res.json({ offer: null, reason: 'ACCOUNT_NOT_ACTIVE' });
-        const rule = await liveRuleFor(q, currency || 'GBP');
-        if (!rule) return res.json({ offer: null, reason: 'NO_ACTIVE_RULE' });
-        const offer = publicOffer(rule);
-        if (customer) {
-            offer.referral_code = await ensureReferralCode(q, customer.id);
-            offer.referral_link = `https://rhemito.com/ref/${offer.referral_code}`;
-            const rewarded = await rewardedCountForReferrer(q, customer.id, rule.id);
-            offer.cap_reached = !!(rule.max_referrals_per_referrer && rewarded >= rule.max_referrals_per_referrer && rule.reward_type !== 'REFEREE');
+        if (customer && customer.account_status !== 'ACTIVE') return res.json({ offer: null, offers: [], reason: 'ACCOUNT_NOT_ACTIVE' });
+        const rules = await offerRulesFor(q, currency || 'GBP', receive);
+        if (!rules.length) return res.json({ offer: null, offers: [], reason: 'NO_ACTIVE_RULE' });
+        const offers = [];
+        for (const rule of rules) {
+            const offer = publicOffer(rule);
+            if (customer) {
+                offer.referral_code = await ensureReferralCode(q, customer.id);
+                offer.referral_link = `https://rhemito.com/ref/${offer.referral_code}`;
+                const rewarded = await rewardedCountForReferrer(q, customer.id, rule.id);
+                offer.cap_reached = !!(rule.max_referrals_per_referrer && rewarded >= rule.max_referrals_per_referrer && rule.reward_type !== 'REFEREE');
+            }
+            offers.push(offer);
         }
-        res.json({ offer });
+        res.json({ offer: offers.length === 1 ? offers[0] : null, offers, ...(offers.length > 1 ? { reason: 'MULTIPLE_CORRIDORS' } : {}) });
     }));
 
     // Validate a referral code / link (US-3.1, US-3.2)
     app.get('/api/referral/codes/:code', wrap(async (req, res) => {
         const look = await lookupCode(q, req.params.code);
         if (!look.valid) return res.status(look.reason === 'INVALID_FORMAT' ? 400 : 404).json({ valid: false, error: look.reason, message: look.message });
-        const rule = await liveRuleFor(q, String(req.query.currency || look.referrer.send_currency || 'GBP').toUpperCase());
-        res.json({ valid: true, code: look.code, referrer_first_name: look.referrer.first_name, offer: rule ? publicOffer(rule) : null });
+        const rules = await offerRulesFor(q, String(req.query.currency || look.referrer.send_currency || 'GBP').toUpperCase(), req.query.receive_currency);
+        res.json({ valid: true, code: look.code, referrer_first_name: look.referrer.first_name, offer: rules.length === 1 ? publicOffer(rules[0]) : null, offers: rules.map(publicOffer) });
     }));
 
     // Record a link visit (AC-3.1.10) — repeat visits within 24h count once
@@ -830,8 +935,8 @@ function registerReferralRoutes(app, db) {
         const since = new Date(clock.now().getTime() - 86400000).toISOString();
         const dup = await q.get(`SELECT id FROM referral_link_visits WHERE code = ? AND visitor_id = ? AND created_at >= ?`, [look.code, visitor, since]);
         if (!dup) {
-            await q.run(`INSERT INTO referral_link_visits (code, referrer_id, currency, visitor_id, created_at) VALUES (?, ?, ?, ?, ?)`,
-                [look.code, look.referrer.id, look.referrer.send_currency, visitor, nowIso()]);
+            await q.run(`INSERT INTO referral_link_visits (code, referrer_id, currency, receive_currency, visitor_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+                [look.code, look.referrer.id, look.referrer.send_currency, String(req.body.receive_currency || '').toUpperCase() || null, visitor, nowIso()]);
         }
         res.json({ success: true, counted: !dup });
     }));
@@ -848,7 +953,7 @@ function registerReferralRoutes(app, db) {
         const rows = await q.all(`SELECT r.*, b.first_name, b.last_name FROM referrals r LEFT JOIN customers b ON b.id = r.referee_id WHERE r.referrer_id = ? ORDER BY r.registered_at DESC`, [req.query.referrer_id]);
         const data = rows.map((r) => ({
             id: r.id, friend: maskName(r.first_name, r.last_name), joined_on: r.registered_at, status: r.status,
-            status_label: STATUS_LABELS[r.status] || r.status, currency: r.currency, floor: r.floor,
+            status_label: STATUS_LABELS[r.status] || r.status, currency: r.currency, receive_currency: r.receive_currency, floor: r.floor,
             qualification_deadline: r.qualification_deadline, reward: r.referrer_credited || (r.reward_type === 'REFEREE' ? 0 : r.referrer_reward), credited: r.referrer_credited,
         }));
         const earned = {};
@@ -869,8 +974,8 @@ function registerReferralRoutes(app, db) {
         const r = await q.get(`SELECT * FROM referrals WHERE id = ?`, [req.params.id]);
         if (!r) return res.status(404).json({ error: 'NOT_FOUND', message: 'Referral not found.' });
         if (r.status !== 'NOT_ELIGIBLE') return res.status(400).json({ error: 'INVALID_STATUS', message: 'Only "Not eligible" referrals can be approved.' });
-        const rule = r.rule_id ? await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [r.rule_id]) : await liveRuleFor(q, r.currency);
-        if (!rule) return res.status(400).json({ error: 'NO_RULE', message: `There is no referral rule for ${r.currency} to approve against.` });
+        const rule = r.rule_id ? await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [r.rule_id]) : await ruleForReferral(q, r);
+        if (!rule) return res.status(400).json({ error: 'NO_RULE', message: `There is no referral rule for ${corridorLabel(r.currency, r.receive_currency)} to approve against.` });
         const referrer = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referrer_id]);
         const referee = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referee_id]);
         let referrerCredited = 0, refereeCredited = 0;
@@ -885,8 +990,8 @@ function registerReferralRoutes(app, db) {
             await addCredit(q, { userId: r.referee_id, amount: re, currency: r.currency, reason: 'REFERRAL_REWARD', referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
             refereeCredited = re;
         }
-        await q.run(`UPDATE referrals SET status = 'REWARDED', rule_id = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?, approved_by = ?, approval_reason = ?, status_reason = 'Approved by admin', updated_at = ? WHERE id = ?`,
-            [rule.id, nowIso(), referrerCredited, refereeCredited, admin_user || 'Admin', String(reason).trim(), nowIso(), r.id]);
+        await q.run(`UPDATE referrals SET status = 'REWARDED', rule_id = ?, receive_currency = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?, approved_by = ?, approval_reason = ?, status_reason = 'Approved by admin', updated_at = ? WHERE id = ?`,
+            [rule.id, rule.receive_currency, nowIso(), referrerCredited, refereeCredited, admin_user || 'Admin', String(reason).trim(), nowIso(), r.id]);
         res.json({ data: await q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]) });
     }));
 
@@ -936,6 +1041,7 @@ function registerReferralRoutes(app, db) {
     app.get('/api/referral/offer-notifications', wrap(async (req, res) => {
         const cond = [], params = [];
         if (req.query.currency) { cond.push('currency = ?'); params.push(String(req.query.currency).toUpperCase()); }
+        if (req.query.receive_currency) { cond.push('(receive_currency IS NULL OR receive_currency = ?)'); params.push(String(req.query.receive_currency).toUpperCase()); }
         if (req.query.since) { cond.push('created_at > ?'); params.push(req.query.since); }
         res.json({ data: await q.all(`SELECT * FROM referral_offer_notifications ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ORDER BY id DESC LIMIT 50`, params) });
     }));
@@ -949,7 +1055,7 @@ function registerReferralRoutes(app, db) {
         const csv = toCsv([
             ['Referral ID', 'id'], ['Referrer ID', 'referrer_id'], ['Referrer', (r) => `${r.referrer_first_name || ''} ${r.referrer_last_name || ''}`.trim()],
             ['Referee ID', 'referee_id'], ['Referee', (r) => `${r.referee_first_name || ''} ${r.referee_last_name || ''}`.trim()],
-            ['Rule', 'rule_name'], ['Currency', 'currency'], ['Registered On', 'registered_at'], ['Qualification Deadline', 'qualification_deadline'],
+            ['Rule', 'rule_name'], ['Send Currency', 'currency'], ['Receive Currency', 'receive_currency'], ['Registered On', 'registered_at'], ['Qualification Deadline', 'qualification_deadline'],
             ['Qualifying Transfer ID', 'qualifying_transfer_id'], ['Status', 'status'], ['Reason', 'status_reason'],
             ['Referrer Bonus', 'referrer_credited'], ['Referee Bonus', 'referee_credited'], ['Rewarded On', 'rewarded_at'],
         ], result.data);
@@ -963,7 +1069,7 @@ function registerReferralRoutes(app, db) {
     app.get('/api/referral/performance.csv', wrap(async (req, res) => {
         const rows = await performance(q, { from: req.query.from, to: req.query.to, include_archived: req.query.include_archived === '1' });
         const csv = toCsv([
-            ['Rule', 'name'], ['Currency', 'currency'], ['Status', 'status'], ['Link visits', 'link_visits'], ['Registrations', 'registrations'],
+            ['Rule', 'name'], ['Send Currency', 'currency'], ['Receive Currency', 'receive_currency'], ['Status', 'status'], ['Link visits', 'link_visits'], ['Registrations', 'registrations'],
             ['Pending', 'pending'], ['Rewarded', 'rewarded'], ['Expired / Not eligible', 'closed'], ['Conversion rate %', 'conversion_rate'],
             ['Bonus issued', 'bonus_issued'], ['Bonus used', 'bonus_used'], ['Bonus unused', 'bonus_unused'], ['Bonus expired', 'bonus_expired'],
             ['Referred volume', 'referred_volume'], ['From', () => req.query.from || ''], ['To', () => req.query.to || ''],
@@ -984,5 +1090,5 @@ function registerReferralRoutes(app, db) {
 }
 
 module.exports = {
-    registerReferralRoutes, initSchema, clock, ruleStatus, validateRule, offerText, ukDate, addDays, money, maskName,
+    registerReferralRoutes, initSchema, clock, ruleStatus, validateRule, offerText, ukDate, addDays, money, maskName, corridorLabel,
 };

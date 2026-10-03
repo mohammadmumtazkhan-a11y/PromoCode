@@ -1,11 +1,25 @@
 # Referral & Bonus — User Stories & Acceptance Criteria
 
 **Product:** Mito Money Admin (PromoCode) and Rhemito customer app (Rhemito-UI)
-**Version:** 2.0 (As built — reflects the delivered Mito Admin and Rhemito functionality)
+**Version:** 2.1 (As built — adds corridor-based referral rules)
 **Date:** 03 October 2026
 **Author:** Mohammad Mumtaz (Business Analyst)
 
 ---
+
+## What Changed in Version 2.1
+
+Referral rules are now set per **corridor** (send currency → receive currency, for example GBP → NGN), not per send currency alone. The admin can apply a rule to a whole send currency (Receive Currency left blank) or to one corridor, and the engine matches a referral and its Qualifying Transfer to the rule for that corridor. Bonus Credit is still issued in the **send** currency.
+
+| Area | Change | Stories |
+|------|--------|---------|
+| Rule form | New mandatory **Receive Currency** field. It lists every supported currency except the chosen Send Currency. | US-1.1 (AC-1.1.20 – AC-1.1.22) |
+| One rule per corridor | The uniqueness check is on send + receive currency. GBP → NGN and GBP → INR can both be live. | US-1.1 (AC-1.1.8), US-1.3 (AC-1.3.6), US-1.5 (AC-1.5.3) |
+| Rules list, tracking, performance | Show and filter by corridor. Link visits, registrations and volume are reported per corridor rule. | US-1.2, US-1.6, US-1.8 |
+| Choosing the rule | The referee's corridor decides the rule. If the destination is not known at registration and the send currency has several live corridors, the rule is bound by the corridor of the first qualifying transfer. | US-3.1 (AC-3.1.6 – AC-3.1.8), US-4.1 |
+| Referee bonus timing | The referee earns their bonus on the first transfer of at least the Floor, whenever it happens before Bonus Validity ends (counted from joining). The referrer is only rewarded if that transfer is inside the Qualification Window. | US-4.1, US-4.2 |
+| Rhemito API | `receive_currency` is added to referee registration, transfer events, offer and code lookups, link visits and bonus redemption. | Section 3 |
+| Rules from before this change | They have no receive currency, so they are send-currency-only rules and keep covering any destination. | US-1.3 |
 
 ## What Changed in Version 2.0
 
@@ -53,7 +67,7 @@ Version 1.2 described the programme as planned. Version 2.0 describes it **as de
 
 ## 1. Purpose
 
-Introduce a Referral & Bonus programme to increase registrations and money transfers on Rhemito. Mito Money admins configure one referral rule per send currency. An existing customer (the **Referrer**) shares a unique referral link. A new customer (the **Referee**) registers through that link and completes a qualifying transfer. The Referrer, the Referee or both then earn Bonus Credit, as set in the active rule, which they can redeem on a later transfer as **Pay Less** or **Send More**.
+Introduce a Referral & Bonus programme to increase registrations and money transfers on Rhemito. Mito Money admins configure one referral rule per corridor (send currency → receive currency, for example GBP → NGN). An existing customer (the **Referrer**) shares a unique referral link. A new customer (the **Referee**) registers through that link and completes a qualifying transfer. The Referrer, the Referee or both then earn Bonus Credit, as set in the active rule, which they can redeem on a later transfer as **Pay Less** or **Send More**.
 
 ## 2. Glossary
 
@@ -61,10 +75,11 @@ Introduce a Referral & Bonus programme to increase registrations and money trans
 |------|---------|
 | Referrer | Existing Rhemito customer who shares their referral link. |
 | Referee | New customer who registers through a referral link or code. |
-| Referral Rule | Admin configuration for one send currency: who is rewarded, how much, the Floor and the time limits. |
+| Corridor | A send currency and a receive currency, written "GBP → NGN". |
+| Referral Rule | Admin configuration for one corridor: who is rewarded, how much, the Floor and the time limits. |
 | Floor (Minimum Transaction Amount) | The minimum send amount a Referee's transfer must reach to qualify. The comparison is inclusive (greater than or equal to). |
-| Qualifying Transfer | The Referee's first transfer that reaches the Floor, in the rule's currency, reaches **Completed** status and falls inside the Qualification Window. |
-| Qualification Window | The number of days after the Referee's registration within which the Qualifying Transfer must be completed. |
+| Qualifying Transfer | The Referee's first transfer that reaches the Floor, on the rule's corridor, reaches **Completed** status and falls inside the Qualification Window. |
+| Qualification Window | The number of days after the Referee's registration within which the Qualifying Transfer must be completed for the **Referrer** to be rewarded. The Referee can still earn their bonus on a Qualifying Transfer until Bonus Validity ends. |
 | Bonus Credit | Reward value held in the customer's Bonus wallet in a single currency. It can only be redeemed on transfers in that currency. |
 | Bonus Validity | The number of days after it is issued that Bonus Credit can be redeemed before it expires. |
 | Pay Less | Redemption option that reduces the Total to Pay by the bonus amount. |
@@ -79,7 +94,7 @@ These decisions close the gaps found in the original notes. Each one can be over
 |---|----------|---------|
 | D1 | The Floor is inclusive: a transfer **equal to** the Floor qualifies. | US-4.1 |
 | D2 | Only the Referee's **first** transfer that meets the Floor, inside the Qualification Window, triggers the reward. A referral is rewarded **once only**. Earlier transfers below the Floor do not stop a later one from qualifying. | US-4.1 |
-| D3 | The rule is selected by the **Referee's send currency** (from their country of registration). Both Referrer and Referee are credited in that currency. | US-3.1, US-4.1 |
+| D3 | The rule is selected by the Referee's **corridor**: the send currency (from their country of registration) and the receive currency they chose. If the receive currency is not known at registration, one live rule for the send currency is used when there is only one; with several, the rule is bound by the corridor of the Referee's first qualifying transfer. Both Referrer and Referee are credited in the send currency. | US-3.1, US-4.1 |
 | D4 | The rule's values are **locked (snapshotted) at the Referee's registration**. Later edits or deactivation do not change what was promised to referrals already registered. | US-1.3, US-1.4, US-4.1 |
 | D5 | The reward is issued only when the Qualifying Transfer reaches **Completed** status, not when it is created or paid. | US-4.1 |
 | D6 | A Referee cannot redeem their own reward on the Qualifying Transfer itself (it does not exist yet); they can use it on the next transfer. | US-4.1, US-5.2 |
@@ -102,11 +117,11 @@ These decisions close the gaps found in the original notes. Each one can be over
 
 ### US-1.1: Create a Referral Rule
 
-**Title:** Create a referral rule for a send currency
+**Title:** Create a referral rule for a corridor
 
 **As a** Mito Money admin,
-**I want** to create a referral rule for a specific send currency that defines who is rewarded, how much, the Floor and the time limits,
-**So that** Rhemito customers sending in that currency are rewarded for bringing in new customers who transfer money.
+**I want** to create a referral rule for a specific corridor (send currency → receive currency) that defines who is rewarded, how much, the Floor and the time limits,
+**So that** Rhemito customers sending on that corridor are rewarded for bringing in new customers who transfer money.
 
 #### Field Specification
 
@@ -115,7 +130,8 @@ These decisions close the gaps found in the original notes. Each one can be over
 | Rule Name | Text | Yes | 3–50 characters; letters, numbers, spaces, hyphens (-) and ampersands (&) only; leading and trailing spaces trimmed; must be unique (case-insensitive) across non-archived rules. |
 | Status | Dropdown | Yes | Active / Inactive. Default: Active. |
 | Who gets a bonus? | Dropdown | Yes | Both Parties (Double-Sided) / Referrer Only / Referee (New User) Only. Default: Both Parties. |
-| Send Currency | Dropdown | Yes | One of the supported send currencies (GBP, USD, EUR, NGN, CAD, AUD, JPY, CNY, INR, ZAR, KES, GHS, AED). Only one non-archived rule is allowed per currency. |
+| Send Currency | Dropdown | Yes | One of the supported send currencies (GBP, USD, EUR, NGN, CAD, AUD, JPY, CNY, INR, ZAR, KES, GHS, AED). |
+| Receive Currency | Dropdown | No | Blank ("All destinations") makes a rule for the send currency alone. Otherwise one of the supported currencies, except the chosen Send Currency. Only one non-archived rule is allowed per Send Currency + Receive Currency, and one send-currency-only rule per Send Currency. A corridor rule takes precedence over the send-currency-only rule. |
 | Referrer Bonus | Decimal | Yes, if Referrer is rewarded | Greater than 0; at most 2 decimal places (0 for JPY); maximum 1,000,000. Disabled and saved as 0 when "Referee (New User) Only" is selected. |
 | Referee (New User) Bonus | Decimal | Yes, if Referee is rewarded | Greater than 0; at most 2 decimal places (0 for JPY); maximum 1,000,000. Disabled and saved as 0 when "Referrer Only" is selected. |
 | Minimum Transaction Amount (Floor) | Decimal | Yes | Greater than 0; at most 2 decimal places (0 for JPY); maximum 10,000,000. |
@@ -137,6 +153,7 @@ When the admin enters "UK Standard Programme" in "Rule Name"
 And selects "Active" in "Status"
 And selects "Both Parties (Double-Sided)" in "Who gets a bonus?"
 And selects "GBP (United Kingdom)" in "Send Currency"
+And selects "NGN (Nigeria)" in "Receive Currency"
 And enters 5 in "Referrer Bonus" and 10 in "Referee (New User) Bonus"
 And enters 50 in "Minimum Transaction Amount (Floor)"
 And leaves the remaining fields at their defaults
@@ -199,13 +216,13 @@ Given the admin has selected "EUR" in "Send Currency"
 Then the bonus fields and the Floor field shall show the "€" prefix
 ```
 
-**AC-1.1.8: Duplicate rule for the same currency**
+**AC-1.1.8: Duplicate rule for the same corridor**
 
 ```gherkin
-Given a non-archived rule named "UK Default" exists for GBP
-When the admin tries to create another rule for GBP
+Given a non-archived rule named "UK Default" exists for GBP → NGN
+When the admin tries to create another rule for GBP → NGN
 Then the rule shall not be saved
-And an error toast "A referral rule for GBP already exists ('UK Default'). Edit or archive it first." shall be displayed
+And an inline error on "Receive Currency" and an error toast "A referral rule for GBP → NGN already exists ('UK Default'). Edit or archive it first." shall be displayed
 ```
 
 **AC-1.1.9: Duplicate rule name**
@@ -300,6 +317,34 @@ When the admin clicks "Create Rule"
 Then the button shall show "Creating..." and be disabled until the server responds
 ```
 
+**AC-1.1.20: Receive currency is optional**
+
+```gherkin
+Given the admin leaves "Receive Currency" as "All destinations"
+When the admin clicks "Create Rule"
+Then the rule shall be saved for the send currency alone and shown as "GBP → All"
+And it shall apply to every GBP transfer that has no corridor rule of its own
+```
+
+**AC-1.1.21: Receive currency differs from send currency**
+
+```gherkin
+Given the admin has selected "GBP" in "Send Currency"
+Then "GBP" shall not be offered in "Receive Currency"
+And when the admin changes "Send Currency" to the currency already chosen in "Receive Currency"
+Then "Receive Currency" shall be cleared
+And an API request with the same send and receive currency shall be rejected with "Receive currency must be different from the send currency."
+```
+
+**AC-1.1.22: Several corridors for one send currency**
+
+```gherkin
+Given an Active rule exists for GBP → NGN
+When the admin creates a rule for GBP → INR
+Then the rule shall be saved
+And both rules shall be Active
+```
+
 **AC-1.1.19: Server error**
 
 ```gherkin
@@ -326,7 +371,9 @@ And all entered values shall be kept in the form
 ```gherkin
 Given at least one referral rule exists
 When the admin opens the "Referral Scheme Management" page
-Then the "Existing Rules" table shall show the columns: Rule Name, Status, Type, Referrer Bonus, Referee Bonus, Min Amount (Floor), Currency, Qualification Window, Bonus Validity, Dates, Actions
+Then the "Existing Rules" table shall show the columns: Rule Name, Status, Type, Referrer Bonus, Referee Bonus, Min Amount (Floor), Corridor, Qualification Window, Bonus Validity, Dates, Actions
+And the Corridor column shall show the send and receive currency, for example "GBP → NGN"
+And a rule with no Receive Currency shall show "GBP → All" and the hint "Any destination"
 And amounts shall be formatted with the currency symbol and 2 decimal places (0 for JPY)
 ```
 
@@ -429,12 +476,21 @@ Then the same inline error shall be shown
 And the rule shall not be saved
 ```
 
-**AC-1.3.6: Currency clash on edit**
+**AC-1.3.6: Corridor clash on edit**
 
 ```gherkin
-Given rules exist for GBP and EUR
-When the admin edits the EUR rule and changes its currency to GBP
-Then the error toast "A referral rule for GBP already exists ('UK Default'). Edit or archive it first." shall be displayed
+Given rules exist for GBP → NGN and GBP → INR
+When the admin edits the GBP → INR rule and changes its Receive Currency to NGN
+Then the error "A referral rule for GBP → NGN already exists ('UK Default'). Edit or archive it first." shall be displayed
+And the rule shall not be saved
+```
+
+**AC-1.3.8: Rule from before corridors**
+
+```gherkin
+Given a rule exists that has no Receive Currency
+Then it shall keep applying to any destination
+And the admin can narrow it to one corridor by choosing a Receive Currency with "Edit"
 ```
 
 **AC-1.3.7: Cancel editing**
@@ -542,11 +598,11 @@ And it shall be removed from the default table view
 And the success toast "Rule archived." shall be displayed
 ```
 
-**AC-1.5.3: Currency becomes available again**
+**AC-1.5.3: Corridor becomes available again**
 
 ```gherkin
-Given the GBP rule has been archived
-When the admin creates a new rule for GBP
+Given the GBP → NGN rule has been archived
+When the admin creates a new rule for GBP → NGN
 Then the new rule shall be saved successfully
 ```
 
@@ -1070,15 +1126,38 @@ Then a referral record shall be created with status "Registered"
 And it shall store the Referrer, the Referee, the registration date and the Referee's hashed device ID
 ```
 
-**AC-3.1.6: Rule chosen by the Referee's send currency**
+**AC-3.1.6: Rule chosen by the Referee's corridor**
 
 ```gherkin
 Given Referrer A sends in GBP
-And Referee B selects Nigeria as their country at registration, so their send currency is NGN
+And Referee B registers with send currency NGN and receive currency GBP
 When B's referral record is created
-Then the Active NGN rule shall be linked to the referral
+Then the Active NGN → GBP rule shall be linked to the referral
 And its values (type, bonuses, Floor, Qualification Window, Bonus Validity) shall be snapshotted on the referral
 And both A's and B's rewards shall be paid in NGN
+```
+
+**AC-3.1.8: Destination not known at registration**
+
+```gherkin
+Given Referee B's send currency is GBP and B has not chosen a receive currency
+And Active rules exist for GBP → NGN and GBP → INR
+When B's referral record is created
+Then the referral shall be recorded as "Registered" with no rule linked yet
+And its Qualification Deadline shall use the longest Qualification Window of the live GBP corridors
+When B's first transfer reaches the Floor of the rule for its corridor inside that rule's Qualification Window
+Then that rule shall be linked and its values snapshotted
+And a transfer on a corridor with no live rule, or below its Floor, shall not link a rule
+```
+
+**AC-3.1.9: Only one live corridor**
+
+```gherkin
+Given Referee B's send currency is GBP and B has not chosen a receive currency
+And only one rule is Active for GBP
+When B's referral record is created
+Then that rule shall be linked and snapshotted at registration
+And only transfers on that rule's corridor shall qualify
 ```
 
 **AC-3.1.7: No active rule for the Referee's currency**
@@ -1088,7 +1167,7 @@ Given Referee B's send currency is EUR
 And no Active EUR rule exists
 When B registers through A's link
 Then the registration shall complete normally
-And the referral shall be recorded with status "Not Eligible" and reason "No active referral programme for EUR"
+And the referral shall be recorded with status "Not Eligible" and reason "No active referral programme for EUR → NGN" (or "…for EUR" when no receive currency was given)
 And no referral banner shall be shown to B after registration
 ```
 
@@ -1248,11 +1327,13 @@ When B sends £45.00 with a £5.00 fee (Total to Pay £50.00)
 Then the transfer shall not qualify, because the send amount excludes fees, promo discounts and bonus credit
 ```
 
-**AC-4.1.7: Transfer in a different currency**
+**AC-4.1.7: Transfer on a different corridor**
 
 ```gherkin
-Given B's referral is linked to the NGN rule
-When B completes a transfer sent in GBP
+Given B's referral is linked to the GBP → NGN rule
+When B completes a transfer sent in EUR
+Or B completes a transfer sent in GBP to INR
+Or Rhemito sends the transfer event without a receive currency
 Then the transfer shall not count towards the referral
 ```
 

@@ -16,6 +16,20 @@ test.describe('Referral Settings', () => {
         await expect(page.getByText("Rule name must be 3–50 characters and use letters, numbers, spaces, '-' or '&' only.")).toBeVisible();
     });
 
+    test('receive currency is optional and offers every currency except the send currency', async ({ page }) => {
+        await page.goto('/growth/referral-settings');
+        await expect(page.getByLabel('Receive Currency')).toHaveValue('');
+        await expect(page.getByText(/Applies to every GBP transfer/)).toBeVisible();
+
+        await page.getByLabel('Send Currency').selectOption('GBP');
+        await expect(page.getByLabel('Receive Currency').locator('option[value="GBP"]')).toHaveCount(0);
+        await page.getByLabel('Receive Currency').selectOption('NGN');
+        await expect(page.getByText('Applies to GBP → NGN transfers.')).toBeVisible();
+        // choosing NGN as the send currency clears a matching receive currency
+        await page.getByLabel('Send Currency').selectOption('NGN');
+        await expect(page.getByLabel('Receive Currency')).toHaveValue('');
+    });
+
     test('Referee Only disables the Referrer Bonus and keeps it at 0 when the currency changes', async ({ page }) => {
         await page.goto('/growth/referral-settings');
         await page.getByLabel('Who gets a bonus?').selectOption('REFEREE');
@@ -28,14 +42,15 @@ test.describe('Referral Settings', () => {
     });
 
     test('creates, deactivates and archives a rule', async ({ page, request }) => {
-        // Free up AUD so the test can create a rule for it
+        // Free up the AUD → NGN corridor so the test can create a rule for it
         const existing = await (await request.get(`${API}/api/referral-rules`)).json();
-        for (const r of existing.data.filter((x) => x.base_currency === 'AUD')) await request.post(`${API}/api/referral-rules/${r.id}/archive`);
+        for (const r of existing.data.filter((x) => x.base_currency === 'AUD' && x.receive_currency === 'NGN')) await request.post(`${API}/api/referral-rules/${r.id}/archive`);
 
         const name = `E2E AUD ${unique()}`;
         await page.goto('/growth/referral-settings');
         await page.getByLabel('Rule Name').fill(name);
         await page.getByLabel('Send Currency').selectOption('AUD');
+        await page.getByLabel('Receive Currency').selectOption('NGN');
         await page.locator('#rf-referrer_reward').fill('5');
         await page.locator('#rf-referee_reward').fill('10');
         await page.locator('#rf-min_transaction_threshold').fill('50');
@@ -43,6 +58,7 @@ test.describe('Referral Settings', () => {
         await expect(page.getByText(`Referral rule '${name}' created.`)).toBeVisible();
 
         const row = page.getByRole('row', { name: new RegExp(name) });
+        await expect(row.getByText('AUD → NGN')).toBeVisible();
         await expect(row.getByText('Active')).toBeVisible();
         await row.getByRole('button', { name: `Deactivate ${name}` }).click();
         await page.getByRole('dialog').getByRole('button', { name: 'Deactivate' }).click();
