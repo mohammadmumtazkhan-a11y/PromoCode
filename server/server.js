@@ -943,10 +943,13 @@ app.get('/api/credits/:userId', (req, res) => {
                 SELECT cl.*, COALESCE(cl.currency, 'GBP') as currency, 'BONUS' as source_type,
                     COALESCE(bs.name, CASE WHEN rr.id IS NOT NULL THEN rr.name || ' (Referral)' END,
                         CASE WHEN COALESCE(src.reason_code, cl.reason_code) = 'LOYALTY' THEN 'Manual loyalty credit' END) as scheme_name,
-                    NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') as customer_name
+                    NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') as customer_name,
+                    rr.base_currency as rule_send_currency, rr.receive_currency as rule_receive_currency,
+                    CASE WHEN rf.referrer_id = cl.user_id THEN 'Referrer' WHEN rf.referee_id = cl.user_id THEN 'Referee' END as referral_role
                 FROM credit_ledger cl
                 LEFT JOIN bonus_schemes bs ON cl.scheme_id = bs.id
                 LEFT JOIN referral_rules rr ON cl.referral_rule_id = rr.id
+                LEFT JOIN referrals rf ON rf.id = cl.referral_id
                 LEFT JOIN customers cu ON cu.id = cl.user_id
                 LEFT JOIN credit_ledger src ON src.id = cl.source_credit_id
             `;

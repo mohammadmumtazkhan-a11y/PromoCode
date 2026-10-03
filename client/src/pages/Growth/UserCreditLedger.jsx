@@ -1,6 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { formatMoney } from './referralUtils';
+import { formatMoney, corridorLabel, formatUkDate } from './referralUtils';
+import ColHead from './ColHead';
+import './referral.css';
+
+const COLUMNS = [
+    { key: 'date', label: 'Date', tip: 'When this ledger entry was recorded (UK date and time).' },
+    { key: 'customer', label: 'Customer', tip: 'The customer whose bonus wallet this entry belongs to, with their customer ID underneath.' },
+    { key: 'type', label: 'Type', tip: 'What happened to the bonus: Earned (credit added), Applied (spent on a transfer), Expired (unused credit lapsed) or Voided (removed, for example when the qualifying transfer was refunded).' },
+    { key: 'scheme', label: 'Scheme', tip: 'The bonus scheme, referral rule or promo code behind this entry. For referral rules the corridor (send \u2192 receive currency) is shown underneath.' },
+    { key: 'ref', label: 'Reference / Reason', tip: 'Why the entry exists. Shows the reason code, whether the customer was the Referrer or the Referee, the referral ID, and the transfer or transaction it relates to.' },
+    { key: 'notes', label: 'Notes', tip: 'Free-text explanation recorded with the entry. Click a note to open the full details and audit history.' },
+    { key: 'amount', label: 'Amount', right: true, tip: 'Change to the bonus balance in the entry\u2019s own currency. Green (+) adds credit; red (\u2212) takes it away.' },
+    { key: 'expires', label: 'Expires', tip: 'Last day the earned credit can be spent (UK time), counted from the day it was issued. Empty for entries that are not new credit.' },
+];
+const RUNNING = { key: 'running', label: 'Running balance', right: true, tip: 'The customer\u2019s bonus balance in this currency after this entry. Shown when a single customer is selected in the Customer ID filter.' };
+
+const FILTER_TIPS = {
+    start: 'Only show entries recorded on or after this date.',
+    end: 'Only show entries recorded on or before this date.',
+    type: 'Show only one kind of entry: Earned, Applied, Expired or Voided.',
+    scheme: 'Show entries for one bonus scheme, referral rule (with its corridor) or promo code.',
+    customer: 'Show one customer\u2019s entries and their running balance. Enter the customer ID, for example user_101.',
+    cost: 'Total value of all entries in the table below, counting credits and debits as positive, shown separately for each currency. It measures the bonus activity, not the money owed.',
+};
+
 
 const UserCreditLedger = () => {
     const [searchParams] = useSearchParams();
@@ -224,7 +248,7 @@ const UserCreditLedger = () => {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
                     <div>
-                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Start Date</label>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}><ColHead label="Start Date" tip={FILTER_TIPS.start} /></label>
                         <input
                             type="date"
                             value={filters.startDate}
@@ -233,7 +257,7 @@ const UserCreditLedger = () => {
                         />
                     </div>
                     <div>
-                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>End Date</label>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}><ColHead label="End Date" tip={FILTER_TIPS.end} /></label>
                         <input
                             type="date"
                             value={filters.endDate}
@@ -242,7 +266,7 @@ const UserCreditLedger = () => {
                         />
                     </div>
                     <div>
-                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Event Type</label>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}><ColHead label="Event Type" tip={FILTER_TIPS.type} /></label>
                         <select
                             value={filters.eventType}
                             onChange={(e) => setFilters({ ...filters, eventType: e.target.value })}
@@ -256,7 +280,7 @@ const UserCreditLedger = () => {
                         </select>
                     </div>
                     <div>
-                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Bonus Scheme</label>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}><ColHead label="Bonus Scheme" tip={FILTER_TIPS.scheme} /></label>
                         <select
                             value={filters.schemeId}
                             onChange={(e) => setFilters({ ...filters, schemeId: e.target.value })}
@@ -271,7 +295,7 @@ const UserCreditLedger = () => {
                             {referralRules.length > 0 && (
                                 <optgroup label="Referral rules">
                                     {referralRules.map(rule => (
-                                        <option key={`rr_${rule.id}`} value={`rr_${rule.id}`}>{rule.name} ({rule.base_currency}){rule.status === 'ARCHIVED' ? ' – archived' : ''}</option>
+                                        <option key={`rr_${rule.id}`} value={`rr_${rule.id}`}>{rule.name} ({corridorLabel(rule.base_currency, rule.receive_currency)}){rule.status === 'ARCHIVED' ? ' – archived' : ''}</option>
                                     ))}
                                 </optgroup>
                             )}
@@ -285,7 +309,7 @@ const UserCreditLedger = () => {
                         </select>
                     </div>
                     <div>
-                        <label htmlFor="ledger-customer" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Customer ID</label>
+                        <label htmlFor="ledger-customer" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}><ColHead label="Customer ID" tip={FILTER_TIPS.customer} /></label>
                         <input
                             id="ledger-customer"
                             type="text"
@@ -303,7 +327,7 @@ const UserCreditLedger = () => {
                 {/* Balance Card */}
                 <div className="glass-panel" style={{ padding: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
                     <div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: 4 }}>Cost Incurred</div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: 4 }}><ColHead label="Cost Incurred" tip={FILTER_TIPS.cost} /></div>
                         <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
                             {Object.keys(userData.cost_by_currency || {}).length === 0 ? (
                                 <div style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--text-main)' }}>0.00</div>
@@ -325,20 +349,16 @@ const UserCreditLedger = () => {
                     <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ background: '#f9fafb', borderBottom: '1px solid var(--border-subtle)' }}>
                             <tr>
-                                <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Date</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Customer</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Type</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Scheme</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Reference / Reason</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Notes</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Amount</th>
-                                {filters.customerId && <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Running balance</th>}
-
+                                {[...COLUMNS, ...(filters.customerId ? [RUNNING] : [])].map((c) => (
+                                    <th key={c.key} style={{ padding: '16px 24px', textAlign: c.right ? 'right' : 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>
+                                        <ColHead label={c.label} tip={c.tip} />
+                                    </th>
+                                ))}
                             </tr>
                         </thead>
                         <tbody>
                             {filteredHistory.length === 0 ? (
-                                <tr><td colSpan={filters.customerId ? 8 : 7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No history found for these filters</td></tr>
+                                <tr><td colSpan={filters.customerId ? 9 : 8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No history found for these filters</td></tr>
                             ) : (
                                 filteredHistory.map(entry => (
                                     <tr key={entry.id} style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background-color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
@@ -352,11 +372,16 @@ const UserCreditLedger = () => {
                                                 {entry.type}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '16px 24px', fontSize: '0.85rem', color: '#6b7280' }}>{entry.scheme_name || '-'}</td>
+                                        <td style={{ padding: '16px 24px', fontSize: '0.85rem', color: '#6b7280' }}>
+                                            {entry.scheme_name || '-'}
+                                            {entry.rule_send_currency && <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{corridorLabel(entry.rule_send_currency, entry.rule_receive_currency)}</div>}
+                                        </td>
                                         <td style={{ padding: '16px 24px', fontSize: '0.85rem' }}>
                                             {entry.source_type && <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4b5563', background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>{entry.source_type}</span>}
                                             {entry.reason_code && <span style={{ fontWeight: 600, color: '#ea580c', background: '#fff7ed', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>{entry.reason_code}</span>}
+                                            {entry.referral_role && <span style={{ fontSize: '0.75rem', fontWeight: 600, color: entry.referral_role === 'Referrer' ? '#1d4ed8' : '#047857', background: entry.referral_role === 'Referrer' ? '#eff6ff' : '#ecfdf5', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>{entry.referral_role}</span>}
                                             <span style={{ color: '#374151' }}>{entry.reference_id || '-'}</span>
+                                            {entry.referral_id && <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: 2 }}>Referral {entry.referral_id}</div>}
                                         </td>
                                         <td
                                             style={{ padding: '16px 24px', fontSize: '0.8rem', color: '#6b7280', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', textDecoration: 'underline' }}
@@ -378,6 +403,7 @@ const UserCreditLedger = () => {
                                         <td style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 600, color: entry.amount >= 0 ? '#16a34a' : '#ef4444', fontSize: '0.9rem' }}>
                                             {entry.currency || 'GBP'} {entry.amount >= 0 ? '+' : ''}{entry.amount.toFixed(2)}
                                         </td>
+                                        <td style={{ padding: '16px 24px', fontSize: '0.85rem', color: '#374151', whiteSpace: 'nowrap' }}>{entry.type === 'EARNED' && entry.expires_at ? formatUkDate(entry.expires_at) : '-'}</td>
                                         {filters.customerId && (
                                             <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.85rem', color: '#374151' }}>
                                                 {entry.running_balance === undefined ? '—' : formatMoney(entry.running_balance, entry.currency || 'GBP')}
@@ -503,6 +529,8 @@ const UserCreditLedger = () => {
                                     <div style={{ fontSize: '1rem', fontWeight: 500 }}>
                                         {selectedTransaction.reason_code && <span style={{ color: '#ea580c', fontWeight: 600 }}>[{selectedTransaction.reason_code}]</span>} {selectedTransaction.scheme_name}
                                     </div>
+                                    {selectedTransaction.rule_send_currency && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Corridor: {corridorLabel(selectedTransaction.rule_send_currency, selectedTransaction.rule_receive_currency)}</div>}
+                                    {selectedTransaction.referral_id && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{selectedTransaction.referral_role ? `${selectedTransaction.referral_role} \u00b7 ` : ''}Referral {selectedTransaction.referral_id}</div>}
                                 </div>
                             </div>
 

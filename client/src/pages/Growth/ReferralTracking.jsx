@@ -2,12 +2,45 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CURRENCIES, corridorLabel, formatMoney, formatUkDate, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
+import ColHead from './ColHead';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
 import './referral.css';
 
 const STATUSES = ['REGISTERED', 'PENDING', 'REWARDED', 'EXPIRED', 'NOT_ELIGIBLE', 'REVERSED'];
 const PAGE_SIZE = 25;
+const COLUMNS = [
+    { label: 'Referral ID', tip: 'Unique number of this referral, with the referral code the new customer joined with underneath.' },
+    { label: 'Referrer', tip: 'The existing customer who shared their link or code. Their reward is paid once their friend qualifies.' },
+    { label: 'Referee', tip: 'The new customer who joined using the referrer\u2019s link or code. Their welcome bonus is paid when they qualify.' },
+    { label: 'Rule', tip: 'The referral rule this referral falls under, with its corridor (send \u2192 receive currency) underneath. If a customer joins before choosing a destination, the rule is set at their first transfer.' },
+    { label: 'Registered', tip: 'The date the referee created their account through the referral link or code.' },
+    { label: 'Deadlines', tip: 'Last day to qualify. Referrer = end of the Qualification Window; Referee = end of the Bonus Validity period, counted from the registration date. Only one date is shown when both are the same.' },
+    { label: 'Qualifying transfer', tip: 'The first transfer by the referee that met the rule\u2019s conditions (corridor and minimum amount), with its amount underneath. Blank until the referee qualifies.' },
+    { label: 'Status', tip: 'Where the referral stands: Registered (joined, no transfer yet), Pending (transfer in progress), Rewarded (bonus paid), Expired (deadline passed), Not eligible (failed a condition) or Reversed (bonus taken back).' },
+    { label: 'Referrer bonus', num: true, tip: 'Bonus credited to the referrer. Shows \u201cdue\u201d in grey when it will be paid once the referral qualifies. Click an amount to see it in the Credit Ledger.' },
+    { label: 'Referee bonus', num: true, tip: 'Welcome bonus credited to the referee. Shows \u201cdue\u201d in grey when it will be paid once they qualify. Click an amount to see it in the Credit Ledger.' },
+    { label: 'Rewarded', tip: 'The date the bonus was paid out. Blank if no bonus has been paid yet.' },
+    { label: 'Action', tip: 'Actions you can take on this referral. \u201cApprove reward\u201d appears on Not eligible referrals so an admin can pay the bonus anyway, with a recorded reason.' },
+];
+
+const KPI_TIPS = {
+    total: 'Number of referrals that match the filters below: every customer who registered through a referral link or code.',
+    pending: 'Referrals still waiting for the referee to qualify: Registered (no transfer yet) or Pending (transfer in progress).',
+    rewarded: 'Referrals where the bonus has been paid.',
+    conversion: 'Share of referrals that were rewarded: Rewarded \u00f7 Total referrals.',
+    bonus: 'Total bonus credited to referrers and referees for these referrals, shown per currency.',
+};
+
+const FILTER_TIPS = {
+    search: 'Find a referral by customer name, customer ID, email address or referral code.',
+    status: 'Show only referrals with this status. \u201cRegistered or Pending\u201d and \u201cExpired / Not eligible / Reversed\u201d appear when you arrive from the Performance page.',
+    currency: 'The currency the referee sends from, for example GBP.',
+    receive: 'The currency the money is received in, for example NGN. Together with Send currency this selects a corridor.',
+    rule: 'Show only referrals that fall under this referral rule.',
+    from: 'Only include referrals registered on or after this date.',
+    to: 'Only include referrals registered on or before this date.',
+};
 const fullName = (f, l) => `${f || ''} ${l || ''}`.trim() || 'Unknown customer';
 
 // US-1.6: every referral with its Referrer, Referee, status and reward
@@ -87,11 +120,11 @@ const ReferralTracking = () => {
             <p className="rf-subtitle">Every customer who joined through a referral link or code, and what happened next.</p>
 
             <div className="rf-kpis">
-                <div className="rf-kpi"><div className="rf-kpi-label">Total referrals</div><div className="rf-kpi-value">{s ? s.total : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Pending</div><div className="rf-kpi-value">{s ? s.pending : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Rewarded</div><div className="rf-kpi-value">{s ? s.rewarded : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Conversion rate</div><div className="rf-kpi-value">{s && s.conversion_rate !== null ? `${s.conversion_rate.toFixed(1)}%` : '—'}</div><div className="rf-kpi-sub">Rewarded ÷ Registered</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Total bonus issued</div>
+                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Total referrals" tip={KPI_TIPS.total} /></div><div className="rf-kpi-value">{s ? s.total : '—'}</div></div>
+                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Pending" tip={KPI_TIPS.pending} /></div><div className="rf-kpi-value">{s ? s.pending : '—'}</div></div>
+                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Rewarded" tip={KPI_TIPS.rewarded} /></div><div className="rf-kpi-value">{s ? s.rewarded : '—'}</div></div>
+                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Conversion rate" tip={KPI_TIPS.conversion} /></div><div className="rf-kpi-value">{s && s.conversion_rate !== null ? `${s.conversion_rate.toFixed(1)}%` : '—'}</div><div className="rf-kpi-sub">Rewarded ÷ Registered</div></div>
+                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Total bonus issued" tip={KPI_TIPS.bonus} /></div>
                     <div className="rf-kpi-value" style={{ fontSize: '1.15rem' }}>
                         {s && Object.keys(s.bonus_issued).length ? Object.entries(s.bonus_issued).map(([c, v]) => <div key={c}>{formatMoney(v, c)}</div>) : '—'}
                     </div>
@@ -100,33 +133,33 @@ const ReferralTracking = () => {
 
             <div className="rf-card">
                 <div className="rf-filters">
-                    <div className="rf-field" style={{ flex: 2 }}><label htmlFor="rt-q">Search</label>
+                    <div className="rf-field" style={{ flex: 2 }}><label htmlFor="rt-q"><ColHead label="Search" tip={FILTER_TIPS.search} /></label>
                         <input id="rt-q" className="rf-input" placeholder="Name, customer ID, email or referral code" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-                    <div className="rf-field"><label htmlFor="rt-status">Status</label>
+                    <div className="rf-field"><label htmlFor="rt-status"><ColHead label="Status" tip={FILTER_TIPS.status} /></label>
                         <select id="rt-status" className="rf-select" value={filters.status || (filters.status_group ? `group:${filters.status_group}` : '')}
                             onChange={(e) => (e.target.value.startsWith('group:') ? setFilter('status_group', e.target.value.slice(6)) : setFilter('status', e.target.value))}>
                             <option value="">All statuses</option>
                             {filters.status_group && <option value={`group:${filters.status_group}`}>{filters.status_group === 'pending' ? 'Registered or Pending' : 'Expired / Not eligible / Reversed'}</option>}
                             {STATUSES.map((st) => <option key={st} value={st}>{st.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</option>)}
                         </select></div>
-                    <div className="rf-field"><label htmlFor="rt-currency">Send currency</label>
+                    <div className="rf-field"><label htmlFor="rt-currency"><ColHead label="Send currency" tip={FILTER_TIPS.currency} /></label>
                         <select id="rt-currency" className="rf-select" value={filters.currency} onChange={(e) => setFilter('currency', e.target.value)}>
                             <option value="">All currencies</option>
                             {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
                         </select></div>
-                    <div className="rf-field"><label htmlFor="rt-receive-currency">Receive currency</label>
+                    <div className="rf-field"><label htmlFor="rt-receive-currency"><ColHead label="Receive currency" tip={FILTER_TIPS.receive} /></label>
                         <select id="rt-receive-currency" className="rf-select" value={filters.receive_currency} onChange={(e) => setFilter('receive_currency', e.target.value)}>
                             <option value="">All currencies</option>
                             {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
                         </select></div>
-                    <div className="rf-field"><label htmlFor="rt-rule">Rule</label>
+                    <div className="rf-field"><label htmlFor="rt-rule"><ColHead label="Rule" tip={FILTER_TIPS.rule} /></label>
                         <select id="rt-rule" className="rf-select" value={filters.rule_id} onChange={(e) => setFilter('rule_id', e.target.value)}>
                             <option value="">All rules</option>
                             {rules.map((r) => <option key={r.id} value={r.id}>{r.name} ({corridorLabel(r.base_currency, r.receive_currency)}){r.status === 'ARCHIVED' ? ' (archived)' : ''}</option>)}
                         </select></div>
-                    <div className="rf-field"><label htmlFor="rt-from">Registered from</label>
+                    <div className="rf-field"><label htmlFor="rt-from"><ColHead label="Registered from" tip={FILTER_TIPS.from} /></label>
                         <input id="rt-from" type="date" className="rf-input" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} /></div>
-                    <div className="rf-field"><label htmlFor="rt-to">Registered to</label>
+                    <div className="rf-field"><label htmlFor="rt-to"><ColHead label="Registered to" tip={FILTER_TIPS.to} /></label>
                         <input id="rt-to" type="date" className="rf-input" value={filters.to} min={filters.from || undefined} onChange={(e) => setFilter('to', e.target.value)} /></div>
                     <div className="rf-quick">
                         {hasFilters && <button type="button" className="btn-secondary" onClick={() => { setSearch(''); setParams(new URLSearchParams()); }}>Clear</button>}
@@ -138,8 +171,9 @@ const ReferralTracking = () => {
                     <table className="rf-table">
                         <thead>
                             <tr>
-                                <th>Referral ID</th><th>Referrer</th><th>Referee</th><th>Rule</th><th>Registered</th><th>Deadline</th>
-                                <th>Qualifying transfer</th><th>Status</th><th className="rf-num">Referrer bonus</th><th className="rf-num">Referee bonus</th><th>Rewarded</th><th />
+                                {COLUMNS.map((c) => (
+                                    <th key={c.label} className={c.num ? 'rf-num' : undefined}><ColHead label={c.label} tip={c.tip} /></th>
+                                ))}
                             </tr>
                         </thead>
                         <tbody>
@@ -154,9 +188,16 @@ const ReferralTracking = () => {
                                     <td className="rf-strong" style={{ whiteSpace: 'nowrap' }}>{r.id}<span className="rf-sub">Code {r.code}</span></td>
                                     <td>{fullName(r.referrer_first_name, r.referrer_last_name)}<span className="rf-sub">ID: {r.referrer_id}</span></td>
                                     <td>{fullName(r.referee_first_name, r.referee_last_name)}<span className="rf-sub">ID: {r.referee_id}</span></td>
-                                    <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{corridorLabel(r.currency, r.receive_currency, '?')}</span></td>
+                                    <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{r.rule_id ? corridorLabel(r.currency, r.receive_currency, '?') : `${r.currency || '?'} · rule set at first transfer`}</span></td>
                                     <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.registered_at)}</td>
-                                    <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.qualification_deadline)}</td>
+                                    <td style={{ whiteSpace: 'nowrap' }}>
+                                        {r.referrer_deadline && r.qualification_deadline && r.referrer_deadline.slice(0, 10) !== r.qualification_deadline.slice(0, 10) ? (
+                                            <>
+                                                <div className="rf-bonus"><span>Referrer</span><b className="rf-dl">{formatUkDate(r.referrer_deadline)}</b></div>
+                                                <div className="rf-bonus"><span>Referee</span><b className="rf-dl">{formatUkDate(r.qualification_deadline)}</b></div>
+                                            </>
+                                        ) : formatUkDate(r.qualification_deadline || r.referrer_deadline)}
+                                    </td>
                                     <td>{r.qualifying_transfer_id || <span className="rf-muted">—</span>}{r.qualifying_amount ? <span className="rf-sub">{formatMoney(r.qualifying_amount, r.currency)}</span> : null}</td>
                                     <td>
                                         <StatusPill status={r.status} title={r.status_reason} />
