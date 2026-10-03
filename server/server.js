@@ -751,94 +751,10 @@ app.post('/api/promocodes/distribute', (req, res) => {
     }
 });
 
-// --- Phase 1: Referral Scheme API (CRUD) ---
-
-// 1. Get All Referral Rules
-app.get('/api/referral-rules', (req, res) => {
-    db.all("SELECT * FROM referral_rules ORDER BY created_at DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ data: rows });
-    });
-});
-
-// 2. Create New Referral Rule
-app.post('/api/referral-rules', (req, res) => {
-    const { name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency } = req.body;
-
-    if (!name) return res.status(400).json({ error: "Name is required" });
-
-    // Only one rule is allowed per currency
-    db.get("SELECT id, name FROM referral_rules WHERE base_currency = ?", [base_currency], (err, existing) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        if (existing) {
-            return res.status(409).json({
-                error: "DUPLICATE_CURRENCY",
-                message: `A referral rule for ${base_currency} already exists ("${existing.name}"). Please edit or delete it first.`,
-                existing_rule: existing
-            });
-        }
-
-        const enabledInt = is_enabled ? 1 : 0;
-        const stmt = db.prepare(`INSERT INTO referral_rules 
-            (name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`);
-
-        stmt.run(name, enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, id: this.lastID });
-        });
-        stmt.finalize();
-    });
-});
-
-// 3. Update Referral Rule
-app.put('/api/referral-rules/:id', (req, res) => {
-    const { id } = req.params;
-    const { name, is_enabled, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency } = req.body;
-
-    // Only one rule is allowed per currency
-    db.get("SELECT id, name FROM referral_rules WHERE base_currency = ? AND id != ?", [base_currency, id], (err, existing) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        if (existing) {
-            return res.status(409).json({
-                error: "DUPLICATE_CURRENCY",
-                message: `Another rule ("${existing.name}") already uses ${base_currency}. Please delete it first.`,
-                existing_rule: existing
-            });
-        }
-
-        const enabledInt = is_enabled ? 1 : 0;
-
-        const stmt = db.prepare(`UPDATE referral_rules SET 
-            name = ?,
-            is_enabled = ?, 
-            min_transaction_threshold = ?, 
-            referrer_reward = ?, 
-            referee_reward = ?, 
-            reward_type = ?, 
-            base_currency = ?,
-            updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?`);
-
-        stmt.run(name, enabledInt, min_transaction_threshold, referrer_reward, referee_reward, reward_type, base_currency, id, function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
-        stmt.finalize();
-    });
-});
-
-// 4. Delete Referral Rule
-app.delete('/api/referral-rules/:id', (req, res) => {
-    const { id } = req.params;
-
-    db.run("DELETE FROM referral_rules WHERE id = ?", [id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
-});
+// --- Referral & Bonus engine (rules, referrals, wallet, reporting) ---
+// See server/referral.js and Docs/Requirements/referral-and-bonus-user-stories.md
+const { registerReferralRoutes } = require('./referral');
+registerReferralRoutes(app, db);
 
 // --- Phase 1: Bonus Scheme Configuration API (FRD) ---
 
@@ -871,6 +787,9 @@ app.post('/api/bonus-schemes', (req, res) => {
     // FRD Validations (Section 3.1)
     if (!name) return res.status(400).json({ error: "Bonus Name is required" });
     if (!bonus_type) return res.status(400).json({ error: "Bonus Type is required" });
+    if (bonus_type === 'REFERRAL_CREDIT') {
+        return res.status(400).json({ error: "Referral rewards are managed in Growth > Referral Settings." });
+    }
     if (!credit_amount && commission_type !== 'PERCENTAGE') {
         // It's okay if credit_amount is 0 if it's percentage or tiered (maybe)
         // But for simplicity let's keep basic check or refine it.
@@ -999,7 +918,8 @@ app.delete('/api/bonus-schemes/:id', (req, res) => {
 // 1. Get User Credit Balance & History with Advanced Filtering
 app.get('/api/credits/:userId', (req, res) => {
     const userId = req.params.userId;
-    const { startDate, endDate, eventType, schemeId } = req.query;
+    const { startDate, endDate, eventType, schemeId, customerId } = req.query;
+    const isReferralRule = typeof schemeId === 'string' && schemeId.startsWith('rr_');
 
     db.serialize(() => {
         // Calculate Balance
@@ -1018,9 +938,15 @@ app.get('/api/credits/:userId', (req, res) => {
 
             // Build dynamic query with filters
             let query = `
-                SELECT cl.*, 'BONUS' as source_type, bs.name as scheme_name 
+                SELECT cl.*, COALESCE(cl.currency, 'GBP') as currency, 'BONUS' as source_type,
+                    COALESCE(bs.name, CASE WHEN rr.id IS NOT NULL THEN rr.name || ' (Referral)' END,
+                        CASE WHEN COALESCE(src.reason_code, cl.reason_code) = 'LOYALTY' THEN 'Manual loyalty credit' END) as scheme_name,
+                    NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') as customer_name
                 FROM credit_ledger cl
                 LEFT JOIN bonus_schemes bs ON cl.scheme_id = bs.id
+                LEFT JOIN referral_rules rr ON cl.referral_rule_id = rr.id
+                LEFT JOIN customers cu ON cu.id = cl.user_id
+                LEFT JOIN credit_ledger src ON src.id = cl.source_credit_id
             `;
             const params = [];
 
@@ -1044,7 +970,14 @@ app.get('/api/credits/:userId', (req, res) => {
                 conditions.push("cl.type = ?");
                 params.push(eventType);
             }
-            if (schemeId) {
+            if (customerId) {
+                conditions.push("cl.user_id = ?");
+                params.push(customerId);
+            }
+            if (isReferralRule) {
+                conditions.push("cl.referral_rule_id = ?");
+                params.push(parseInt(schemeId.slice(3)));
+            } else if (schemeId) {
                 conditions.push("cl.scheme_id = ?");
                 params.push(parseInt(schemeId));
             }
@@ -1068,7 +1001,7 @@ app.get('/api/credits/:userId', (req, res) => {
             // 2. Promo Redemptions Query
             const promoPromise = new Promise((resolve, reject) => {
                 // Only include promos if no specific non-APPLIED event type is requested
-                if (!eventType || eventType === 'APPLIED') {
+                if ((!eventType || eventType === 'APPLIED') && !isReferralRule) {
                     let pQuery = `
                         SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
                         pr.promo_code_id as scheme_id, pr.transaction_id as reference_id, 
@@ -1077,9 +1010,12 @@ app.get('/api/credits/:userId', (req, res) => {
                         (pc.code || ' (Promo Code)') as scheme_name,
                         ('Promo Code: ' || pc.code) as notes,
                         'System' as admin_user,
-                        pr.user_id
+                        pr.user_id,
+                        COALESCE(pc.currency, 'GBP') as currency,
+                        NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') as customer_name
                         FROM promo_redemptions pr
                         LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code)
+                        LEFT JOIN customers cu ON cu.id = pr.user_id
                     `;
                     const pParams = [];
                     let pConditions = [];
@@ -1087,6 +1023,10 @@ app.get('/api/credits/:userId', (req, res) => {
                     if (!isGlobal) {
                         pConditions.push("pr.user_id = ?");
                         pParams.push(userId);
+                    }
+                    if (customerId) {
+                        pConditions.push("pr.user_id = ?");
+                        pParams.push(customerId);
                     }
                     if (startDate) {
                         pConditions.push("date(pr.created_at) >= date(?)");
@@ -1125,10 +1065,25 @@ app.get('/api/credits/:userId', (req, res) => {
                 // Calculate cost_incurred dynamically from exactly what's in the table
                 // Use absolute values to represent the total "volume" of rewards/spending incurrence
                 const dynamicCost = allHistory.reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
+                // Never add different currencies together (AC-1.9.3)
+                const costByCurrency = {};
+                allHistory.forEach(entry => {
+                    const cur = entry.currency || 'GBP';
+                    costByCurrency[cur] = Math.round(((costByCurrency[cur] || 0) + Math.abs(entry.amount)) * 100) / 100;
+                });
+                // Running balance per customer (oldest first), shown when one customer is selected (AC-1.9.4)
+                const running = {};
+                [...allHistory].reverse().forEach(entry => {
+                    if (entry.source_type !== 'BONUS') return; // promo discounts are not wallet money
+                    const key = `${entry.user_id}|${entry.currency || 'GBP'}`;
+                    running[key] = Math.round(((running[key] || 0) + entry.amount) * 100) / 100;
+                    entry.running_balance = running[key];
+                });
 
                 res.json({
                     balance: balance,
                     cost_incurred: dynamicCost,
+                    cost_by_currency: costByCurrency,
                     currency: 'GBP',
                     history: allHistory
                 });
@@ -1580,6 +1535,10 @@ if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
     });
+    // Daily referral jobs (expiry of referrals and bonus credit, "offer ending" notices) — checked hourly
+    const runReferralJobs = () => fetch(`http://localhost:${PORT}/api/referral/run-jobs`, { method: 'POST' }).catch(() => {});
+    setTimeout(runReferralJobs, 5000);
+    setInterval(runReferralJobs, 60 * 60 * 1000);
 }
 
 module.exports = app;

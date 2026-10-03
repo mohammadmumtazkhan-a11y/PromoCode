@@ -426,6 +426,9 @@ const BonusSchemeManager = () => {
                                         <option value="TRANSACTION_THRESHOLD_CREDIT">Transaction Threshold Credit</option>
                                         <option value="REQUEST_MONEY">Request Money Credit</option>
                                     </select>
+                                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: -8 }}>
+                                        Referral rewards are managed in Growth &gt; Referral Settings.
+                                    </div>
                                 </div>
                             </div>
 
@@ -865,6 +868,11 @@ const BonusSchemeManager = () => {
                                                         <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
                                                             {scheme.bonus_type.replace(/_/g, ' ')}
                                                         </span>
+                                                        {scheme.bonus_type === 'REFERRAL_CREDIT' && (
+                                                            <span style={{ fontSize: '0.72rem', color: '#b45309', background: '#fffbeb', padding: '2px 6px', borderRadius: 4, width: 'fit-content' }}>
+                                                                Legacy – managed in Referral Settings
+                                                            </span>
+                                                        )}
                                                         {scheme.is_tiered && (
                                                             <span style={{ fontSize: '0.75rem', color: '#7c3aed', background: '#f5f3ff', padding: '2px 6px', borderRadius: 4, width: 'fit-content' }}>
                                                                 Tiered ({scheme.tiers?.length})
@@ -920,6 +928,9 @@ const BonusSchemeManager = () => {
                                                     </span>
                                                 </td>
                                                 <td style={{ ...tableCellStyle, textAlign: 'center' }}>
+                                                    {scheme.bonus_type === 'REFERRAL_CREDIT' ? (
+                                                        <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Read-only</span>
+                                                    ) : (
                                                     <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                                                         <button
                                                             onClick={() => handleEdit(scheme)}
@@ -938,6 +949,7 @@ const BonusSchemeManager = () => {
                                                             🗑️ Delete
                                                         </button>
                                                     </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))

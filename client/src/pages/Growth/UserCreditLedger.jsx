@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { formatMoney } from './referralUtils';
 
 const UserCreditLedger = () => {
+    const [searchParams] = useSearchParams();
     const [userId, setUserId] = useState('all'); // Enforce Global View
-    // Dummy Data for visual confirmation if nothing loaded
-    const [userData, setUserData] = useState({
-        balance: 125.50,
-        currency: 'USD',
-        history: [
-            {
-                id: 1, created_at: new Date().toISOString(), type: 'EARNED', amount: 50.00,
-                scheme_name: 'Loyalty Bonus', notes: 'Ref: #9988', reason_code: 'LOYALTY'
-            }
-        ]
-    });
+    const [userData, setUserData] = useState({ balance: 0, cost_by_currency: {}, history: [] });
+    const [referralRules, setReferralRules] = useState([]);
+    const [promoOptions, setPromoOptions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showAdjustModal, setShowAdjustModal] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
@@ -24,8 +18,10 @@ const UserCreditLedger = () => {
         startDate: '',
         endDate: '',
         eventType: '',
-        schemeId: ''
+        schemeId: searchParams.get('schemeId') || '',
+        customerId: searchParams.get('customerId') || ''
     });
+    const [customerInput, setCustomerInput] = useState(searchParams.get('customerId') || '');
 
     // Phase 3: FRD Adjustment Form
     const [adjAmount, setAdjAmount] = useState('');
@@ -38,50 +34,13 @@ const UserCreditLedger = () => {
         // Load bonus schemes and promo codes for filter dropdown
         Promise.all([
             fetch('/api/bonus-schemes').then(res => res.json()),
-            fetch('/api/promocodes').then(res => res.json())
-        ]).then(([schemeData, promoData]) => {
-            const schemes = schemeData.data || [];
-            if (promoData.data) {
-                // Add promos as scheme options (using code or id?)
-                // The ledger scheme filter logic (server.js) expects ID to match OR string code.
-                // Let's use ID as value, but label as "Promo: CODE".
-                // BUT wait, server logic joins on `pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code`.
-                // If we pass ID, it matches `pc.id`. Perfect.
-                const startID = 9000; // Offset to avoid ID collision if schemes use integer IDs?
-                // Actually schemes are IDs (1,2,3). Promo codes are also IDs (1,2,3).
-                // Collisions are possible in the Dropdown VALUE if we just use 'id'.
-                // The server filter (server.js line ~1000):
-                // if (schemeId) { ... AND (cl.scheme_id = ? OR pr.promo_code_id = ?) }
-                // If a Scheme has ID 1 and Promo has ID 1:
-                // Selecting "Scheme 1" (value=1) will filter:
-                // Credit Ledger: scheme_id = 1 (Correct)
-                // Promo Ledger: promo_code_id = 1 (Correct for Promo, but INCORRECT if we meant Scheme 1 and Promo entries shouldn't show?)
-                // Wait, Scheme 1 is a Bonus Scheme. Promo 1 is a Promo Code.
-                // They are different entities.
-                // If I filter for "Bonus Scheme 1", I don't want "Promo 1".
-                // The current backend query applies the SAME `schemeId` to BOTH tables.
-                // This IS a collision bug in the backend filtering logic if IDs overlap.
-                // However, for now, I will implement the dropdown as requested. 
-                // To differentiate, maybe I should modify backend to accept type?
-                // OR, just assume IDs don't overlap or user accepts potential overlap. 
-                // User request is simple: "Add promo code also".
-                const promos = promoData.data.map(p => ({
-                    id: `promo_${p.id}`,
-                    name: `Promo Code: ${p.code}`,
-                    isPromo: true,
-                    originalId: p.id
-                }));
-                // If I change value to `promo_1`, backend won't match `1`.
-                // I will stick to raw ID for now and assume the user understands "Schemes" vs "Promos".
-                // Update: Actually, I can use a prefix in the value and handle it in the fetch? NO, too much refactor.
-                // I will just append them.
-                const promoOptions = promoData.data.map(p => ({ id: p.id, name: `Promo: ${p.code}` }));
-                // We might have duplicate IDs. This `Select` will be confusing if Scheme 1 and Promo 1 exist.
-                // Let's hope IDs are distinct or minimal impact.
-                setBonusSchemes([...schemes, ...promoOptions]);
-            } else {
-                setBonusSchemes(schemes);
-            }
+            fetch('/api/promocodes').then(res => res.json()),
+            fetch('/api/referral-rules?include_archived=1').then(res => res.json())
+        ]).then(([schemeData, promoData, ruleData]) => {
+            // Legacy "Referral Credit" schemes are managed in Referral Settings now (US-1.7)
+            setBonusSchemes((schemeData.data || []).filter(s => s.bonus_type !== 'REFERRAL_CREDIT'));
+            setPromoOptions((promoData.data || []).map(p => ({ id: p.id, name: `Promo: ${p.code}` })));
+            setReferralRules(ruleData.data || []);
         }).catch(err => console.error(err));
     }, []);
 
@@ -107,6 +66,13 @@ const UserCreditLedger = () => {
     useEffect(() => {
         fetchLedger();
     }, [filters]); // Re-fetch when filters change
+
+    useEffect(() => {
+        const t = setTimeout(() => {
+            if (customerInput.trim() !== filters.customerId) setFilters(f => ({ ...f, customerId: customerInput.trim() }));
+        }, 400);
+        return () => clearTimeout(t);
+    }, [customerInput]);
 
     const handleGlobalView = () => {
         setUserId('all');
@@ -202,36 +168,12 @@ const UserCreditLedger = () => {
         if (start && itemDate < start) return false;
         if (end && itemDate > end) return false;
         if (filters.eventType && item.type !== filters.eventType) return false;
-        if (filters.schemeId) {
-            // Handle both ID and Name matching for dummy vs real data flexibility
-            // Ideally strictly ID, but dummy data might not have schemes mapped perfectly in state
-            // Assuming schemeId filter is a valid ID from the dropdown which comes from api/bonus-schemes
-            // For dummy data, we might not have 'scheme_id' property directly populated or matching?
-            // Checking the dummy data: it has scheme_name but no scheme_id property explicitly shown in init state logic often
-            // Let's assume real data flow uses scheme_id.
-            // For robustness with dummy data:
-            // If item.scheme_id exists, match it.
-            // If not, we skip strictly or maybe try to match name?
-            // Let's stick to standard behavior: if the item has scheme_id, check it.
-            // But wait, the dummy data in 'userData' state (lines 11-14) DOES NOT have scheme_id.
-            // It has 'scheme_name'.
-            // The dropdown VALUES are scheme IDs.
-            // This mismatch prevents dummy data filtering by scheme.
-            // FIX: I will update the dummy data to include scheme_ids roughly matching the expectation?
-            // Or better, I will assume Scheme filtering applies if scheme_id is present.
-            // If this is purely for the "table below must get filtered based on this filter" request using dummy data context,
-            // I should probably ensure the dummy data has IDs or generic filtering works.
-            // However, I can't easily change the dummy data IDs to match the DYNAMIC scheme IDs from the DB.
-            // Solution: For this specific visual request, I'll filter by scheme_id IF present, otherwise pass.
-            // Actually, if filter is active and item has no scheme_id, it should probably be hidden?
-            // Let's check safely.
-            if (item.scheme_id && String(item.scheme_id) !== String(filters.schemeId)) return false;
-        }
+        // Scheme and customer filters are applied by the server
         return true;
     });
 
     return (
-        <div style={{ padding: 32, maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ padding: 32, maxWidth: 1200, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
             <h2 style={{ fontSize: '1.75rem', fontWeight: 600, marginBottom: 8 }}>User Credit Ledger</h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>View balances and audit history for user bonus wallets</p>
 
@@ -241,7 +183,7 @@ const UserCreditLedger = () => {
             <div className="glass-panel" style={{ padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)' }}>📊 Advanced Filters</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <button
                             type="button"
                             style={{ fontSize: '0.75rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border-subtle)', background: 'white', cursor: 'pointer' }}
@@ -280,14 +222,14 @@ const UserCreditLedger = () => {
                         </button>
                     </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
                     <div>
                         <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Start Date</label>
                         <input
                             type="date"
                             value={filters.startDate}
                             onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem' }}
+                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem', boxSizing: 'border-box', minWidth: 0 }}
                         />
                     </div>
                     <div>
@@ -296,7 +238,7 @@ const UserCreditLedger = () => {
                             type="date"
                             value={filters.endDate}
                             onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem' }}
+                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem', boxSizing: 'border-box', minWidth: 0 }}
                         />
                     </div>
                     <div>
@@ -304,7 +246,7 @@ const UserCreditLedger = () => {
                         <select
                             value={filters.eventType}
                             onChange={(e) => setFilters({ ...filters, eventType: e.target.value })}
-                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem' }}
+                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem', boxSizing: 'border-box', minWidth: 0 }}
                         >
                             <option value="">All Types</option>
                             <option value="EARNED">Earned</option>
@@ -318,14 +260,41 @@ const UserCreditLedger = () => {
                         <select
                             value={filters.schemeId}
                             onChange={(e) => setFilters({ ...filters, schemeId: e.target.value })}
-                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem' }}
+                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem', boxSizing: 'border-box', minWidth: 0 }}
                         >
                             <option value="">All Schemes</option>
-                            <option value="request_money">Request Money Scheme</option>
-                            {bonusSchemes.map(scheme => (
-                                <option key={scheme.id} value={scheme.id}>{scheme.name}</option>
-                            ))}
+                            <optgroup label="Bonus schemes">
+                                {bonusSchemes.map(scheme => (
+                                    <option key={scheme.id} value={scheme.id}>{scheme.name}</option>
+                                ))}
+                            </optgroup>
+                            {referralRules.length > 0 && (
+                                <optgroup label="Referral rules">
+                                    {referralRules.map(rule => (
+                                        <option key={`rr_${rule.id}`} value={`rr_${rule.id}`}>{rule.name} ({rule.base_currency}){rule.status === 'ARCHIVED' ? ' – archived' : ''}</option>
+                                    ))}
+                                </optgroup>
+                            )}
+                            {promoOptions.length > 0 && (
+                                <optgroup label="Promo codes">
+                                    {promoOptions.map(p => (
+                                        <option key={`promo_${p.id}`} value={p.id}>{p.name}</option>
+                                    ))}
+                                </optgroup>
+                            )}
                         </select>
+                    </div>
+                    <div>
+                        <label htmlFor="ledger-customer" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Customer ID</label>
+                        <input
+                            id="ledger-customer"
+                            type="text"
+                            placeholder="e.g. user_101"
+                            maxLength={64}
+                            value={customerInput}
+                            onChange={(e) => setCustomerInput(e.target.value)}
+                            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                        />
                     </div>
                 </div>
             </div>
@@ -335,9 +304,16 @@ const UserCreditLedger = () => {
                 <div className="glass-panel" style={{ padding: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
                     <div>
                         <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: 4 }}>Cost Incurred</div>
-                        <div style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                            {userData.currency} {(userData.cost_incurred || 0).toFixed(2)}
+                        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+                            {Object.keys(userData.cost_by_currency || {}).length === 0 ? (
+                                <div style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--text-main)' }}>0.00</div>
+                            ) : Object.entries(userData.cost_by_currency).map(([cur, value]) => (
+                                <div key={cur} data-testid={`cost-${cur}`} style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                                    {cur} {Number(value).toFixed(2)}
+                                </div>
+                            ))}
                         </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Totals are shown per currency and never added together.</div>
 
                     </div>
 
@@ -345,7 +321,7 @@ const UserCreditLedger = () => {
 
                 {/* History Table */}
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: 16 }}>Ledger History ({filteredHistory.length} entries)</h3>
-                <div className="table-wrapper" style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                <div className="table-wrapper" style={{ borderRadius: 12, overflowX: 'auto', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                     <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ background: '#f9fafb', borderBottom: '1px solid var(--border-subtle)' }}>
                             <tr>
@@ -355,20 +331,21 @@ const UserCreditLedger = () => {
                                 <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Scheme</th>
                                 <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Reference / Reason</th>
                                 <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Notes</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Balance</th>
+                                <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Amount</th>
+                                {filters.customerId && <th style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.75rem', textTransform: 'uppercase', color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em' }}>Running balance</th>}
 
                             </tr>
                         </thead>
                         <tbody>
                             {filteredHistory.length === 0 ? (
-                                <tr><td colSpan="7" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No history found for these filters</td></tr>
+                                <tr><td colSpan={filters.customerId ? 8 : 7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No history found for these filters</td></tr>
                             ) : (
                                 filteredHistory.map(entry => (
                                     <tr key={entry.id} style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background-color 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                                         <td style={{ padding: '16px 24px', fontSize: '0.85rem', color: '#374151' }}>{new Date(entry.created_at).toLocaleString('en-GB')}</td>
                                         <td style={{ padding: '16px 24px' }}>
-                                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827' }}>{entry.customer_name || 'John Doe'}</div>
-                                            <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>ID: {entry.user_id || userId || 'user_123'}</div>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#111827' }}>{entry.customer_name || 'Unknown customer'}</div>
+                                            <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>ID: {entry.user_id || '—'}</div>
                                         </td>
                                         <td style={{ padding: '16px 24px' }}>
                                             <span className={`status-badge ${entry.amount >= 0 ? 'success' : 'failure'}`} style={{ padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 500 }}>
@@ -384,13 +361,12 @@ const UserCreditLedger = () => {
                                         <td
                                             style={{ padding: '16px 24px', fontSize: '0.8rem', color: '#6b7280', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', textDecoration: 'underline' }}
                                             onClick={() => {
-                                                // Dummy audit data logic
+                                                // Audit trail from the ledger entry itself (no sample data)
                                                 const auditData = {
                                                     ...entry,
                                                     audit_trail: [
-                                                        { date: entry.created_at, action: `Bonus ${entry.type}`, user: 'System', notes: 'Automated processing' },
-                                                        { date: new Date(new Date(entry.created_at).getTime() + 86400000).toISOString(), action: 'Verified', user: 'Admin_Audit', notes: 'Routine check' },
-                                                        entry.type === 'EARNED' ? { date: new Date(new Date(entry.created_at).getTime() + (90 * 86400000)).toISOString(), action: 'Expires', user: 'System', notes: '90-day expiry rule' } : null
+                                                        { date: entry.created_at, action: `Bonus ${entry.type}`, user: entry.admin_user || 'System', notes: entry.notes },
+                                                        entry.type === 'EARNED' && entry.expires_at ? { date: entry.expires_at, action: 'Expires', user: 'System', notes: 'Unused credit expires at the end of this day (UK time)' } : null
                                                     ].filter(Boolean)
                                                 };
                                                 setSelectedTransaction(auditData);
@@ -400,8 +376,13 @@ const UserCreditLedger = () => {
                                             {entry.notes || '-'}
                                         </td>
                                         <td style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 600, color: entry.amount >= 0 ? '#16a34a' : '#ef4444', fontSize: '0.9rem' }}>
-                                            {userData.currency || 'GBP'} {entry.amount >= 0 ? '+' : ''}{entry.amount.toFixed(2)}
+                                            {entry.currency || 'GBP'} {entry.amount >= 0 ? '+' : ''}{entry.amount.toFixed(2)}
                                         </td>
+                                        {filters.customerId && (
+                                            <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: '0.85rem', color: '#374151' }}>
+                                                {entry.running_balance === undefined ? '—' : formatMoney(entry.running_balance, entry.currency || 'GBP')}
+                                            </td>
+                                        )}
 
                                     </tr>
                                 ))
@@ -514,7 +495,7 @@ const UserCreditLedger = () => {
                                 <div>
                                     <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Balance Change</label>
                                     <div style={{ fontSize: '1.5rem', fontWeight: 700, color: selectedTransaction.amount >= 0 ? '#16a34a' : '#ef4444' }}>
-                                        {userData.currency || 'USD'} {selectedTransaction.amount >= 0 ? '+' : ''}{selectedTransaction.amount.toFixed(2)}
+                                        {selectedTransaction.currency || 'GBP'} {selectedTransaction.amount >= 0 ? '+' : ''}{selectedTransaction.amount.toFixed(2)}
                                     </div>
                                 </div>
                                 <div>
