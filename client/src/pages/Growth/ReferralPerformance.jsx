@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatMoney, daysAgoIso, ukTodayIso, downloadUrl } from './referralUtils';
+import { corridorLabel, formatMoney, daysAgoIso, ukTodayIso, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
 import './referral.css';
 
@@ -77,7 +77,7 @@ const ReferralPerformance = () => {
 
             <div className="rf-card">
                 <div className="rf-card-head">
-                    <div><h3>Performance by rule</h3><p>Amounts are shown in each rule&apos;s own currency.</p></div>
+                    <div><h3>Performance by rule</h3><p>Each rule is one corridor (send → receive currency). Amounts are shown in the rule&apos;s send currency.</p></div>
                     <div className="rf-quick">
                         {RANGES.map((r) => (
                             <button key={r.key} type="button" className={`rf-btn-sm${range === r.key ? ' rf-active' : ''}`} onClick={() => pickRange(r)}>{r.label}</button>
@@ -116,7 +116,7 @@ const ReferralPerformance = () => {
                                 <tr key={r.rule_id}>
                                     <td>
                                         <button type="button" className="rf-link" style={{ textDecoration: 'none', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => openTop(r)} title="View top referrers">{r.name}</button>
-                                        <span className="rf-sub">{r.currency}</span>
+                                        <span className="rf-sub">{corridorLabel(r.currency, r.receive_currency)}</span>
                                     </td>
                                     <td><StatusPill status={r.status} /></td>
                                     <td className="rf-num">{r.link_visits}</td>
@@ -141,7 +141,7 @@ const ReferralPerformance = () => {
                 <div className="rf-panel-backdrop" onClick={() => setTop(null)}>
                     <aside className="rf-panel" role="dialog" aria-modal="true" aria-label="Top referrers" onClick={(e) => e.stopPropagation()}>
                         <div className="rf-panel-head">
-                            <div><h3>Top referrers</h3><span className="rf-sub">{top.row.name} · {top.row.currency}</span></div>
+                            <div><h3>Top referrers</h3><span className="rf-sub">{top.row.name} · {corridorLabel(top.row.currency, top.row.receive_currency)}</span></div>
                             <button type="button" className="rf-dialog-close" style={{ position: 'static' }} aria-label="Close" onClick={() => setTop(null)}>×</button>
                         </div>
                         {!top.data ? <p className="rf-muted">Loading...</p> : top.data.length === 0 ? <p className="rf-muted">No referrals for this rule yet.</p> : (

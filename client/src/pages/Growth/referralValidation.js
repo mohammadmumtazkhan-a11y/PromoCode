@@ -10,10 +10,18 @@ export function validateForm(f, { isNew, rules, editingId }) {
     const e = {};
     const cur = f.base_currency;
     const amountMsg = cur === 'JPY' ? 'Enter a whole amount greater than 0.' : 'Enter an amount greater than 0 with up to 2 decimal places.';
+    const rcv = f.receive_currency;
     const name = String(f.name || '').trim();
     if (!name) e.name = 'Enter a rule name.';
     else if (!NAME_RE.test(name)) e.name = "Rule name must be 3–50 characters and use letters, numbers, spaces, '-' or '&' only.";
     else if (rules.some((r) => r.id !== editingId && r.name.trim().toLowerCase() === name.toLowerCase())) e.name = 'A rule with this name already exists.';
+    // Receive currency is optional: blank = a send-currency-only rule that covers every destination
+    if (rcv && rcv === cur) e.receive_currency = 'Receive currency must be different from the send currency.';
+    else {
+        // One rule per corridor, and one send-currency-only rule per send currency
+        const dup = rules.find((r) => r.id !== editingId && r.base_currency === cur && (r.receive_currency || '') === (rcv || ''));
+        if (dup) e.receive_currency = `A referral rule for ${rcv ? `${cur} → ${rcv}` : `${cur} (all destinations)`} already exists ('${dup.name}'). Edit or archive it first.`;
+    }
     const amt = (k, max) => {
         const v = f[k];
         if (blank(v) || Number.isNaN(Number(v)) || Number(v) <= 0 || Number(v) > max || !dpOk(v, cur)) e[k] = amountMsg;

@@ -13,10 +13,14 @@ const call = async (method, path, body) => {
 
 async function main() {
     const rules = (await call('GET', '/api/referral-rules')).data;
-    if (!rules.some((r) => r.base_currency === 'GBP' && r.status === 'ACTIVE')) {
+    // Use the first active GBP corridor (e.g. GBP → NGN) so the demo referrals match a real rule
+    const gbpRule = rules.find((r) => r.base_currency === 'GBP' && r.status === 'ACTIVE');
+    if (!gbpRule) {
         console.log('No active GBP rule found – create one in Referral Settings first.');
         return;
     }
+    const RECEIVE = gbpRule.receive_currency || 'NGN';
+    console.log(`Using corridor GBP → ${RECEIVE}`);
     const referrer = (await call('POST', '/api/referral/customers', {
         id: 'user_101', first_name: 'Olayinka', last_name: 'Adebayo', email: 'olayinka@example.com', phone: '+447700900101',
         send_currency: 'GBP', kyc_status: 'PASSED', device_id: 'demo-dev-101',
@@ -37,14 +41,14 @@ async function main() {
     for (const f of friends) {
         await call('POST', '/api/referral/referrals', {
             code,
-            referee: { id: f.id, first_name: f.first_name, last_name: f.last_name, email: `${f.id}@example.com`, phone: `+4477009${f.id.slice(-3)}0`, send_currency: 'GBP', kyc_status: 'PASSED', device_id: f.device || `demo-dev-${f.id}` },
+            referee: { id: f.id, first_name: f.first_name, last_name: f.last_name, email: `${f.id}@example.com`, phone: `+4477009${f.id.slice(-3)}0`, send_currency: 'GBP', receive_currency: RECEIVE, kyc_status: 'PASSED', device_id: f.device || `demo-dev-${f.id}` },
         });
         for (const status of f.steps) {
-            await call('POST', '/api/referral/transfer-events', { transfer_id: `demo_tx_${f.id}`, customer_id: f.id, amount: f.amount, currency: 'GBP', status });
+            await call('POST', '/api/referral/transfer-events', { transfer_id: `demo_tx_${f.id}`, customer_id: f.id, amount: f.amount, currency: 'GBP', receive_currency: RECEIVE, status });
         }
     }
     // One referee uses part of their bonus
-    await call('POST', '/api/wallet/demo_201/apply', { amount: 4, currency: 'GBP', transfer_id: 'demo_tx_201_b', send_amount: 200 }).catch(() => {});
+    await call('POST', '/api/wallet/demo_201/apply', { amount: 4, currency: 'GBP', receive_currency: RECEIVE, transfer_id: 'demo_tx_201_b', send_amount: 200 }).catch(() => {});
     console.log('Demo referral data ready.');
 }
 

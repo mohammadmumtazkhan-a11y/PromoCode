@@ -15,6 +15,9 @@ export const CURRENCIES = [
     { code: 'AED', name: 'United Arab Emirates', symbol: 'AED ' },
 ];
 
+// "GBP → NGN". A rule with no receive currency covers every destination, so it shows the fallback ("All").
+export const corridorLabel = (send, receive, fallback = 'All') => `${send} → ${receive || fallback}`;
+
 export const currencySymbol = (code) => (CURRENCIES.find((c) => c.code === code) || {}).symbol || `${code} `;
 
 export const formatMoney = (amount, currency) => {
