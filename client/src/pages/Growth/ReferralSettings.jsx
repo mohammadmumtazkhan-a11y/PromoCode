@@ -1,648 +1,434 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ToastStack, ConfirmDialog } from '../../components/Feedback';
+import { useToasts } from '../../components/useToasts';
+import { CURRENCIES, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
+import StatusPill from './StatusPill';
+import { validateForm } from './referralValidation';
+import './referral.css';
 
-// Searchable Currency Selector Component
-const CurrencySelector = ({ value, onChange }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-
-    const currencies = [
-        { code: 'GBP', name: 'United Kingdom', symbol: '£' },
-        { code: 'USD', name: 'United States', symbol: '$' },
-        { code: 'EUR', name: 'Eurozone', symbol: '€' },
-        { code: 'NGN', name: 'Nigeria', symbol: '₦' },
-        { code: 'CAD', name: 'Canada', symbol: 'C$' },
-        { code: 'AUD', name: 'Australia', symbol: 'A$' },
-        { code: 'JPY', name: 'Japan', symbol: '¥' },
-        { code: 'INR', name: 'India', symbol: '₹' }
-    ];
-
-    const filteredCurrencies = searchTerm
-        ? currencies.filter(c =>
-            c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.name.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-        : currencies;
-
-    const selectedCurrency = currencies.find(c => c.code === value);
-
-    return (
-        <div style={{ position: 'relative' }}>
-            <div
-                onClick={() => setIsOpen(!isOpen)}
-                style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'white',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    boxSizing: 'border-box'
-                }}
-            >
-                <span>{selectedCurrency ? `${selectedCurrency.code} (${selectedCurrency.name})` : 'Select Currency'}</span>
-                <span style={{ color: '#9ca3af' }}>▼</span>
-            </div>
-
-            {isOpen && (
-                <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    marginTop: 4,
-                    background: 'white',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                    zIndex: 1000,
-                    maxHeight: 300,
-                    overflowY: 'auto'
-                }}>
-                    <div style={{ padding: 8, borderBottom: '1px solid var(--border-subtle)' }}>
-                        <input
-                            type="text"
-                            placeholder="Search currencies..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                                width: '100%',
-                                padding: 8,
-                                border: '1px solid #d1d5db',
-                                borderRadius: 6,
-                                outline: 'none',
-                                boxSizing: 'border-box'
-                            }}
-                        />
-                    </div>
-                    {filteredCurrencies.map(currency => (
-                        <div
-                            key={currency.code}
-                            onClick={() => {
-                                onChange(currency.code);
-                                setIsOpen(false);
-                                setSearchTerm('');
-                            }}
-                            style={{
-                                padding: '10px 12px',
-                                cursor: 'pointer',
-                                background: value === currency.code ? '#f3f4f6' : 'white',
-                                fontWeight: value === currency.code ? 600 : 400
-                            }}
-                            onMouseEnter={(e) => e.target.style.background = '#f9fafb'}
-                            onMouseLeave={(e) => e.target.style.background = value === currency.code ? '#f3f4f6' : 'white'}
-                        >
-                            <span style={{ fontWeight: 600 }}>{currency.code}</span>
-                            <span style={{ color: '#6b7280', marginLeft: 8 }}>({currency.name})</span>
-                            <span style={{ color: '#9ca3af', marginLeft: 8 }}>{currency.symbol}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
+// Suggested starting values when a currency is picked (admin can change them)
+const CURRENCY_DEFAULTS = {
+    GBP: { referrer: 5, referee: 10, floor: 50 },
+    USD: { referrer: 10, referee: 20, floor: 100 },
+    EUR: { referrer: 8, referee: 15, floor: 75 },
+    NGN: { referrer: 2000, referee: 5000, floor: 20000 },
 };
 
+const EMPTY_FORM = {
+    name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP',
+    referrer_reward: '5', referee_reward: '10', min_transaction_threshold: '50',
+    qualification_window_days: '30', bonus_validity_days: '90', max_referrals_per_referrer: '',
+    min_redeem_amount: '', start_date: '', end_date: '', notify: true,
+};
+
+const TYPE_LABELS = { BOTH: 'Both Parties', REFERRER: 'Referrer Only', REFEREE: 'Referee Only' };
+const Field = ({ id, label, required, error, hint, children }) => (
+    <div className="rf-field">
+        <label htmlFor={id}>{label}{required && <span className="rf-req">*</span>}</label>
+        {children}
+        {error ? <div className="rf-error" id={`${id}-error`}>{error}</div> : hint ? <div className="rf-hint">{hint}</div> : null}
+    </div>
+);
+
+const Toggle = ({ on, onClick, label, disabled }) => (
+    <button type="button" className="rf-toggle" onClick={onClick} disabled={disabled} aria-pressed={on} aria-label={label}>
+        <span className={`rf-toggle-track ${on ? 'on' : ''}`}><span className="rf-toggle-knob" /></span>
+    </button>
+);
 
 const ReferralSettings = () => {
     const [rules, setRules] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editingId, setEditingId] = useState(null);
+    const [showArchived, setShowArchived] = useState(false);
+    const [form, setForm] = useState(EMPTY_FORM);
+    const [errors, setErrors] = useState({});
+    const [dialog, setDialog] = useState(null);
+    const [dialogNotify, setDialogNotify] = useState(true);
+    const { toasts, push, dismiss } = useToasts();
 
-    // Form state
-    const [formData, setFormData] = useState({
-        name: '',
-        is_enabled: true,
-        reward_type: 'BOTH',
-        base_currency: 'GBP',
-        referrer_reward: 5,
-        referee_reward: 10,
-        min_transaction_threshold: 50
-    });
-
-    useEffect(() => {
-        fetchRules();
-    }, []);
-
-    const fetchRules = async () => {
+    const fetchRules = useCallback(async () => {
+        setLoadError(false);
         try {
-            const res = await fetch('/api/referral-rules');
+            const res = await fetch(`/api/referral-rules${showArchived ? '?include_archived=1' : ''}`);
+            if (!res.ok) throw new Error('load');
             const data = await res.json();
-            setRules(data.data);
-            setLoading(false);
-        } catch (err) {
-            console.error(err);
+            setRules(data.data || []);
+        } catch {
+            setLoadError(true);
+        } finally {
             setLoading(false);
         }
+    }, [showArchived]);
+
+    useEffect(() => { fetchRules(); }, [fetchRules]);
+
+    const activeRules = useMemo(() => rules.filter((r) => r.status !== 'ARCHIVED'), [rules]);
+    const sym = currencySymbol(form.base_currency);
+    const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+    const onTypeChange = (type) => {
+        const d = CURRENCY_DEFAULTS[form.base_currency] || {};
+        const patch = { reward_type: type };
+        if (type === 'REFEREE') patch.referrer_reward = '0';
+        if (type === 'REFERRER') patch.referee_reward = '0';
+        if (type !== 'REFEREE' && Number(form.referrer_reward) === 0) patch.referrer_reward = String(d.referrer ?? '');
+        if (type !== 'REFERRER' && Number(form.referee_reward) === 0) patch.referee_reward = String(d.referee ?? '');
+        set(patch);
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    // Only the enabled bonus field(s) and the Floor are pre-filled (AC-1.1.5)
+    const onCurrencyChange = (currency) => {
+        const patch = { base_currency: currency };
+        const d = CURRENCY_DEFAULTS[currency];
+        if (d && !editingId) {
+            patch.min_transaction_threshold = String(d.floor);
+            patch.referrer_reward = form.reward_type === 'REFEREE' ? '0' : String(d.referrer);
+            patch.referee_reward = form.reward_type === 'REFERRER' ? '0' : String(d.referee);
+        }
+        set(patch);
+    };
+
+    const resetForm = () => { setForm(EMPTY_FORM); setEditingId(null); setErrors({}); };
+
+    const payload = () => ({
+        ...form,
+        name: form.name.trim(),
+        referrer_reward: form.reward_type === 'REFEREE' ? 0 : form.referrer_reward,
+        referee_reward: form.reward_type === 'REFERRER' ? 0 : form.referee_reward,
+    });
+
+    const save = async (notify) => {
         setSaving(true);
         try {
-            let response;
-            if (editingId) {
-                response = await fetch(`/api/referral-rules/${editingId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-            } else {
-                response = await fetch('/api/referral-rules', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-            }
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                // Handle duplicate currency error
-                if (data.error === 'DUPLICATE_CURRENCY') {
-                    alert(`⚠️ ${data.message}\n\nExisting rule: "${data.existing_rule.name}"`);
-                } else {
-                    alert(`Error: ${data.message || data.error}`);
-                }
+            const res = await fetch(editingId ? `/api/referral-rules/${editingId}` : '/api/referral-rules', {
+                method: editingId ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload(), notify }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (data.fields) setErrors(data.fields);
+                if (data.error === 'DUPLICATE_NAME') setErrors((e) => ({ ...e, name: data.message }));
+                push(data.message || "We couldn't save the rule. Please try again.", 'error');
                 return;
             }
-
-            alert(editingId ? 'Rule updated successfully' : 'Rule created successfully');
+            push(editingId ? 'Referral rule updated. Changes apply to new referrals only.' : `Referral rule '${form.name.trim()}' created.`);
+            if (data.notification) push(`Customers in ${form.base_currency} will be notified: "${data.notification.title}".`, 'info');
             resetForm();
             fetchRules();
-        } catch (err) {
-            alert('Network error. Please try again.');
+        } catch {
+            push("We couldn't save the rule. Please try again.", 'error');
         } finally {
             setSaving(false);
         }
     };
 
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        const errs = validateForm(form, { isNew: !editingId, rules: activeRules, editingId });
+        setErrors(errs);
+        if (Object.keys(errs).length) {
+            const first = Object.keys(errs)[0];
+            setTimeout(() => document.getElementById(`rf-${first}`)?.focus(), 0);
+            return;
+        }
+        const floor = Number(form.min_transaction_threshold);
+        const big = (form.reward_type !== 'REFEREE' && Number(form.referrer_reward) > floor) || (form.reward_type !== 'REFERRER' && Number(form.referee_reward) > floor);
+        const editing = editingId ? rules.find((r) => r.id === editingId) : null;
+        const steps = [];
+        if (big) steps.push('big');
+        if (editing && editing.pending_count > 0) steps.push('pending');
+        runSteps(steps, editing);
+    };
+
+    const runSteps = (steps, editing) => {
+        if (!steps.length) return save(form.notify);
+        const [step, ...rest] = steps;
+        if (step === 'big') {
+            setDialog({
+                title: 'Bonus higher than the minimum amount',
+                message: 'The bonus is higher than the minimum transaction amount. Customers could earn more than they send. Do you want to continue?',
+                confirmLabel: editingId ? 'Save anyway' : 'Create anyway',
+                onConfirm: () => { setDialog(null); runSteps(rest, editing); },
+            });
+        } else {
+            setDialog({
+                title: 'Pending referrals',
+                message: `${editing.pending_count} pending referral${editing.pending_count === 1 ? '' : 's'} will keep their original reward. Only new referrals will use these changes. Continue?`,
+                confirmLabel: 'Continue',
+                onConfirm: () => { setDialog(null); runSteps(rest, editing); },
+            });
+        }
+    };
+
     const handleEdit = (rule) => {
-        setFormData({
-            name: rule.name,
-            is_enabled: !!rule.is_enabled,
-            reward_type: rule.reward_type,
-            base_currency: rule.base_currency,
-            referrer_reward: rule.referrer_reward,
-            referee_reward: rule.referee_reward,
-            min_transaction_threshold: rule.min_transaction_threshold
+        setForm({
+            name: rule.name, is_enabled: !!rule.is_enabled, reward_type: rule.reward_type, base_currency: rule.base_currency,
+            referrer_reward: String(rule.referrer_reward), referee_reward: String(rule.referee_reward),
+            min_transaction_threshold: String(rule.min_transaction_threshold),
+            qualification_window_days: String(rule.qualification_window_days ?? 30), bonus_validity_days: String(rule.bonus_validity_days ?? 90),
+            max_referrals_per_referrer: rule.max_referrals_per_referrer ? String(rule.max_referrals_per_referrer) : '',
+            min_redeem_amount: rule.min_redeem_amount ? String(rule.min_redeem_amount) : '',
+            start_date: rule.start_date || '', end_date: rule.end_date || '', notify: true,
         });
+        setErrors({});
         setEditingId(rule.id);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleDelete = async (id) => {
-        if (!confirm('Are you sure you want to delete this rule?')) return;
-
+    const changeStatus = async (rule, enable, notify) => {
+        setRules((rs) => rs.map((r) => (r.id === rule.id ? { ...r, is_enabled: enable ? 1 : 0 } : r)));
         try {
-            await fetch(`/api/referral-rules/${id}`, { method: 'DELETE' });
-            alert('Rule deleted');
-            fetchRules();
-        } catch (err) {
-            alert('Error deleting rule');
-        }
-    };
-
-    const handleToggleStatus = async (rule) => {
-        try {
-            const updatedRule = {
-                ...rule,
-                is_enabled: !rule.is_enabled
-            };
-
-            const response = await fetch(`/api/referral-rules/${rule.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updatedRule)
+            const res = await fetch(`/api/referral-rules/${rule.id}/status`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_enabled: enable, notify }),
             });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                alert(`Error: ${data.message || data.error}`);
-                return;
-            }
-
-            fetchRules();
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || "We couldn't update the rule status. Please try again.");
+            push(enable ? 'Rule activated.' : 'Rule deactivated.');
+            if (data.notification) push(`Customers in ${rule.base_currency} will be notified: "${data.notification.title}".`, 'info');
         } catch (err) {
-            alert('Error updating status');
+            push(err.message || "We couldn't update the rule status. Please try again.", 'error');
+        } finally {
+            fetchRules();
         }
     };
 
-    const resetForm = () => {
-        setFormData({
-            name: '',
-            is_enabled: true,
-            reward_type: 'BOTH',
-            base_currency: 'GBP',
-            referrer_reward: 5,
-            referee_reward: 10,
-            min_transaction_threshold: 50
+    const handleToggle = (rule) => {
+        if (rule.is_enabled) {
+            setDialog({
+                title: `Deactivate '${rule.name}'?`,
+                message: 'New customers will not be able to join through referral links. Pending referrals will still be rewarded.',
+                confirmLabel: 'Deactivate', tone: 'danger',
+                onConfirm: () => { setDialog(null); changeStatus(rule, false, false); },
+            });
+        } else {
+            setDialogNotify(true);
+            setDialog({
+                title: `Activate '${rule.name}'?`,
+                message: `Customers sending in ${rule.base_currency} will see the Refer & Earn offer.`,
+                confirmLabel: 'Activate', withNotify: true,
+                onConfirm: (notify) => { setDialog(null); changeStatus(rule, true, notify); },
+            });
+        }
+    };
+
+    const handleArchive = (rule) => {
+        setDialog({
+            title: `Archive '${rule.name}'?`,
+            message: 'It will stop accepting new referrals. Pending referrals will still be rewarded. This cannot be undone.',
+            confirmLabel: 'Archive', tone: 'danger',
+            onConfirm: async () => {
+                setDialog(null);
+                try {
+                    const res = await fetch(`/api/referral-rules/${rule.id}/archive`, { method: 'POST' });
+                    if (!res.ok) throw new Error();
+                    push('Rule archived.');
+                    if (editingId === rule.id) resetForm();
+                    fetchRules();
+                } catch {
+                    push("We couldn't archive the rule. Please try again.", 'error');
+                }
+            },
         });
-        setEditingId(null);
     };
 
-    const inputStyle = {
-        width: '100%',
-        padding: '10px 12px',
-        background: 'white',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: '8px',
-        color: 'var(--text-main)',
-        fontSize: '0.9rem',
-        outline: 'none',
-        marginBottom: '16px',
-        boxSizing: 'border-box'
-    };
-
-    const labelStyle = {
-        display: 'block',
-        marginBottom: '6px',
-        fontSize: '0.875rem',
-        color: 'var(--text-muted)',
-        fontWeight: 500
-    };
-
-    if (loading) return <div className="p-8">Loading...</div>;
+    const err = (k) => errors[k];
+    const inputCls = (k) => `rf-input${err(k) ? ' rf-invalid' : ''}`;
+    const aria = (k) => ({ id: `rf-${k}`, 'aria-invalid': !!err(k), 'aria-describedby': err(k) ? `rf-${k}-error` : undefined });
 
     return (
-        <div style={{ width: '100%', maxWidth: 1200, margin: '0 auto', boxSizing: 'border-box' }}>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 600, marginBottom: 8 }}>Referral Scheme Management</h2>
-            <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>Create and manage referral reward programs.</p>
+        <div className="rf-page">
+            <ToastStack toasts={toasts} onDismiss={dismiss} />
+            <h2 className="rf-title">Referral Scheme Management</h2>
+            <p className="rf-subtitle">Create and manage referral reward programmes. One rule per send currency.</p>
 
-            {/* Form */}
-            <div className="glass-panel" style={{ padding: 32, marginBottom: 32 }}>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: 20 }}>{editingId ? 'Edit Rule' : 'Create New Rule'}</h3>
-
-                <form onSubmit={handleSubmit}>
-                    {/* Name & Status */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, marginBottom: 24 }}>
-                        <div>
-                            <label style={labelStyle}>Rule Name *</label>
-                            <input
-                                style={inputStyle}
-                                placeholder="e.g. UK Standard Program"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label style={labelStyle}>Status</label>
-                            <select
-                                style={inputStyle}
-                                value={formData.is_enabled ? '1' : '0'}
-                                onChange={(e) => setFormData({ ...formData, is_enabled: e.target.value === '1' })}
-                            >
+            <div className="rf-card rf-card-pad">
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: '0 0 20px' }}>{editingId ? 'Edit Rule' : 'Create New Rule'}</h3>
+                <form onSubmit={handleSubmit} noValidate>
+                    <div className="rf-grid rf-grid-21">
+                        <Field id="rf-name" label="Rule Name" required error={err('name')}>
+                            <input {...aria('name')} className={inputCls('name')} placeholder="e.g. UK Standard Programme" maxLength={50}
+                                value={form.name} onChange={(e) => set({ name: e.target.value })} />
+                        </Field>
+                        <Field id="rf-is_enabled" label="Status" required>
+                            <select id="rf-is_enabled" className="rf-select" value={form.is_enabled ? '1' : '0'} onChange={(e) => set({ is_enabled: e.target.value === '1' })}>
                                 <option value="1">Active</option>
                                 <option value="0">Inactive</option>
                             </select>
-                        </div>
+                        </Field>
                     </div>
 
-                    {/* Reward Type & Currency */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
-                        <div>
-                            <label style={labelStyle}>Who gets a commission?</label>
-                            <select
-                                style={inputStyle}
-                                value={formData.reward_type}
-                                onChange={(e) => {
-                                    const newType = e.target.value;
-                                    const updates = { reward_type: newType };
-                                    if (newType === 'REFEREE') updates.referrer_reward = 0;
-                                    else if (newType === 'REFERRER') updates.referee_reward = 0;
-                                    setFormData({ ...formData, ...updates });
-                                }}
-                            >
+                    <div className="rf-grid rf-grid-2">
+                        <Field id="rf-reward_type" label="Who gets a bonus?" required>
+                            <select id="rf-reward_type" className="rf-select" value={form.reward_type} onChange={(e) => onTypeChange(e.target.value)}>
                                 <option value="BOTH">Both Parties (Double-Sided)</option>
                                 <option value="REFERRER">Referrer Only</option>
                                 <option value="REFEREE">Referee (New User) Only</option>
                             </select>
-                        </div>
-                        <div>
-                            <label style={labelStyle}>Send Currency</label>
-                            <CurrencySelector
-                                value={formData.base_currency}
-                                onChange={(currency) => {
-                                    const currencyDefaults = {
-                                        'GBP': { referrer: 5, referee: 10, threshold: 50 },
-                                        'USD': { referrer: 10, referee: 20, threshold: 100 },
-                                        'EUR': { referrer: 8, referee: 15, threshold: 75 },
-                                        'NGN': { referrer: 2000, referee: 5000, threshold: 20000 }
-                                    };
-                                    const defaults = currencyDefaults[currency] || { referrer: 5, referee: 10, threshold: 50 };
-                                    setFormData({
-                                        ...formData,
-                                        base_currency: currency,
-                                        referrer_reward: formData.referrer_reward === 0 ? defaults.referrer : formData.referrer_reward,
-                                        referee_reward: formData.referee_reward === 0 ? defaults.referee : formData.referee_reward,
-                                        min_transaction_threshold: defaults.threshold
-                                    });
-                                }}
-                            />
-                        </div>
+                        </Field>
+                        <Field id="rf-base_currency" label="Send Currency" required error={err('base_currency')}>
+                            <select id="rf-base_currency" className="rf-select" value={form.base_currency} onChange={(e) => onCurrencyChange(e.target.value)}>
+                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                            </select>
+                        </Field>
                     </div>
 
-                    {/* Commissions */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
-                        <div>
-                            <label style={labelStyle}>Referrer Commission</label>
-                            <input
-                                type="number"
-                                step="0.50"
-                                style={{
-                                    ...inputStyle,
-                                    marginBottom: 0,
-                                    background: formData.reward_type === 'REFEREE' ? '#f3f4f6' : 'white',
-                                    opacity: formData.reward_type === 'REFEREE' ? 0.6 : 1
-                                }}
-                                value={formData.referrer_reward}
-                                onChange={(e) => setFormData({ ...formData, referrer_reward: parseFloat(e.target.value) || 0 })}
-                                disabled={formData.reward_type === 'REFEREE'}
-                            />
-                        </div>
-                        <div>
-                            <label style={labelStyle}>Referee (New User) Commission</label>
-                            <input
-                                type="number"
-                                step="0.50"
-                                style={{
-                                    ...inputStyle,
-                                    marginBottom: 0,
-                                    background: formData.reward_type === 'REFERRER' ? '#f3f4f6' : 'white',
-                                    opacity: formData.reward_type === 'REFERRER' ? 0.6 : 1
-                                }}
-                                value={formData.referee_reward}
-                                onChange={(e) => setFormData({ ...formData, referee_reward: parseFloat(e.target.value) || 0 })}
-                                disabled={formData.reward_type === 'REFERRER'}
-                            />
-                        </div>
+                    <div className="rf-grid rf-grid-3">
+                        <Field id="rf-referrer_reward" label="Referrer Bonus" required={form.reward_type !== 'REFEREE'} error={err('referrer_reward')}
+                            hint={form.reward_type === 'REFEREE' ? 'Not used for Referee Only rules.' : undefined}>
+                            <div className="rf-affix"><span className="rf-prefix">{sym}</span>
+                                <input {...aria('referrer_reward')} className={inputCls('referrer_reward')} inputMode="decimal" disabled={form.reward_type === 'REFEREE'}
+                                    value={form.referrer_reward} onChange={(e) => set({ referrer_reward: e.target.value })} />
+                            </div>
+                        </Field>
+                        <Field id="rf-referee_reward" label="Referee (New User) Bonus" required={form.reward_type !== 'REFERRER'} error={err('referee_reward')}
+                            hint={form.reward_type === 'REFERRER' ? 'Not used for Referrer Only rules.' : undefined}>
+                            <div className="rf-affix"><span className="rf-prefix">{sym}</span>
+                                <input {...aria('referee_reward')} className={inputCls('referee_reward')} inputMode="decimal" disabled={form.reward_type === 'REFERRER'}
+                                    value={form.referee_reward} onChange={(e) => set({ referee_reward: e.target.value })} />
+                            </div>
+                        </Field>
+                        <Field id="rf-min_transaction_threshold" label="Minimum Transaction Amount (Floor)" required error={err('min_transaction_threshold')}
+                            hint="A transfer equal to or above this amount qualifies.">
+                            <div className="rf-affix"><span className="rf-prefix">{sym}</span>
+                                <input {...aria('min_transaction_threshold')} className={inputCls('min_transaction_threshold')} inputMode="decimal"
+                                    value={form.min_transaction_threshold} onChange={(e) => set({ min_transaction_threshold: e.target.value })} />
+                            </div>
+                        </Field>
                     </div>
 
-                    {/* Threshold */}
-                    <div style={{ marginBottom: 24 }}>
-                        <label style={labelStyle}>Minimum Transaction Amount (Floor)</label>
-                        <input
-                            type="number"
-                            step="10"
-                            style={{ ...inputStyle, marginBottom: 0 }}
-                            value={formData.min_transaction_threshold}
-                            onChange={(e) => setFormData({ ...formData, min_transaction_threshold: parseFloat(e.target.value) || 0 })}
-                        />
+                    <div className="rf-section-label">Limits &amp; timing</div>
+                    <div className="rf-grid rf-grid-3">
+                        <Field id="rf-qualification_window_days" label="Qualification Window (days)" required error={err('qualification_window_days')}
+                            hint="Days after joining for the friend to make a qualifying transfer.">
+                            <input {...aria('qualification_window_days')} className={inputCls('qualification_window_days')} inputMode="numeric"
+                                value={form.qualification_window_days} onChange={(e) => set({ qualification_window_days: e.target.value })} />
+                        </Field>
+                        <Field id="rf-bonus_validity_days" label="Bonus Validity (days)" required error={err('bonus_validity_days')}
+                            hint="Days the bonus credit can be used before it expires.">
+                            <input {...aria('bonus_validity_days')} className={inputCls('bonus_validity_days')} inputMode="numeric"
+                                value={form.bonus_validity_days} onChange={(e) => set({ bonus_validity_days: e.target.value })} />
+                        </Field>
+                        <Field id="rf-max_referrals_per_referrer" label="Max Rewarded Referrals per Referrer" error={err('max_referrals_per_referrer')} hint="Leave blank for unlimited.">
+                            <input {...aria('max_referrals_per_referrer')} className={inputCls('max_referrals_per_referrer')} inputMode="numeric" placeholder="Unlimited"
+                                value={form.max_referrals_per_referrer} onChange={(e) => set({ max_referrals_per_referrer: e.target.value })} />
+                        </Field>
+                    </div>
+                    <div className="rf-grid rf-grid-3">
+                        <Field id="rf-min_redeem_amount" label="Minimum Send Amount to Redeem" error={err('min_redeem_amount')} hint="Leave blank for no minimum.">
+                            <div className="rf-affix"><span className="rf-prefix">{sym}</span>
+                                <input {...aria('min_redeem_amount')} className={inputCls('min_redeem_amount')} inputMode="decimal" placeholder="0.00"
+                                    value={form.min_redeem_amount} onChange={(e) => set({ min_redeem_amount: e.target.value })} />
+                            </div>
+                        </Field>
+                        <Field id="rf-start_date" label="Start Date" error={err('start_date')} hint="Blank = starts immediately.">
+                            <input {...aria('start_date')} type="date" className={inputCls('start_date')} min={editingId ? undefined : ukTodayIso()}
+                                value={form.start_date} onChange={(e) => set({ start_date: e.target.value })} />
+                        </Field>
+                        <Field id="rf-end_date" label="End Date" error={err('end_date')} hint="Blank = no end date.">
+                            <input {...aria('end_date')} type="date" className={inputCls('end_date')}
+                                value={form.end_date} onChange={(e) => set({ end_date: e.target.value })} />
+                        </Field>
                     </div>
 
-                    {/* Buttons */}
-                    <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                        {editingId && (
-                            <button type="button" className="btn-secondary" onClick={resetForm}>
-                                Cancel
-                            </button>
-                        )}
+                    <label className="rf-check">
+                        <input type="checkbox" checked={form.notify} onChange={(e) => set({ notify: e.target.checked })} />
+                        Notify customers in the app when this offer goes live or improves
+                    </label>
+
+                    <div className="rf-actions">
+                        {editingId && <button type="button" className="btn-secondary" onClick={resetForm}>Cancel</button>}
                         <button type="submit" className="btn-primary" disabled={saving}>
-                            {saving ? 'Saving...' : editingId ? 'Update Rule' : 'Create Rule'}
+                            {saving ? (editingId ? 'Saving...' : 'Creating...') : editingId ? 'Save Changes' : 'Create Rule'}
                         </button>
                     </div>
                 </form>
             </div>
 
-            {/* Table */}
-            <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: 24, borderBottom: '1px solid var(--border-subtle)' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>Existing Rules</h3>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: 4, marginBottom: 0 }}>
-                        Manage your referral incentive programs
-                    </p>
+            <div className="rf-card">
+                <div className="rf-card-head">
+                    <div>
+                        <h3>Existing Rules</h3>
+                        <p>Manage your referral incentive programmes</p>
+                    </div>
+                    <label className="rf-switch-row">
+                        <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
+                    </label>
                 </div>
-                <div className="table-wrapper" style={{ overflowX: 'auto' }}>
-                    <table style={{
-                        width: '100%',
-                        borderCollapse: 'separate',
-                        borderSpacing: 0
-                    }}>
+                <div className="rf-table-wrap">
+                    <table className="rf-table">
                         <thead>
-                            <tr style={{
-                                background: 'linear-gradient(to bottom, #f9fafb, #f3f4f6)',
-                                borderBottom: '2px solid var(--border-subtle)'
-                            }}>
-                                <th style={tableHeaderStyle}>Rule Name</th>
-                                <th style={tableHeaderStyle}>Status</th>
-                                <th style={tableHeaderStyle}>Type</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referrer</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Referee</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Min Amount</th>
-                                <th style={tableHeaderStyle}>Currency</th>
-                                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Actions</th>
+                            <tr>
+                                <th>Rule Name</th><th>Status</th><th>Type</th>
+                                <th className="rf-num">Referrer Bonus</th><th className="rf-num">Referee Bonus</th><th className="rf-num">Min Amount (Floor)</th>
+                                <th>Currency</th><th className="rf-num">Window</th><th className="rf-num">Validity</th><th>Dates</th>
+                                <th style={{ textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {rules.length === 0 ? (
-                                <tr>
-                                    <td colSpan="8" style={{
-                                        textAlign: 'center',
-                                        padding: 48,
-                                        color: 'var(--text-muted)',
-                                        fontSize: '0.9rem'
-                                    }}>
-                                        No rules found. Create your first referral program above.
-                                    </td>
-                                </tr>
-                            ) : (
-                                rules.map((rule, index) => (
-                                    <tr
-                                        key={rule.id}
-                                        style={{
-                                            borderBottom: index < rules.length - 1 ? '1px solid #f3f4f6' : 'none',
-                                            transition: 'background 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#fafbfc'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <td style={{ ...tableCellStyle, fontWeight: 600, color: '#1f2937' }}>
-                                            {rule.name}
-                                        </td>
-                                        <td style={tableCellStyle}>
-                                            <label style={{
-                                                position: 'relative',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: 10,
-                                                cursor: 'pointer'
-                                            }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!!rule.is_enabled}
-                                                    onChange={() => handleToggleStatus(rule)}
-                                                    style={{ display: 'none' }}
-                                                />
-                                                <div style={{
-                                                    width: 44,
-                                                    height: 24,
-                                                    borderRadius: 12,
-                                                    background: rule.is_enabled ? '#10b981' : '#d1d5db',
-                                                    transition: 'background 0.3s',
-                                                    position: 'relative'
-                                                }}>
-                                                    <div style={{
-                                                        position: 'absolute',
-                                                        top: 2,
-                                                        left: rule.is_enabled ? 22 : 2,
-                                                        width: 20,
-                                                        height: 20,
-                                                        borderRadius: '50%',
-                                                        background: 'white',
-                                                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                                                        transition: 'left 0.3s'
-                                                    }}></div>
-                                                </div>
-                                                <span style={{
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: 600,
-                                                    color: rule.is_enabled ? '#065f46' : '#6b7280'
-                                                }}>
-                                                    {rule.is_enabled ? 'Active' : 'Inactive'}
-                                                </span>
-                                            </label>
-                                        </td>
-                                        <td style={tableCellStyle}>
-                                            <span style={{
-                                                fontSize: '0.8rem',
-                                                color: '#6b7280',
-                                                fontWeight: 500,
-                                                whiteSpace: 'nowrap'
-                                            }}>
-                                                {rule.reward_type === 'BOTH' ? '👥 Both Parties' :
-                                                    rule.reward_type === 'REFERRER' ? '👤 Referrer Only' :
-                                                        '🆕 Referee Only'}
-                                            </span>
-                                        </td>
-                                        <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 600 }}>
-                                            <span style={{ color: rule.referrer_reward > 0 ? '#059669' : '#9ca3af' }}>
-                                                {getCurrencySymbol(rule.base_currency)}{rule.referrer_reward.toFixed(2)}
-                                            </span>
-                                        </td>
-                                        <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 600 }}>
-                                            <span style={{ color: rule.referee_reward > 0 ? '#059669' : '#9ca3af' }}>
-                                                {getCurrencySymbol(rule.base_currency)}{rule.referee_reward.toFixed(2)}
-                                            </span>
-                                        </td>
-                                        <td style={{ ...tableCellStyle, textAlign: 'right' }}>
-                                            <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>
-                                                {getCurrencySymbol(rule.base_currency)}{rule.min_transaction_threshold.toFixed(2)}
-                                            </span>
-                                        </td>
-                                        <td style={tableCellStyle}>
-                                            <span style={{
-                                                padding: '2px 8px',
-                                                background: '#f3f4f6',
-                                                borderRadius: 6,
-                                                fontSize: '0.75rem',
-                                                fontWeight: 700,
-                                                color: '#374151'
-                                            }}>
-                                                {rule.base_currency}
-                                            </span>
-                                        </td>
-                                        <td style={{ ...tableCellStyle, textAlign: 'center' }}>
-                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                                <button
-                                                    onClick={() => handleEdit(rule)}
-                                                    style={{
-                                                        padding: '5px 10px',
-                                                        fontSize: '0.75rem',
-                                                        whiteSpace: 'nowrap',
-                                                        fontWeight: 600,
-                                                        border: '1px solid #e5e7eb',
-                                                        borderRadius: 6,
-                                                        background: 'white',
-                                                        color: '#374151',
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s',
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: 4
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.target.style.background = '#f9fafb';
-                                                        e.target.style.borderColor = '#d1d5db';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.target.style.background = 'white';
-                                                        e.target.style.borderColor = '#e5e7eb';
-                                                    }}
-                                                >
-                                                    ✏️ Edit
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(rule.id)}
-                                                    style={{
-                                                        padding: '5px 10px',
-                                                        fontSize: '0.75rem',
-                                                        whiteSpace: 'nowrap',
-                                                        fontWeight: 600,
-                                                        border: '1px solid #fecaca',
-                                                        borderRadius: 6,
-                                                        background: '#fef2f2',
-                                                        color: '#dc2626',
-                                                        cursor: 'pointer',
-                                                        transition: 'all 0.2s',
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: 4
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.target.style.background = '#fee2e2';
-                                                        e.target.style.borderColor = '#fca5a5';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.target.style.background = '#fef2f2';
-                                                        e.target.style.borderColor = '#fecaca';
-                                                    }}
-                                                >
-                                                    🗑️ Delete
-                                                </button>
+                            {loading ? (
+                                <tr><td colSpan="11" className="rf-empty">Loading referral rules...</td></tr>
+                            ) : loadError ? (
+                                <tr><td colSpan="11" className="rf-empty">We couldn&apos;t load referral rules. Please refresh the page. <button type="button" className="rf-link" onClick={fetchRules}>Retry</button></td></tr>
+                            ) : rules.length === 0 ? (
+                                <tr><td colSpan="11" className="rf-empty">No referral rules yet. Create your first rule above.</td></tr>
+                            ) : rules.map((rule) => {
+                                const archived = rule.status === 'ARCHIVED';
+                                return (
+                                    <tr key={rule.id} data-testid={`rule-row-${rule.base_currency}`}>
+                                        <td className="rf-strong">{rule.name}</td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                {!archived && <Toggle on={!!rule.is_enabled} onClick={() => handleToggle(rule)} label={`${rule.is_enabled ? 'Deactivate' : 'Activate'} ${rule.name}`} />}
+                                                <StatusPill status={rule.status} />
                                             </div>
                                         </td>
+                                        <td style={{ whiteSpace: 'nowrap', color: '#6b7280' }}>{TYPE_LABELS[rule.reward_type]}</td>
+                                        <td className="rf-num rf-strong">{rule.reward_type === 'REFEREE' ? <span className="rf-muted">—</span> : <span style={{ color: '#059669' }}>{formatMoney(rule.referrer_reward, rule.base_currency)}</span>}</td>
+                                        <td className="rf-num rf-strong">{rule.reward_type === 'REFERRER' ? <span className="rf-muted">—</span> : <span style={{ color: '#059669' }}>{formatMoney(rule.referee_reward, rule.base_currency)}</span>}</td>
+                                        <td className="rf-num">{formatMoney(rule.min_transaction_threshold, rule.base_currency)}</td>
+                                        <td><span className="rf-chip">{rule.base_currency}</span></td>
+                                        <td className="rf-num">{rule.qualification_window_days ?? 30} days</td>
+                                        <td className="rf-num">{rule.bonus_validity_days ?? 90} days</td>
+                                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                            {rule.start_date || rule.end_date ? `${formatUkDate(rule.start_date) === '—' ? 'Now' : formatUkDate(rule.start_date)} – ${rule.end_date ? formatUkDate(rule.end_date) : 'No end'}` : <span className="rf-muted">Always on</span>}
+                                        </td>
+                                        <td>
+                                            {!archived && (
+                                                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                                    <button type="button" className="rf-btn-sm" onClick={() => handleEdit(rule)}>Edit</button>
+                                                    <button type="button" className="rf-btn-sm rf-warn" onClick={() => handleArchive(rule)}>Archive</button>
+                                                </div>
+                                            )}
+                                        </td>
                                     </tr>
-                                ))
-                            )}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
             </div>
+
+            <ConfirmDialog
+                open={!!dialog}
+                title={dialog?.title}
+                message={dialog?.message}
+                confirmLabel={dialog?.confirmLabel}
+                tone={dialog?.tone}
+                onCancel={() => setDialog(null)}
+                onConfirm={() => dialog?.onConfirm(dialogNotify)}
+            >
+                {dialog?.withNotify && (
+                    <label className="rf-check">
+                        <input type="checkbox" checked={dialogNotify} onChange={(e) => setDialogNotify(e.target.checked)} /> Notify customers
+                    </label>
+                )}
+            </ConfirmDialog>
         </div>
     );
-};
-
-// Helper to get currency symbol
-const getCurrencySymbol = (code) => {
-    const symbols = {
-        'GBP': '£', 'USD': '$', 'EUR': '€', 'NGN': '₦',
-        'CAD': 'C$', 'AUD': 'A$', 'JPY': '¥', 'INR': '₹'
-    };
-    return symbols[code] || code + ' ';
-};
-
-const tableHeaderStyle = {
-    padding: '12px 12px',
-    fontSize: '0.75rem',
-    fontWeight: 700,
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    textAlign: 'left',
-    whiteSpace: 'nowrap'
-};
-
-const tableCellStyle = {
-    padding: '14px 12px',
-    fontSize: '0.875rem',
-    color: '#374151',
-    verticalAlign: 'middle'
 };
 
 export default ReferralSettings;

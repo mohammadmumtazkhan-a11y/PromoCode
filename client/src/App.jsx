@@ -7,6 +7,8 @@ import logo from './assets/logo.png';
 
 // Components
 import ReferralSettings from './pages/Growth/ReferralSettings';
+import ReferralPerformance from './pages/Growth/ReferralPerformance';
+import ReferralTracking from './pages/Growth/ReferralTracking';
 import UserCreditLedger from './pages/Growth/UserCreditLedger';
 import BonusSchemeManager from './pages/Growth/BonusSchemeManager';
 const Sidebar = ({ isOpen, onClose }) => {
@@ -84,6 +86,20 @@ const Sidebar = ({ isOpen, onClose }) => {
               textDecoration: 'none', fontSize: '0.85rem', fontWeight: isActive('/growth/referral-settings') ? 600 : 400
             }}>
               Referral Settings
+            </Link>
+            <Link to="/growth/referral-performance" style={{
+              display: 'block', padding: '8px 16px 8px 48px',
+              color: isActive('/growth/referral-performance') ? '#c2410c' : '#4b5563',
+              textDecoration: 'none', fontSize: '0.85rem', fontWeight: isActive('/growth/referral-performance') ? 600 : 400
+            }}>
+              Referral Performance
+            </Link>
+            <Link to="/growth/referral-tracking" style={{
+              display: 'block', padding: '8px 16px 8px 48px',
+              color: isActive('/growth/referral-tracking') ? '#c2410c' : '#4b5563',
+              textDecoration: 'none', fontSize: '0.85rem', fontWeight: isActive('/growth/referral-tracking') ? 600 : 400
+            }}>
+              Referral Tracking
             </Link>
             <Link to="/growth/credit-ledger" style={{
               display: 'block', padding: '8px 16px 8px 48px',
@@ -355,6 +371,8 @@ function App() {
           <Route path="/test-checkout" element={<TestCheckout />} />
           {/* Growth Engine */}
           <Route path="/growth/referral-settings" element={<ReferralSettings />} />
+          <Route path="/growth/referral-performance" element={<ReferralPerformance />} />
+          <Route path="/growth/referral-tracking" element={<ReferralTracking />} />
           <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
           <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
 
