@@ -49,7 +49,7 @@ async function initSchema(db) {
     await q.run(`CREATE TABLE IF NOT EXISTS referral_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, is_enabled INTEGER DEFAULT 1,
         min_transaction_threshold REAL DEFAULT 100.0, referrer_reward REAL DEFAULT 5.0, referee_reward REAL DEFAULT 10.0,
-        reward_type TEXT DEFAULT 'BOTH', base_currency TEXT DEFAULT 'GBP',
+        reward_type TEXT DEFAULT 'BOTH', base_currency TEXT DEFAULT 'GBP', receive_currency TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
     await addColumnIfMissing(q, 'referral_rules', 'qualification_window_days', 'INTEGER DEFAULT 30');
     await addColumnIfMissing(q, 'referral_rules', 'bonus_validity_days', 'INTEGER DEFAULT 90');

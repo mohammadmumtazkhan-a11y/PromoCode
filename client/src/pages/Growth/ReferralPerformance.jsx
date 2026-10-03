@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { corridorLabel, formatMoney, daysAgoIso, ukTodayIso, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
+import ColHead from './ColHead';
 import './referral.css';
 
 const RANGES = [
@@ -9,6 +10,23 @@ const RANGES = [
     { key: '30', label: 'Last 30 days', from: () => daysAgoIso(30) },
     { key: 'month', label: 'This month', from: () => `${ukTodayIso().slice(0, 8)}01` },
     { key: 'all', label: 'All time', from: () => '' },
+];
+
+// Plain-English help for each column, shown when the admin hovers (or focuses) a column name
+const COLUMNS = [
+    { label: 'Rule', tip: 'The referral rule and its corridor (send currency → receive currency). Click a rule name to see its top referrers.' },
+    { label: 'Status', tip: 'Whether the rule is live right now: Active (taking new referrals), Inactive (switched off), Scheduled (starts on a future date), Ended (past its end date) or Archived.' },
+    { label: 'Link visits', num: true, tip: 'How many times referral links were opened for this rule\u2019s send currency in the selected dates. The same visitor counts once per 24 hours.' },
+    { label: 'Registrations', num: true, tip: 'New customers who signed up through a referral link under this rule in the selected dates, whatever happened next. Click the number to see them.' },
+    { label: 'Pending', num: true, tip: 'Referrals still in progress: the friend has joined but not yet made a qualifying transfer, or that transfer has not completed yet.' },
+    { label: 'Rewarded', num: true, tip: 'Referrals where the qualifying transfer completed and the bonus was credited.' },
+    { label: 'Expired / Not eligible', num: true, tip: 'Referrals that ended without a reward: the friend did not qualify in time, was not eligible (for example a self-referral), or the qualifying transfer was refunded.' },
+    { label: 'Conversion', num: true, tip: 'Rewarded referrals as a percentage of registrations. Shows \u2014 when there are no registrations yet.' },
+    { label: 'Bonus issued', num: true, tip: 'Total bonus credit given to referrers and new customers under this rule, in the rule\u2019s send currency.' },
+    { label: 'Used', num: true, tip: 'Bonus credit customers have spent on transfers, after taking back any returned for cancelled or refunded transfers.' },
+    { label: 'Unused', num: true, tip: 'Bonus credit still available to spend: issued, plus any returned, minus what was used or expired.' },
+    { label: 'Expired', num: true, tip: 'Bonus credit that went unused and lapsed, or was removed because the qualifying transfer was refunded.' },
+    { label: 'Referred volume', num: true, tip: 'Total amount sent in completed transfers by customers referred under this rule, in the rule\u2019s send currency.' },
 ];
 
 // US-1.8: how each referral rule is performing
@@ -98,11 +116,11 @@ const ReferralPerformance = () => {
                     <table className="rf-table">
                         <thead>
                             <tr>
-                                <th>Rule</th><th>Status</th>
-                                <th className="rf-num">Link visits</th><th className="rf-num">Registrations</th><th className="rf-num">Pending</th>
-                                <th className="rf-num">Rewarded</th><th className="rf-num">Expired / Not eligible</th><th className="rf-num">Conversion</th>
-                                <th className="rf-num">Bonus issued</th><th className="rf-num">Used</th><th className="rf-num">Unused</th><th className="rf-num">Expired</th>
-                                <th className="rf-num">Referred volume</th>
+                                {COLUMNS.map((c) => (
+                                    <th key={c.label} className={c.num ? 'rf-num' : undefined}>
+                                        <ColHead label={c.label} tip={c.tip} />
+                                    </th>
+                                ))}
                             </tr>
                         </thead>
                         <tbody>

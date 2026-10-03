@@ -107,4 +107,12 @@
 .rf-bonus { display: flex; justify-content: space-between; gap: 14px; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .rf-bonus span { color: #6b7280; }
 .rf-bonus b { color: #059669; font-weight: 600; }
+.rf-dl { color: #111827 !important; font-weight: 500 !important; }
 .rf-warn-text { color: #b45309; }
+
+/* Column help tooltip (hover or keyboard focus) */
+.rf-th { position: relative; display: inline-block; cursor: help; border-bottom: 1px dotted #9ca3af; outline: none; }
+.rf-tip { display: none; position: fixed; z-index: 1000; width: 260px; padding: 9px 11px; background: #1f2937; color: #fff;
+  font-size: 0.78rem; font-weight: 400; line-height: 1.4; letter-spacing: 0; text-transform: none; text-align: left; white-space: normal; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.rf-tip.show { display: block; }
+.rf-kpi-label .rf-th, .rf-field label .rf-th { border-bottom-color: #cbd5e1; }
