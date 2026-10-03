@@ -1,9 +1,53 @@
 # Referral & Bonus — User Stories & Acceptance Criteria
 
 **Product:** Mito Money Admin (PromoCode) and Rhemito customer app (Rhemito-UI)
-**Version:** 1.2 (Draft for review)
+**Version:** 2.0 (As built — reflects the delivered Mito Admin and Rhemito functionality)
 **Date:** 03 October 2026
 **Author:** Mohammad Mumtaz (Business Analyst)
+
+---
+
+## What Changed in Version 2.0
+
+Version 1.2 described the programme as planned. Version 2.0 describes it **as delivered** and adds what was learned while building and testing it.
+
+| Area | Change | Stories |
+|------|--------|---------|
+| Self-referral by device | Rhemito now sends an anonymous device ID, so a Referee on the same browser as the Referrer is blocked. Previously only email and phone were matched. | US-4.3 (AC-4.3.1, AC-4.3.6 to AC-4.3.12), D18 |
+| Refer & Earn card | The separate "Bonus Credit" tile under the card was removed because the dashboard banner already shows the balance. The card now fills its column so the three dashboard cards finish level. | US-2.1 (AC-2.1.7, AC-2.1.10), D19 |
+| Loading and error states | The error state is now a centred message with a **Try again** button, and the loading placeholder fills the card. | US-2.1 (AC-2.1.8, AC-2.1.9) |
+| Admin approval | Approving a "Not Eligible" referral is open to any signed-in admin. The "Growth Manager" role is not enforced yet; the admin's name and reason are recorded. | US-4.3 (AC-4.3.5), Section 5 |
+| Story index and known limits | Added the index below and Section 5, which lists what is not covered yet. | Section 5 |
+
+## Story Index
+
+| Story | Title | Product |
+|-------|-------|---------|
+| US-1.1 | Create a Referral Rule | Mito Admin |
+| US-1.2 | View Referral Rules | Mito Admin |
+| US-1.3 | Edit a Referral Rule | Mito Admin |
+| US-1.4 | Activate or Deactivate a Referral Rule | Mito Admin |
+| US-1.5 | Archive a Referral Rule | Mito Admin |
+| US-1.6 | Track Referrals | Mito Admin |
+| US-1.7 | Single Source of Referral Rewards | Mito Admin |
+| US-1.8 | Referral Programme Performance per Rule | Mito Admin |
+| US-1.9 | Referral Details in the User Credit Ledger | Mito Admin |
+| US-2.1 | Refer & Earn Card on the Dashboard | Rhemito – Referrer |
+| US-2.2 | Copy and Share the Referral Link | Rhemito – Referrer |
+| US-2.3 | Track My Referrals | Rhemito – Referrer |
+| US-3.1 | Register Through a Referral Link | Rhemito – Referee |
+| US-3.2 | Enter a Referral Code Manually | Rhemito – Referee |
+| US-4.1 | Award Bonus on a Qualifying Transfer | System (referral engine, triggered from Rhemito) |
+| US-4.2 | Expire Unqualified Referrals | System (referral engine, triggered from Rhemito) |
+| US-4.3 | Prevent Ineligible and Fraudulent Referrals | System (referral engine, triggered from Rhemito) |
+| US-4.4 | Reverse a Bonus When the Qualifying Transfer Is Reversed | System (referral engine, triggered from Rhemito) |
+| US-4.5 | Notify Customers About Referral Rewards | System (referral engine, triggered from Rhemito) |
+| US-5.1 | View My Bonuses and Referrals (Bonus & Discounts Page) | Rhemito – Customer |
+| US-5.2 | Redeem Bonus as Pay Less | Rhemito – Customer |
+| US-5.3 | Redeem Bonus as Send More | Rhemito – Customer |
+| US-5.4 | Expire Unused Bonus Credit | Rhemito – Customer |
+| US-6.1 | Notify Customers When a New Offer Is Available | Mito Admin and Rhemito |
+| US-6.2 | In-App Notifications for Bonus Activity | Mito Admin and Rhemito |
 
 ---
 
@@ -50,6 +94,8 @@ These decisions close the gaps found in the original notes. Each one can be over
 | D15 | If a customer's send currency has no active rule, the Refer & Earn card and referral link are hidden. | US-2.1 |
 | D16 | Customers get an in-app (bell) notification when a referral offer for their currency goes live or improves; the admin can opt out per change. Push is sent only if the customer allows promotional push. | US-6.1 |
 | D17 | Bonus & Discounts shows Available, Total Earned, Used and Expired separately, per currency, all from the credit ledger. Each earned credit shows Unused / Partly used / Used / Expired / Reversed. | US-5.1 |
+| D18 | A random, anonymous **device ID** is created once per browser and sent with every Rhemito request. Rhemito hashes it and passes it to the referral engine. A Referee whose device ID matches the Referrer's is treated as a self-referral. The ID is not a hardware fingerprint, so clearing site data or using another browser creates a new one. | US-4.3 |
+| D19 | The Refer & Earn card is the only referral tile on the dashboard. The available balance is shown in the dashboard banner and on Bonus & Discounts, not in a second tile. | US-2.1 |
 
 ---
 ## Epic 1: Referral Rule Management (Mito Admin)
@@ -809,22 +855,47 @@ Then the card shall read "You've reached the maximum referral rewards for this p
 And the "Copy" button shall be hidden
 ```
 
-**AC-2.1.7: Bonus Credit tile uses the real balance**
+**AC-2.1.7: No separate bonus tile on the card or dashboard**
 
 ```gherkin
-Given the customer has £5.00 available Bonus Credit in GBP
-Then the "Bonus Credit" tile on the card shall show "£5.00" with the label "Ready to use"
-Given the customer has £0.00 available Bonus Credit
-Then the tile shall show "£0.00" with the label "No credit yet"
+Given the customer has £50.00 available Bonus Credit in GBP
+When the customer opens the dashboard
+Then the "Refer & Earn" card shall not show a separate "Bonus credit ready to use" box
+And the dashboard banner shall read "You have earned £50.00 Referral Bonus Credit. Create a Transaction to use it."
+And the banner shall link to Send Money
+And the full list of credits, their balances and expiry dates shall be on the "Bonus & Discounts" page
 ```
 
-**AC-2.1.8: Loading and failure**
+**AC-2.1.8: Loading state**
 
 ```gherkin
 Given the referral details are loading
-Then a skeleton placeholder shall be shown inside the card
+When the customer opens the dashboard
+Then placeholder bars shall be shown inside the "Refer & Earn" card
+And the card shall be the same height as the cards beside it so the layout does not jump when the data arrives
+```
+
+**AC-2.1.9: Failure state with retry**
+
+```gherkin
 Given the referral details fail to load
-Then the card shall show "We couldn't load your referral details." with a "Retry" link
+When the customer opens the dashboard
+Then the card shall keep the "Refer & Earn" title
+And it shall show an icon, the message "We couldn't load your referral details. Please check your connection and try again." and a "Try again" button
+And the message and button shall be centred in the card
+When the customer clicks "Try again"
+Then the details shall be requested again
+And the card shall show the offer if the request succeeds
+```
+
+**AC-2.1.10: Card height matches the other dashboard cards**
+
+```gherkin
+Given the customer is on a screen wide enough to show three dashboard cards in a row
+Then "Quick Services", "Refer & Earn" and "Account Summary" shall finish at the same height
+And none of them shall show an empty block above or between its contents
+Given the customer is on a phone
+Then the three cards shall stack one under the other at full width
 ```
 
 ---
@@ -996,7 +1067,7 @@ And the toast "This referral link is no longer active. You can still sign up." s
 ```gherkin
 Given the visitor registers with a referral code and verifies their email
 Then a referral record shall be created with status "Registered"
-And it shall store the Referrer, the Referee, the registration date and the device fingerprint
+And it shall store the Referrer, the Referee, the registration date and the Referee's hashed device ID
 ```
 
 **AC-3.1.6: Rule chosen by the Referee's send currency**
@@ -1279,7 +1350,7 @@ Then B shall receive an email and push notification: "Only 7 days left to get yo
 **AC-4.3.1: Same identity details**
 
 ```gherkin
-Given Referee B shares an email, phone number, payment card, bank account or device fingerprint with Referrer A
+Given Referee B shares an email, phone number, device ID, payment card or bank account with Referrer A
 When B's referral would otherwise qualify
 Then the referral status shall be "Not Eligible" with reason "Self-referral: <matching detail>"
 And no bonus shall be credited to either party
@@ -1316,9 +1387,73 @@ And B shall be credited if B's own checks pass
 
 ```gherkin
 Given a referral is "Not Eligible"
-When an admin with the "Growth Manager" role clicks "Approve reward" and enters a reason of 10–250 characters
+When a signed-in admin clicks "Approve reward" on the referral and enters a reason of 10–250 characters
 Then the reward shall be credited
 And the ledger entry shall record the admin user and reason
+```
+
+**AC-4.3.6: Device ID is created and sent**
+
+```gherkin
+Given a visitor opens Rhemito in a browser for the first time
+Then the app shall create a random device ID and keep it in that browser
+And every request the app makes to Rhemito's own API shall carry the device ID
+And requests to any other website shall not carry it
+```
+
+**AC-4.3.7: Same device is treated as self-referral**
+
+```gherkin
+Given Referrer A is signed in on a browser
+And a new visitor opens A's referral link in the same browser and registers as Referee B
+When B verifies their email
+Then the referral shall be "Not Eligible" with reason "Self-referral: same device"
+And B shall still be able to use Rhemito normally
+And no bonus shall be credited to either party
+```
+
+**AC-4.3.8: Different device is not blocked**
+
+```gherkin
+Given Referrer A uses one browser
+And Referee B registers through A's link from a different browser or device
+And B shares no email, phone number or payment method with A
+When B verifies their email
+Then the referral shall be "Registered"
+```
+
+**AC-4.3.9: Missing or invalid device ID**
+
+```gherkin
+Given a request arrives without a device ID, or with one that is not 16 to 64 letters, numbers and hyphens
+Then the request shall be processed normally
+And the device ID shall be ignored
+And the customer's last known device shall not be erased
+```
+
+**AC-4.3.10: Device ID privacy**
+
+```gherkin
+Given a customer's device ID is passed to the referral engine
+Then it shall be sent only in hashed form
+And the raw device ID shall not leave Rhemito's server
+And the device ID shall not be shown to customers
+```
+
+**AC-4.3.11: Shared devices can be approved**
+
+```gherkin
+Given two family members share one browser and one is blocked as "Self-referral: same device"
+When an admin checks the details and clicks "Approve reward" with a reason
+Then the reward shall be credited as in AC-4.3.5
+```
+
+**AC-4.3.12: Device recorded on each sign-in**
+
+```gherkin
+Given a customer signs in, verifies their email, or uses Rhemito while signed in
+Then the device they are using shall be recorded as their latest device
+And only the latest device shall be compared
 ```
 
 ---
@@ -1881,3 +2016,20 @@ And the customer shall be able to filter the archive by "Rewards"
 - Percentage-based or tiered referral rewards.
 - Paying referral rewards as cash to a bank account or wallet.
 - Referral leaderboards and social media integrations beyond the native share sheet.
+
+## 5. Known Limits and Open Items
+
+These are not covered by the delivered functionality. Each is a candidate for a future story.
+
+| # | Item | Impact | Suggested next step |
+|---|------|--------|---------------------|
+| L1 | The device ID lives in the browser. Clearing site data, private browsing or another browser creates a new ID. | A determined customer can avoid the device check. Email, phone and payment-method checks still apply. | Add device intelligence from the payment provider or a fraud service. |
+| L2 | The referral engine stores one device per customer: the latest. | A Referrer who used another device last is not matched against an earlier device. | Store a short history of devices per customer. |
+| L3 | Rhemito does not yet send payment-method fingerprints (card or bank account). | The "same payment method" check in AC-4.3.1 cannot trigger. | Send a hashed payment fingerprint when a payment is made. |
+| L4 | The Send Money flow is GBP only, so only GBP bonus can be redeemed there. | Bonus in other currencies shows on Bonus & Discounts but cannot yet be used. | Extend Send Money to all supported send currencies. |
+| L5 | The "Growth Manager" role is not enforced for "Approve reward". | Any signed-in admin can approve. The admin name and reason are recorded. | Add roles to Mito Admin and check them on approval. |
+| L6 | When a customer's currency has no active rule, the Refer & Earn card is hidden but its column stays empty on wide screens. | A blank space appears in the dashboard's middle column. | Let the other cards reflow when the card is hidden. |
+| L7 | The dashboard welcome message and the account summary figures are placeholders, not the signed-in customer's data. | "Welcome Olayinka" shows for every customer. | Use the signed-in customer's name and real balances. |
+| L8 | The live Rhemito site needs the address of the live Mito Admin engine (setting `MITO_API_URL`). | Without it the Refer & Earn card shows the failure state. | Set `MITO_API_URL` in the Rhemito hosting settings and redeploy. |
+
+
