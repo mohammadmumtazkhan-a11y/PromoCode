@@ -65,6 +65,18 @@ async function userRedemptions(q, promo, userId) {
     return r.c;
 }
 
+// Mito Admin lists payment methods by display name ("Bank Transfer"); Rhemito sends ids ("bank_deposit", "instant_bank").
+// Both are reduced to one key so the same method matches whichever way it is written.
+const PAYMENT_METHOD_ALIASES = {
+    banktransfer: 'bank', bankdeposit: 'bank', instantbank: 'bank', manualtransfer: 'bank', bank: 'bank',
+    card: 'card', creditdebitcard: 'card', debitcard: 'card', creditcard: 'card',
+    mobilemoney: 'mobilemoney', ussd: 'ussd', wallet: 'wallet', cashpickup: 'cashpickup'
+};
+function paymentMethodKey(m) {
+    const k = String(m || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return PAYMENT_METHOD_ALIASES[k] || k;
+}
+
 // Throws Reject for every business-rule failure; returns { promo, discount } when the code can be used.
 async function check(q, body) {
     await ensureSchema(q);
@@ -94,7 +106,8 @@ async function check(q, body) {
     if (restrictions.corridors && restrictions.corridors.length > 0 && !restrictions.corridors.includes(`${n.source}-${n.dest}`)) {
         throw new Reject(400, 'CORRIDOR', 'Code not valid for this corridor', { plain: true });
     }
-    if (restrictions.payment_methods && restrictions.payment_methods.length > 0 && !restrictions.payment_methods.includes(n.paymentMethod)) {
+    if (restrictions.payment_methods && restrictions.payment_methods.length > 0 && n.paymentMethod
+        && !restrictions.payment_methods.some((m) => paymentMethodKey(m) === paymentMethodKey(n.paymentMethod))) {
         throw new Reject(400, 'PAYMENT_METHOD', 'Code not valid for this payment method', { plain: true });
     }
 

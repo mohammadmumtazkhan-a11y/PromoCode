@@ -56,6 +56,20 @@ describe('Promo codes: Mito Admin is the source of truth', () => {
         expect((await validate(code)).body.error).toMatch(/has expired/);
     });
 
+    it('matches payment methods whether written as Mito names or Rhemito ids', async () => {
+        const all = await makePromo({ restrictions: { payment_methods: ['Bank Transfer', 'Card', 'Mobile Money', 'USSD'] } });
+        const code = (await request(app).get('/api/promocodes')).body.data.find((p) => p.id === all.body.id).code;
+        for (const m of ['bank_deposit', 'instant_bank', 'manual_transfer', 'card', 'mobile_money']) {
+            expect((await validate(code, { paymentMethod: m })).status).toBe(200);
+        }
+        expect((await validate(code, { paymentMethod: 'wallet' })).body.error).toMatch(/payment method/);
+        expect((await validate(code, { paymentMethod: undefined })).status).toBe(200); // not chosen yet
+        const cardOnly = await makePromo({ restrictions: { payment_methods: ['Card'] } });
+        const c2 = (await request(app).get('/api/promocodes')).body.data.find((p) => p.id === cardOnly.body.id).code;
+        expect((await validate(c2, { paymentMethod: 'bank_deposit' })).body.error).toMatch(/payment method/);
+        expect((await validate(c2, { paymentMethod: 'card' })).status).toBe(200);
+    });
+
     it('computes a percentage discount off the fee with a cap, and a fee waiver', async () => {
         const pct = await makePromo({ type: 'Percentage', value: 50, max_discount: 2 });
         const waiver = await makePromo({ type: 'Waiver', value: 100 });
