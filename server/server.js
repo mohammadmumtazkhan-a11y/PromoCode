@@ -453,8 +453,11 @@ app.get('/api/promocodes', (req, res) => {
     `;
     db.all(query, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
+        const now = new Date();
         const processed = rows.map(r => ({
             ...r,
+            // A code whose end date has passed is shown as Expired, not Active (customers cannot use it).
+            status: r.status === 'Active' && r.end_date && new Date(r.end_date) < now ? 'Expired' : r.status,
             restrictions: JSON.parse(r.restrictions || '{}'),
             user_segment: r.user_segment ? JSON.parse(r.user_segment) : { type: 'all' },
             user_segment_criteria: r.user_segment_criteria ? JSON.parse(r.user_segment_criteria) : {}
@@ -518,6 +521,47 @@ app.post('/api/promocodes', (req, res) => {
         }
     );
     stmt.finalize();
+});
+
+// Edit a promo code. Only a code that has never been used can be changed.
+app.put('/api/promocodes/:id', (req, res) => {
+    const id = req.params.id;
+    db.get('SELECT * FROM promo_codes WHERE id = ?', [id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: 'Promo code not found' });
+        db.get('SELECT COUNT(*) AS n FROM promo_redemptions WHERE promo_code_id = ?', [String(id)], (err2, r) => {
+            if (err2) return res.status(500).json({ error: err2.message });
+            if ((row.usage_count || 0) > 0 || (r && r.n > 0)) {
+                return res.status(409).json({ error: 'This code has already been used, so it cannot be edited. Create a new code instead.' });
+            }
+            const b = req.body || {};
+            if (!b.code || !b.type || !b.start_date || !b.end_date || (b.type !== 'Waiver' && !b.value)) {
+                return res.status(400).json({ error: 'Missing required fields' });
+            }
+            if (new Date(b.start_date) >= new Date(b.end_date)) {
+                return res.status(400).json({ error: 'Start date must be before end date' });
+            }
+            const num = (v, isInt = false) => {
+                if (v === '' || v === null || v === undefined) return null;
+                const n = isInt ? parseInt(v) : parseFloat(v);
+                return Number.isNaN(n) ? null : n;
+            };
+            db.run(`UPDATE promo_codes SET code = ?, type = ?, value = ?, min_threshold = ?, max_discount = ?, currency = ?,
+                    usage_limit_global = ?, usage_limit_per_user = ?, budget_limit = ?, start_date = ?, end_date = ?,
+                    restrictions = ?, user_segment = ?, user_segment_criteria = ? WHERE id = ?`,
+                [String(b.code).toUpperCase(), b.type, num(b.value) || 0, num(b.min_threshold) || 0, num(b.max_discount), b.currency || null,
+                    num(b.usage_limit_global, true) || -1, num(b.usage_limit_per_user, true) || 1, num(b.budget_limit) || -1,
+                    b.start_date, b.end_date, JSON.stringify(b.restrictions || {}),
+                    JSON.stringify(b.user_segment || { type: 'all' }), JSON.stringify(b.user_segment_criteria || {}), id],
+                function (e3) {
+                    if (e3) {
+                        if (String(e3.message).includes('UNIQUE')) return res.status(409).json({ error: 'Promo code already exists' });
+                        return res.status(500).json({ error: e3.message });
+                    }
+                    res.json({ success: true, id });
+                });
+        });
+    });
 });
 
 // 3. Bulk Generate Codes (Story 1.3)

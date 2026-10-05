@@ -6,6 +6,7 @@ const PromoCodes = () => {
     const [promos, setPromos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [editingPromo, setEditingPromo] = useState(null); // a code that has not been used yet
     const [showDistributeModal, setShowDistributeModal] = useState(false);
     const [selectedPromo, setSelectedPromo] = useState(null);
 
@@ -67,7 +68,7 @@ const PromoCodes = () => {
                                     <th style={{ width: 100, textAlign: 'center' }}>Usage</th>
                                     <th style={{ width: 110, textAlign: 'center' }}>Period</th>
                                     <th style={{ width: 80, textAlign: 'center' }}>Status</th>
-                                    <th style={{ width: 110, textAlign: 'center' }}>Actions</th>
+                                    <th style={{ width: 150, textAlign: 'center' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -114,6 +115,19 @@ const PromoCodes = () => {
                                             })()}
                                         </td>
                                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            {(promo.usage_count || 0) === 0 && (
+                                                <button
+                                                    className="btn-primary"
+                                                    style={{ padding: '4px 10px', fontSize: '0.7rem', background: '#2563eb', boxShadow: 'none', marginRight: 6 }}
+                                                    title="Only codes that have not been used can be edited"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditingPromo(promo);
+                                                    }}
+                                                >
+                                                    Edit
+                                                </button>
+                                            )}
                                             <button
                                                 className="btn-primary"
                                                 style={{
@@ -140,6 +154,14 @@ const PromoCodes = () => {
             {showCreateModal && (
                 <CreatePromoModal
                     onClose={() => setShowCreateModal(false)}
+                    onSuccess={fetchPromos}
+                />
+            )}
+
+            {editingPromo && (
+                <CreatePromoModal
+                    promo={editingPromo}
+                    onClose={() => setEditingPromo(null)}
                     onSuccess={fetchPromos}
                 />
             )}

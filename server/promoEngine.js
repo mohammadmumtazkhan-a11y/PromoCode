@@ -74,9 +74,9 @@ async function check(q, body) {
     if (!promo) throw new Reject(404, 'INVALID_CODE', 'Invalid promo code', { plain: true });
 
     const now = new Date();
-    if (promo.status !== 'Active' || new Date(promo.start_date) > now || new Date(promo.end_date) < now) {
-        throw new Reject(400, 'INACTIVE', 'Promo code expired or inactive', { plain: true });
-    }
+    if (promo.status !== 'Active') throw new Reject(400, 'INACTIVE', 'This promo code is not active.', { plain: true });
+    if (new Date(promo.start_date) > now) throw new Reject(400, 'INACTIVE', 'This promo code is not valid yet.', { plain: true });
+    if (new Date(promo.end_date) < now) throw new Reject(400, 'INACTIVE', 'This promo code has expired.', { plain: true });
     if (promo.usage_limit_global !== -1 && promo.usage_count >= promo.usage_limit_global) {
         throw new Reject(400, 'FULLY_REDEEMED', 'Promo code fully redeemed (Count Limit)', { plain: true });
     }

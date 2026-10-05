@@ -53,7 +53,7 @@ describe('Promo codes: Mito Admin is the source of truth', () => {
         expect((await validate('NOSUCHCODE')).status).toBe(404);
         const old = await makePromo({ start_date: '2020-01-01T00:00:00Z', end_date: '2020-02-01T00:00:00Z' });
         const code = (await request(app).get('/api/promocodes')).body.data.find((p) => p.id === old.body.id).code;
-        expect((await validate(code)).body.error).toMatch(/expired or inactive/);
+        expect((await validate(code)).body.error).toMatch(/has expired/);
     });
 
     it('computes a percentage discount off the fee with a cap, and a fee waiver', async () => {

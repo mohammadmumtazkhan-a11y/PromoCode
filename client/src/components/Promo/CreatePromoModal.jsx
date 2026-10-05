@@ -1,7 +1,50 @@
 import React, { useState, useEffect } from 'react';
 
-const CreatePromoModal = ({ onClose, onSuccess }) => {
-    const [formData, setFormData] = useState({
+// <input type="datetime-local"> needs "YYYY-MM-DDTHH:mm" in the admin's own time zone.
+// Dates are stored as UTC (ISO with "Z"); older rows saved without a zone are shown as they were typed.
+const toLocalInput = (d) => {
+    if (!d) return '';
+    const t = String(d);
+    if (t.length > 10 && /(Z|[+-]\d\d:?\d\d)$/i.test(t)) {
+        const x = new Date(t);
+        const p = (n) => String(n).padStart(2, '0');
+        return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
+    }
+    return t.length <= 10 ? `${t}T00:00` : t.slice(0, 16);
+};
+
+// What the admin typed is in their own time zone; the server compares against UTC, so send UTC.
+const toUtcIso = (local) => (local ? new Date(local).toISOString() : local);
+
+// Fill the form from an existing promo code (edit mode).
+const withPromo = (defaults, promo) => {
+    if (!promo) return defaults;
+    const r = promo.restrictions || {};
+    return {
+        ...defaults,
+        code: promo.code,
+        type: promo.type,
+        value: promo.value ?? '',
+        min_threshold: promo.min_threshold || '',
+        max_discount: promo.max_discount ?? '',
+        currency: promo.currency || defaults.currency,
+        usage_limit_global: promo.usage_limit_global === -1 ? '' : promo.usage_limit_global,
+        budget_limit: promo.budget_limit === -1 ? '' : promo.budget_limit,
+        usage_limit_per_user: promo.usage_limit_per_user,
+        start_date: toLocalInput(promo.start_date),
+        end_date: toLocalInput(promo.end_date),
+        corridors: r.corridors || [],
+        payment_methods: r.payment_methods || [],
+        affiliates: r.affiliates || [],
+        user_segment: promo.user_segment || defaults.user_segment,
+        user_segment_criteria: { ...defaults.user_segment_criteria, ...(promo.user_segment_criteria || {}) }
+    };
+};
+
+// Pass `promo` to edit a code that has not been used yet; leave it out to create a new one.
+const CreatePromoModal = ({ onClose, onSuccess, promo = null }) => {
+    const editing = !!promo;
+    const [formData, setFormData] = useState(() => withPromo({
         code: '',
         type: 'Fixed',
         value: '',
@@ -18,12 +61,12 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
         affiliates: [], // 'Global Tech'
         user_segment: { type: 'all' },
         user_segment_criteria: { max_tx: 0, churn_days: 90 }
-    });
+    }, promo));
 
     // UI States for toggling restrictions
-    const [restrictCorridors, setRestrictCorridors] = useState(false);
-    const [restrictAffiliates, setRestrictAffiliates] = useState(false);
-    const [restrictPaymentMethods, setRestrictPaymentMethods] = useState(false); // Optional, but consistent
+    const [restrictCorridors, setRestrictCorridors] = useState(!!(promo?.restrictions?.corridors?.length));
+    const [restrictAffiliates, setRestrictAffiliates] = useState(!!(promo?.restrictions?.affiliates?.length));
+    const [restrictPaymentMethods, setRestrictPaymentMethods] = useState(!!(promo?.restrictions?.payment_methods?.length)); // Optional, but consistent
     const [availableSegments, setAvailableSegments] = useState([]);
 
     useEffect(() => {
@@ -48,6 +91,8 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
         try {
             const payload = {
                 ...formData,
+                start_date: toUtcIso(formData.start_date),
+                end_date: toUtcIso(formData.end_date),
                 value: parseFloat(formData.value),
                 min_threshold: parseFloat(formData.min_threshold) || 0,
                 max_discount: parseFloat(formData.max_discount),
@@ -63,8 +108,8 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
                 user_segment_criteria: formData.user_segment_criteria // Add user_segment_criteria to payload
             };
 
-            const res = await fetch('/api/promocodes', {
-                method: 'POST',
+            const res = await fetch(editing ? `/api/promocodes/${promo.id}` : '/api/promocodes', {
+                method: editing ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
@@ -74,7 +119,7 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
                 onSuccess();
                 onClose();
             } else {
-                alert(data.error || 'Failed to create promo code');
+                alert(data.error || (editing ? 'Failed to update promo code' : 'Failed to create promo code'));
             }
         } catch (err) {
             console.error(err);
@@ -89,7 +134,7 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
         }}>
             <div className="glass-panel" style={{ width: '600px', maxHeight: '90vh', overflowY: 'auto', padding: 32, background: 'white' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-                    <h2 style={{ margin: 0 }}>Create Promo Code</h2>
+                    <h2 style={{ margin: 0 }}>{editing ? 'Edit Promo Code' : 'Create Promo Code'}</h2>
                     <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
                 </div>
 
@@ -291,7 +336,7 @@ const CreatePromoModal = ({ onClose, onSuccess }) => {
                     </div>
 
                     <div style={{ marginTop: 16 }}>
-                        <button type="submit" className="btn-primary" style={{ width: '100%' }}>Create Promo Code</button>
+                        <button type="submit" className="btn-primary" style={{ width: '100%' }}>{editing ? 'Save Changes' : 'Create Promo Code'}</button>
                     </div>
                 </form>
             </div >
