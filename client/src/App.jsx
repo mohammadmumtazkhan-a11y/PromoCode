@@ -11,6 +11,7 @@ import ReferralPerformance from './pages/Growth/ReferralPerformance';
 import ReferralTracking from './pages/Growth/ReferralTracking';
 import UserCreditLedger from './pages/Growth/UserCreditLedger';
 import BonusSchemeManager from './pages/Growth/BonusSchemeManager';
+import BonusBlocks from './pages/Growth/BonusBlocks';
 const Sidebar = ({ isOpen, onClose }) => {
 
   const location = useLocation();
@@ -55,14 +56,11 @@ const Sidebar = ({ isOpen, onClose }) => {
           <span>🏠</span> Dashboard
         </Link>
 
-        {/* Financials Section */}
+        {/* Growth Engine Section */}
         <div style={{ ...itemStyle(false), flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0, border: '1px solid #ffedd5', overflow: 'hidden' }}>
-          {/* Header for Group */}
-          <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderBottom: '1px solid #fff7ed' }}>
-            <span>💵</span> Financials
+          <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #fff7ed' }}>
+            <span>🚀</span> Growth Engine
           </div>
-
-          {/* Subitems */}
           <div style={{ background: '#fff7ed', padding: '8px 0' }}>
             <Link to="/financials/promocodes" style={{
               display: 'block', padding: '8px 16px 8px 48px',
@@ -71,15 +69,6 @@ const Sidebar = ({ isOpen, onClose }) => {
             }}>
               Promo Codes
             </Link>
-          </div>
-        </div>
-
-        {/* Growth Engine Section */}
-        <div style={{ ...itemStyle(false), flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: 0, border: '1px solid #ffedd5', overflow: 'hidden', marginTop: 16 }}>
-          <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #fff7ed' }}>
-            <span>🚀</span> Growth Engine
-          </div>
-          <div style={{ background: '#fff7ed', padding: '8px 0' }}>
             <Link to="/growth/referral-settings" style={{
               display: 'block', padding: '8px 16px 8px 48px',
               color: isActive('/growth/referral-settings') ? '#c2410c' : '#4b5563',
@@ -107,6 +96,13 @@ const Sidebar = ({ isOpen, onClose }) => {
               textDecoration: 'none', fontSize: '0.85rem', fontWeight: isActive('/growth/credit-ledger') ? 600 : 400
             }}>
               Bonus Wallet / Ledger
+            </Link>
+            <Link to="/growth/bonus-blocks" style={{
+              display: 'block', padding: '8px 16px 8px 48px',
+              color: isActive('/growth/bonus-blocks') ? '#c2410c' : '#4b5563',
+              textDecoration: 'none', fontSize: '0.85rem', fontWeight: isActive('/growth/bonus-blocks') ? 600 : 400
+            }}>
+              Blocked Customers
             </Link>
             <Link to="/growth/bonus-schemes" style={{
               display: 'block', padding: '8px 16px 8px 48px',
@@ -374,6 +370,7 @@ function App() {
           <Route path="/growth/referral-performance" element={<ReferralPerformance />} />
           <Route path="/growth/referral-tracking" element={<ReferralTracking />} />
           <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
+          <Route path="/growth/bonus-blocks" element={<BonusBlocks />} />
           <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
 
           {/* Administration */}

@@ -26,5 +26,7 @@ echo.
 echo App will be available at: http://localhost:5000
 echo.
 
+rem Local run only: skip the admin access-token check (ignored when NODE_ENV=production)
+set ADMIN_AUTH_DISABLED=true
 call npm start
 pause

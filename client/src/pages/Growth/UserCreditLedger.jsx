@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { formatMoney, corridorLabel, formatUkDate } from './referralUtils';
 import ColHead from './ColHead';
 import './referral.css';
@@ -45,6 +45,7 @@ const UserCreditLedger = () => {
         schemeId: searchParams.get('schemeId') || '',
         customerId: searchParams.get('customerId') || ''
     });
+    const [bonusBlock, setBonusBlock] = useState(null);
     const [customerInput, setCustomerInput] = useState(searchParams.get('customerId') || '');
 
     // Phase 3: FRD Adjustment Form
@@ -67,6 +68,13 @@ const UserCreditLedger = () => {
             setReferralRules(ruleData.data || []);
         }).catch(err => console.error(err));
     }, []);
+
+    // Show why a customer's bonus is blocked, right where the admin looks at their wallet
+    useEffect(() => {
+        setBonusBlock(null);
+        if (!filters.customerId) return;
+        fetch(`/api/bonus-blocks/${encodeURIComponent(filters.customerId)}`).then(r => r.json()).then(d => setBonusBlock(d.block || null)).catch(() => {});
+    }, [filters.customerId]);
 
     // Auto-fetch Global Ledger on mount and filter change
     const fetchLedger = async () => {
@@ -200,6 +208,13 @@ const UserCreditLedger = () => {
         <div style={{ padding: 32, maxWidth: 1200, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
             <h2 style={{ fontSize: '1.75rem', fontWeight: 600, marginBottom: 8 }}>User Credit Ledger</h2>
             <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>View balances and audit history for user bonus wallets</p>
+
+            {bonusBlock && (
+                <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: 8, padding: '12px 16px', marginBottom: 16, fontSize: '0.9rem' }}>
+                    <strong>Bonus blocked for {bonusBlock.customer_id}.</strong> {bonusBlock.reason}{' '}
+                    <Link to="/growth/bonus-blocks" style={{ color: '#991b1b', fontWeight: 600 }}>Review and approve</Link>
+                </div>
+            )}
 
             {/* Global ONLY View - No Search Bar */}
 

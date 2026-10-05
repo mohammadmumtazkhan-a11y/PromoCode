@@ -5,6 +5,7 @@ import StatusPill from './StatusPill';
 import ColHead from './ColHead';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
+import { adminHeaders, getAdminToken, setAdminToken } from '../../lib/adminAuth';
 import './referral.css';
 
 const STATUSES = ['REGISTERED', 'PENDING', 'REWARDED', 'EXPIRED', 'NOT_ELIGIBLE', 'REVERSED'];
@@ -55,6 +56,8 @@ const ReferralTracking = () => {
     const [approve, setApprove] = useState(null);
     const [reason, setReason] = useState('');
     const [reasonError, setReasonError] = useState('');
+    const [token, setToken] = useState(getAdminToken());
+    const [tokenError, setTokenError] = useState('');
     const { toasts, push, dismiss } = useToasts();
 
     const filters = Object.fromEntries(['status', 'status_group', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q', 'page'].map((k) => [k, params.get(k) || '']));
@@ -95,11 +98,17 @@ const ReferralTracking = () => {
     const submitApproval = async () => {
         const text = reason.trim();
         if (text.length < 10 || text.length > 250) { setReasonError('Enter a reason of 10–250 characters.'); return; }
+        setAdminToken(token);
         try {
             const res = await fetch(`/api/referral/referrals/${approve.id}/approve`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: text, admin_user: 'Admin' }),
+                method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ reason: text }),
             });
             const data = await res.json().catch(() => ({}));
+            if (res.status === 401 || res.status === 403) {
+                if (res.status === 401) setAdminToken('');
+                setTokenError(data.message || 'Only a Growth Manager can approve rewards.');
+                return;
+            }
             if (!res.ok) throw new Error(data.message);
             push(`Reward approved for referral ${approve.id}.`);
             setApprove(null);
@@ -245,6 +254,12 @@ const ReferralTracking = () => {
                     <textarea id="rt-reason" className={`rf-input${reasonError ? ' rf-invalid' : ''}`} rows={3} maxLength={250} value={reason}
                         onChange={(e) => { setReason(e.target.value); setReasonError(''); }} placeholder="Why should this referral be rewarded?" />
                     {reasonError ? <div className="rf-error">{reasonError}</div> : <div className="rf-hint">{reason.trim().length}/250 characters (minimum 10)</div>}
+                </div>
+                <div className="rf-field" style={{ marginBottom: 12 }}>
+                    <label htmlFor="rt-token">Access token</label>
+                    <input id="rt-token" type="password" autoComplete="off" className={`rf-input${tokenError ? ' rf-invalid' : ''}`} value={token}
+                        onChange={(e) => { setToken(e.target.value); setTokenError(''); }} placeholder="Your Growth Manager access token" />
+                    {tokenError ? <div className="rf-error">{tokenError}</div> : <div className="rf-hint">Approvals are limited to the Growth Manager role. Your name is recorded from this token.</div>}
                 </div>
             </ConfirmDialog>
         </div>

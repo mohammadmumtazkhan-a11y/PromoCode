@@ -1,6 +1,6 @@
 @echo off
 echo Starting Mito Admin Portal...
-start cmd /k "cd server && npm start"
+start cmd /k "cd server && set ADMIN_AUTH_DISABLED=true&& npm start"
 start cmd /k "cd client && npm run dev"
 echo Application started.
 echo Backend: http://localhost:5000

@@ -3,6 +3,9 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const bonusEngine = require('./bonusEngine');
+const promoEngine = require('./promoEngine');
+const bonusBlocks = require('./bonusBlocks');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -66,6 +69,20 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
         initializeDatabase();
     }
 });
+
+// Promise wrapper over the sqlite connection, used by the bonus and promo engines
+const dbq = {
+    run: (sql, params = []) => new Promise((res, rej) => db.run(sql, params, function (err) { err ? rej(err) : res(this); })),
+    get: (sql, params = []) => new Promise((res, rej) => db.get(sql, params, (err, row) => (err ? rej(err) : res(row)))),
+    all: (sql, params = []) => new Promise((res, rej) => db.all(sql, params, (err, rows) => (err ? rej(err) : res(rows || [])))),
+};
+
+// Business-rule refusals keep their status and code; anything else is a 500
+function sendEngineError(res, err) {
+    if (err instanceof bonusEngine.Reject) return res.status(err.status).json(err.body());
+    console.error('[engine]', err);
+    return res.status(500).json({ error: err.message });
+}
 
 function initializeDatabase() {
     db.serialize(() => {
@@ -190,6 +207,8 @@ function initializeDatabase() {
             user_segment_criteria TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )`, () => {
+            // Demo codes are for local development only – production promo codes are created in the admin UI
+            if (process.env.NODE_ENV === 'production') return;
             const pStmt = db.prepare(`INSERT OR IGNORE INTO promo_codes 
                 (code, type, value, min_threshold, currency, usage_limit_global, usage_count, start_date, end_date, status, restrictions) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -546,58 +565,31 @@ app.put('/api/promocodes/:id/status', (req, res) => {
 });
 
 // 5. User Journey: Validate Code (Story 3.1)
-app.post('/api/promocodes/validate', (req, res) => {
-    const { code, amount, currency, userId, source_currency, dest_currency, payment_method } = req.body;
+// Production promo validation lives here. Rhemito forwards the customer's code to this endpoint.
+app.post('/api/promocodes/validate', async (req, res) => {
+    try {
+        res.json(await promoEngine.validate(dbq, req.body || {}));
+    } catch (err) {
+        sendEngineError(res, err);
+    }
+});
 
-    db.get("SELECT * FROM promo_codes WHERE code = ?", [code.toUpperCase()], (err, promo) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!promo) return res.status(404).json({ error: "Invalid promo code" });
+// 5c. Give a code use back when its transfer is cancelled or refunded (also done automatically by transfer events)
+app.post('/api/promocodes/release', async (req, res) => {
+    try {
+        res.json(await promoEngine.release(dbq, req.body || {}));
+    } catch (err) {
+        sendEngineError(res, err);
+    }
+});
 
-        const now = new Date();
-        if (promo.status !== 'Active' || new Date(promo.start_date) > now || new Date(promo.end_date) < now) {
-            return res.status(400).json({ error: "Promo code expired or inactive" });
-        }
-
-        // Global Cap (Count)
-        if (promo.usage_limit_global !== -1 && promo.usage_count >= promo.usage_limit_global) {
-            return res.status(400).json({ error: "Promo code fully redeemed (Count Limit)" });
-        }
-
-        // Global Cap (Budget)
-        if (promo.budget_limit !== -1 && promo.total_discount_utilized >= promo.budget_limit) {
-            return res.status(400).json({ error: "Promo code fully redeemed (Budget Limit)" });
-        }
-
-        // Threshold
-        if (amount < promo.min_threshold) {
-            return res.status(400).json({ error: `Transfer amount too low (Min: ${promo.min_threshold})` });
-        }
-
-        const restrictions = JSON.parse(promo.restrictions || '{}');
-        const userSeg = promo.user_segment ? JSON.parse(promo.user_segment) : { type: 'all' };
-        const userCrit = promo.user_segment_criteria ? JSON.parse(promo.user_segment_criteria) : {};
-
-        // Validations...
-        if (restrictions.corridors?.length > 0) {
-            const corridorKey = `${source_currency}-${dest_currency}`;
-            if (!restrictions.corridors.includes(corridorKey)) {
-                return res.status(400).json({ error: "Code not valid for this corridor" });
-            }
-        }
-
-        if (restrictions.payment_methods?.length > 0) {
-            if (!restrictions.payment_methods.includes(payment_method)) {
-                return res.status(400).json({ error: "Code not valid for this payment method" });
-            }
-        }
-
-        // Continue validation...
-        res.json({
-            valid: true,
-            promo: promo,
-            display_text: "Code Valid"
-        });
-    });
+// 5b. Redeem a code when the transfer is paid. The discount is recomputed server-side and recorded once per transfer.
+app.post('/api/promocodes/redeem', async (req, res) => {
+    try {
+        res.json(await promoEngine.redeem(dbq, req.body || {}));
+    } catch (err) {
+        sendEngineError(res, err);
+    }
 });
 
 // 6. User Journey: Apply/Lock Code
@@ -756,7 +748,32 @@ app.post('/api/promocodes/distribute', (req, res) => {
 // --- Referral & Bonus engine (rules, referrals, wallet, reporting) ---
 // See server/referral.js and Docs/Requirements/referral-and-bonus-user-stories.md
 const { registerReferralRoutes } = require('./referral');
-registerReferralRoutes(app, db);
+bonusBlocks.registerBonusBlockRoutes(app, dbq);
+registerReferralRoutes(app, db, {
+    // A completed transfer may also earn loyalty / threshold bonuses; failures here must never fail the transfer event
+    afterTransferEvent: async (ev) => {
+        const status = String(ev.status || '').toUpperCase();
+        // Cancelled, failed or refunded: take back scheme bonuses the transfer earned and release its promo code use
+        if (['CANCELLED', 'FAILED', 'REFUNDED', 'RECALLED', 'CHARGEBACK'].includes(status)) {
+            try {
+                await promoEngine.release(dbq, { transaction_id: ev.transfer_id });
+                return (await bonusEngine.reverseEvent(dbq, ev.transfer_id, status)).map((r) => ({ ...r, status: 'REVERSED' }));
+            } catch (err) {
+                console.error('[bonus] could not reverse bonuses for transfer', ev.transfer_id, err.message);
+                return [];
+            }
+        }
+        if (status !== 'COMPLETED') return [];
+        try {
+            return await bonusEngine.triggerEvent(dbq, {
+                type: 'TRANSFER_COMPLETED', customer_id: ev.customer_id, event_id: ev.transfer_id, amount: Number(ev.amount), currency: ev.currency,
+            });
+        } catch (err) {
+            console.error('[bonus] could not evaluate bonus schemes for transfer', ev.transfer_id, err.message);
+            return [];
+        }
+    },
+});
 
 // --- Phase 1: Bonus Scheme Configuration API (FRD) ---
 
@@ -1162,337 +1179,31 @@ app.post('/api/credits/manual', (req, res) => {
 });
 
 // 3. Award Bonus Credit (with One-Time & Expiry Rules) - Phase 4: FRD
-app.post('/api/credits/award-bonus', (req, res) => {
-    const { user_id, scheme_id, transaction_id, admin_user, idempotency_key } = req.body;
-
-    if (!user_id || !scheme_id) {
-        return res.status(400).json({ error: "user_id and scheme_id are required" });
+// All eligibility rules (dates, currency, thresholds, loyalty counts, segments, one-time) are enforced in bonusEngine.js.
+app.post('/api/credits/award-bonus', async (req, res) => {
+    try {
+        res.json(await bonusEngine.awardScheme(dbq, req.body || {}));
+    } catch (err) {
+        sendEngineError(res, err);
     }
+});
 
-    // Phase 4: Idempotency Check (FRD Section 4.2)
-    if (idempotency_key) {
-        const checkIdemStmt = db.prepare("SELECT * FROM credit_ledger WHERE reference_id = ?");
-        checkIdemStmt.get([`idem_${idempotency_key}`], (err, existing) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (existing) {
-                return res.json({
-                    success: true,
-                    id: existing.id,
-                    amount: existing.amount,
-                    idempotent: true,
-                    message: "Bonus already awarded (Idempotent)"
-                });
-            }
-            // Not found, proceed
-            processAwarding(idempotency_key);
+// 3b. Rhemito reports an activity that can earn a non-referral bonus (money request paid).
+// Completed transfers reach the same engine through /api/referral/transfer-events.
+app.post('/api/bonus/events', async (req, res) => {
+    try {
+        const b = req.body || {};
+        if (b.type === 'MONEY_REQUEST_REFUNDED') {
+            // A paid money request was refunded: take back the unused part of the bonus it earned
+            if (!b.event_id) return res.status(400).json({ error: 'VALIDATION', message: 'event_id is required.' });
+            return res.json({ awards: (await bonusEngine.reverseEvent(dbq, b.event_id, 'REFUNDED')).map((r) => ({ ...r, status: 'REVERSED' })) });
+        }
+        const awards = await bonusEngine.triggerEvent(dbq, {
+            type: b.type, customer_id: b.customer_id, event_id: b.event_id, amount: b.amount, currency: b.currency,
         });
-        checkIdemStmt.finalize();
-    } else {
-        processAwarding(null);
-    }
-
-    function processAwarding(idemKey) {
-        // Get scheme details
-        db.get("SELECT * FROM bonus_schemes WHERE id = ?", [scheme_id], (err, scheme) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!scheme) return res.status(404).json({ error: "Bonus scheme not found" });
-
-            // 1. Status Check
-            if (scheme.status !== 'ACTIVE') {
-                return res.status(400).json({
-                    error: "SCHEME_INACTIVE",
-                    message: `Bonus scheme "${scheme.name}" is not active (status: ${scheme.status})`
-                });
-            }
-
-            // 2. Date Validity Check (Strict Parsing)
-            const now = new Date();
-            const todayStr = now.toISOString().split('T')[0];
-
-            // Check Start Date
-            if (scheme.start_date && todayStr < scheme.start_date) {
-                return res.status(400).json({
-                    error: "SCHEME_NOT_STARTED",
-                    message: `Bonus scheme "${scheme.name}" has not started yet (starts ${scheme.start_date})`
-                });
-            }
-
-            // Check End Date
-            if (scheme.end_date && todayStr > scheme.end_date) {
-                return res.status(400).json({
-                    error: "SCHEME_EXPIRED",
-                    message: `Bonus scheme "${scheme.name}" expired on ${scheme.end_date}`
-                });
-            }
-
-            // 3. Eligibility Rules
-            const rules = JSON.parse(scheme.eligibility_rules || '{}');
-
-            // 3a. Segment Check
-            if (rules.segments && Array.isArray(rules.segments) && rules.segments.length > 0 && !rules.segments.includes('all')) {
-                // Verify against first segment (FRD implies one segment per rule usually, or ANY?)
-                // Assuming ANY match is sufficient or ALL? UI allows single selection usually.
-                // We will check all listed segments. If user matches ANY, they are eligible.
-                // If the list is inclusive.
-
-                const segmentIds = rules.segments;
-
-                // Helper to check a single segment - wrapped in Promise
-                const verifySegment = (segId) => {
-                    return new Promise((resolve, reject) => {
-                        db.get("SELECT * FROM user_segments WHERE id = ?", [segId], (err, segment) => {
-                            if (err) return reject(err);
-                            if (!segment) return resolve(false); // Segment doesn't exist? Fail.
-
-                            const criteria = JSON.parse(segment.criteria || '{}');
-
-                            // 1. Check User/Merchant Created At (Registration Date)
-                            // Note: `user_id` passed to this endpoint corresponds to `merchants.mito_id` or `id`?
-                            // Based on test usage 'user_test_fixed_1', it seems to be an arbitrary ID string.
-                            // In real usages, it should match `merchants.id` or `merchants.mito_id`.
-                            // Let's assume `user_id` matches `merchants.id` for joining.
-                            db.get("SELECT created_at FROM merchants WHERE id = ?", [user_id], (err, merchant) => {
-                                // If merchant not found, we can't verify registration date.
-                                // If strict, fail. If relaxed, ignore?
-                                // Let's proceed if merchant exists.
-
-                                if (criteria.signup_start_date || criteria.signup_end_date) {
-                                    if (!merchant || !merchant.created_at) {
-                                        // If we can't verify date, assume fail if date criteria exists
-                                        return resolve(false);
-                                    }
-                                    const signupDate = new Date(merchant.created_at);
-
-                                    if (criteria.signup_start_date && signupDate < new Date(criteria.signup_start_date)) {
-                                        return resolve(false);
-                                    }
-                                    if (criteria.signup_end_date && signupDate > new Date(criteria.signup_end_date)) {
-                                        return resolve(false);
-                                    }
-                                }
-
-                                // If type is NEW_USER, we strictly check date and ignore transactions (or ensure count is 0 if implied? "New User" usually implies just date.)
-                                // The user asked for "New User" option strictly.
-                                if (criteria.type === 'NEW_USER') {
-                                    // If we passed the date check above (which returns false if fail), we are good.
-                                    // But wait, the date check above returns `resolve(false)` on failure, but doesn't return `resolve(true)` on pass.
-                                    // It falls through to transaction query.
-
-                                    // Update: User requested transaction filter for NEW_USER as well.
-                                    // So we simply fall through to the transaction query below.
-                                    // No short-circuit.
-                                    // return resolve(true);
-                                }
-
-                                // 2. Query Transactions
-                                // Note: transactions table uses `merchant_id` to link to user.
-                                let query = "SELECT COUNT(*) as count, SUM(amount_debit_ngn) as volume FROM transactions WHERE merchant_id = ?";
-                                let params = [user_id];
-                                // ... existing transaction query logic ...
-
-
-                                // Date filter for transactions
-                                if (criteria.period_days) {
-                                    const date = new Date();
-                                    date.setDate(date.getDate() - criteria.period_days);
-                                    query += " AND created_at >= ?"; // Note: check transactions schema for created_at vs debit_date
-                                    // Schema said `debit_date`. created_at wasn't listed in PRAGMA for transactions?
-                                    // Wait, PRAGMA output for transactions: id, ref_number, merchant_id, type, amount_debit_ngn, debit_date, status.
-                                    // It MISSES created_at.
-                                    // We should use `debit_date`.
-                                    params.push(date.toISOString());
-                                }
-
-                                // Fix query to use debit_date if created_at missing
-                                if (criteria.period_days) {
-                                    // Re-construct query with correct column
-                                    query = "SELECT COUNT(*) as count, SUM(amount_debit_ngn) as volume FROM transactions WHERE merchant_id = ? AND debit_date >= ?";
-                                }
-
-                                db.get(query, params, (err, stats) => {
-                                    if (err) return reject(err);
-                                    const count = stats.count || 0;
-                                    const volume = stats.volume || 0;
-
-                                    if (criteria.type === 'TRANSACTION_COUNT') {
-                                        if (count >= criteria.min && (criteria.max === null || count <= criteria.max)) {
-                                            return resolve(true);
-                                        }
-                                    } else if (criteria.type === 'TRANSACTION_VOLUME') {
-                                        if (volume >= criteria.min && (criteria.max === null || volume <= criteria.max)) {
-                                            return resolve(true);
-                                        }
-                                    }
-                                    resolve(false);
-                                });
-                            });
-                        });
-                    });
-                };
-
-                // Execute Checks
-                // We need to wait for checks. Since we are in callback hell, let's use async/await wrapper or simple recursive check?
-                // Actually, `processAwarding` is not async.
-                // We must use a callback-based approach or Promise chain.
-                // Refactoring `processAwarding` to be async is easiest.
-                // But `sqlite` driver is callback based.
-                // I'll call a helper function `checkSegments(ids, callback)`.
-
-                checkSegments(segmentIds, (err, isEligible) => {
-                    if (err) return res.status(500).json({ error: err.message });
-                    if (!isEligible) {
-                        return res.status(403).json({
-                            error: "USER_INELIGIBLE",
-                            message: "User does not meet the requirements for this bonus segment."
-                        });
-                    }
-                    // Proceed to next step
-                    checkOneTime();
-                });
-                return; // Stop execution, wait for callback
-            } else {
-                checkOneTime();
-            }
-
-            function checkSegments(ids, cb) {
-                // Check sequentially or parallel. Parallel is fine.
-                let checks = ids.map(id => verifySegment(id)); // verifySegment must be hoisted or defined
-                Promise.all(checks).then(results => {
-                    // If ANY true?
-                    const pass = results.some(r => r === true);
-                    cb(null, pass);
-                }).catch(err => cb(err));
-            }
-
-
-
-            // 3b. One-Time Bonus Rule
-            function checkOneTime() {
-                const isOneTime = rules.oneTimeOnly !== false;
-                // ... logic continues ...
-                doCheckDuplicate();
-            }
-
-            function doCheckDuplicate() {
-                const isOneTime = rules.oneTimeOnly !== false;
-                // ... duplicate code moved here ...
-                if (isOneTime) {
-                    db.get(
-                        "SELECT id, created_at FROM credit_ledger WHERE user_id = ? AND scheme_id = ? AND type = 'EARNED'",
-                        [user_id, scheme_id],
-                        (err, existing) => {
-                            if (err) return res.status(500).json({ error: err.message });
-                            if (existing) {
-                                return res.status(409).json({
-                                    error: "ALREADY_EARNED",
-                                    message: `User has already earned bonus from "${scheme.name}" on ${existing.created_at}. This is a one-time bonus.`
-                                });
-                            }
-                            calculateAndAward();
-                        }
-                    );
-                } else {
-                    calculateAndAward();
-                }
-            }
-
-            function calculateAndAward() {
-                // ... Existing calculation logic ...
-                // Calculate Bonus Amount
-                if (scheme.is_tiered) {
-                    if (!transaction_id) {
-                        return res.status(400).json({ error: "Transaction ID is required for tiered commissions" });
-                    }
-
-                    db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
-                        if (err) return res.status(500).json({ error: err.message });
-                        if (!txn) return res.status(404).json({ error: "Transaction not found for tiered calculation" });
-
-                        const amount = txn.amount_debit_ngn;
-                        const tiers = JSON.parse(scheme.tiers || '[]');
-                        let bonusAmount = 0;
-
-                        const matchedTier = tiers.find(t => {
-                            const min = parseFloat(t.min);
-                            const max = t.max ? parseFloat(t.max) : Infinity;
-                            return amount >= min && amount <= max;
-                        });
-
-                        if (matchedTier) {
-                            if (scheme.commission_type === 'PERCENTAGE') {
-                                bonusAmount = (amount * parseFloat(matchedTier.value)) / 100;
-                            } else {
-                                bonusAmount = parseFloat(matchedTier.value);
-                            }
-                            awardBonus(bonusAmount, idemKey);
-                        } else {
-                            return res.status(400).json({
-                                error: "TIER_MISMATCH",
-                                message: `Transaction amount ${amount} does not match any commission tiers.`
-                            });
-                        }
-                    });
-                } else {
-                    let bonusAmount = scheme.credit_amount;
-                    if (scheme.commission_type === 'PERCENTAGE') {
-                        if (!transaction_id) {
-                            return res.status(400).json({ error: "Transaction ID required for percentage commission" });
-                        }
-
-                        db.get("SELECT amount_debit_ngn FROM transactions WHERE id = ?", [transaction_id], (err, txn) => {
-                            if (err) return res.status(500).json({ error: err.message });
-                            if (!txn) return res.status(404).json({ error: "Transaction not found" });
-
-                            bonusAmount = (txn.amount_debit_ngn * scheme.commission_percentage) / 100;
-                            awardBonus(bonusAmount, idemKey);
-                        });
-                        return;
-                    }
-
-                    awardBonus(scheme.credit_amount, idemKey);
-                }
-            }
-
-            function awardBonus(finalAmount, key) {
-                // ... (Keep existing awardBonus logic) ...
-                const id = 'crd_' + Date.now();
-                const expiryDate = new Date();
-                expiryDate.setDate(expiryDate.getDate() + 90);
-                const expires_at = expiryDate.toISOString().split('T')[0];
-
-                const refId = key ? `idem_${key}` : (transaction_id || `bonus_${id}`);
-
-                const stmt = db.prepare(`INSERT INTO credit_ledger 
-                    (id, user_id, amount, type, scheme_id, reference_id, admin_user, expires_at) 
-                    VALUES (?, ?, ?, 'EARNED', ?, ?, ?, ?)`);
-
-                stmt.run(
-                    id,
-                    user_id,
-                    finalAmount,
-                    scheme_id,
-                    refId,
-                    admin_user || 'System',
-                    expires_at,
-                    function (err) {
-                        if (err) {
-                            if (err.message.includes('UNIQUE')) {
-                                return res.status(409).json({ error: "Duplicate bonus award (Reference conflict)" });
-                            }
-                            return res.status(500).json({ error: err.message });
-                        }
-                        res.json({
-                            success: true,
-                            id: id,
-                            amount: finalAmount,
-                            expires_at: expires_at,
-                            scheme_name: scheme.name
-                        });
-                    }
-                );
-                stmt.finalize();
-            }
-        });
+        res.json({ awards });
+    } catch (err) {
+        sendEngineError(res, err);
     }
 });
 

@@ -2,6 +2,9 @@
 // Owns: referral rules, customers' referral codes, referrals, link visits,
 // offer notifications, bonus wallet (on top of credit_ledger) and admin reporting.
 const crypto = require('crypto');
+const { requireRole, ROLES } = require('./auth');
+const debt = require('./bonusDebt');
+const blocks = require('./bonusBlocks');
 
 // ---------- small helpers ----------
 const clock = { now: () => new Date() };
@@ -358,6 +361,7 @@ async function addCredit(q, { userId, amount, currency, reason, referenceId, not
     await q.run(`INSERT INTO credit_ledger (id, user_id, amount, type, reference_id, reason_code, notes, admin_user, expires_at, created_at, currency, referral_id, referral_rule_id)
         VALUES (?, ?, ?, 'EARNED', ?, ?, ?, 'System', ?, ?, ?, ?, ?)`,
     [id, userId, round2(amount), referenceId, reason, notes, expires, nowIso(), currency, referralId || null, ruleId || null]);
+    await debt.settle(q, userId, currency || 'GBP'); // repay any bonus clawback from this new credit
     return id;
 }
 
@@ -376,7 +380,7 @@ async function creditsWithRemaining(q, userId, currency) {
     for (const c of credits) {
         c.remaining = await creditRemaining(q, c);
         const linked = await q.all(`SELECT type, reason_code, amount FROM credit_ledger WHERE source_credit_id = ?`, [c.id]);
-        if (linked.some((l) => l.type === 'VOIDED' && l.reason_code === 'REFERRAL_REVERSAL')) c.status = 'REVERSED';
+        if (linked.some((l) => l.type === 'VOIDED' && ['REFERRAL_REVERSAL', 'SCHEME_REVERSAL'].includes(l.reason_code))) c.status = 'REVERSED';
         else if (linked.some((l) => l.type === 'EXPIRED')) c.status = 'EXPIRED';
         else if (c.remaining <= 0) c.status = 'USED';
         else if (c.remaining < c.amount) c.status = 'PARTLY_USED';
@@ -500,6 +504,17 @@ async function tryAward(q, referral) {
         return q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
     }
 
+    // A customer blocked from earning bonus (too many cancelled / refunded bonus-earning transfers) gets nothing until a Growth Manager approves.
+    // The referral becomes "Not eligible" with the reason, and the existing "Approve reward" step pays it once the admin is satisfied.
+    const blockedParties = [];
+    if (rewardsReferrer && (await blocks.activeBlock(q, r.referrer_id))) blockedParties.push(`referrer ${r.referrer_id}`);
+    if (rewardsReferee && (await blocks.activeBlock(q, r.referee_id))) blockedParties.push(`referee ${r.referee_id}`);
+    if (blockedParties.length) {
+        await q.run(`UPDATE referrals SET status = 'NOT_ELIGIBLE', status_reason = ?, updated_at = ? WHERE id = ?`,
+            [`Bonus blocked for ${blockedParties.join(' and ')} (repeated cancelled or refunded bonus-earning transfers). See Growth > Blocked Customers.`, nowIso(), r.id]);
+        return q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
+    }
+
     const rule = await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [r.rule_id]);
     const notes = [];
     if (referrerEntitled && referrerLate) notes.push('Referrer qualification window ended');
@@ -532,6 +547,8 @@ async function tryAward(q, referral) {
 
 async function voidReferralCredits(q, r) {
     const credits = await q.all(`SELECT * FROM credit_ledger WHERE referral_id = ? AND type = 'EARNED' AND amount > 0`, [r.id]);
+    const lost = {};
+    let currency = null;
     for (const c of credits) {
         const remaining = await creditRemaining(q, c);
         if (remaining > 0) {
@@ -540,6 +557,15 @@ async function voidReferralCredits(q, r) {
                 notes: 'Qualifying transfer reversed – unused referral bonus removed',
             });
         }
+        // Referral bonus the customer already spent becomes a debt repaid from their next bonus (see bonusDebt.js)
+        const clawed = await debt.clawback(q, c, { eventId: r.qualifying_transfer_id, notes: 'Referral bonus already spent – qualifying transfer reversed' });
+        lost[c.user_id] = (lost[c.user_id] || 0) + clawed + (remaining > 0 ? remaining : 0);
+        currency = c.currency;
+    }
+    // The customer who made the reversed transfer (the referee) gets the strike, not the referrer
+    const totalLost = round2(Object.values(lost).reduce((a, b) => a + b, 0));
+    if (totalLost > 0) {
+        await blocks.recordStrike(q, { customerId: r.referee_id, eventId: r.qualifying_transfer_id, kind: 'REFERRAL', outcome: 'REFUNDED', amountLost: totalLost, currency });
     }
 }
 
@@ -781,7 +807,7 @@ const csvEscape = (v) => {
 const toCsv = (headers, rows) => [headers.map((h) => csvEscape(h[0])).join(','), ...rows.map((r) => headers.map((h) => csvEscape(typeof h[1] === 'function' ? h[1](r) : r[h[1]])).join(','))].join('\n');
 
 // ---------- routes ----------
-function registerReferralRoutes(app, db) {
+function registerReferralRoutes(app, db, hooks = {}) {
     const q = promisify(db);
     const ready = initSchema(db).catch((e) => console.error('Referral schema init failed', e));
     const wrap = (fn) => async (req, res) => {
@@ -963,11 +989,16 @@ function registerReferralRoutes(app, db) {
 
     // Transfer lifecycle events from Rhemito (US-4.1, US-4.4, AC-5.2.10)
     app.post('/api/referral/transfer-events', wrap(async (req, res) => {
-        res.json(await handleTransferEvent(q, req.body || {}));
+        const result = await handleTransferEvent(q, req.body || {});
+        // Other bonus schemes (loyalty, threshold) react to the same completed transfer
+        if (hooks.afterTransferEvent) result.bonuses = await hooks.afterTransferEvent(req.body || {});
+        res.json(result);
     }));
 
-    app.post('/api/referral/referrals/:id/approve', wrap(async (req, res) => {
-        const { admin_user, reason } = req.body || {};
+    // Only a Growth Manager may approve a "Not eligible" referral (AC-4.3.5). Name and role come from the access token, not the request body.
+    app.post('/api/referral/referrals/:id/approve', requireRole(ROLES.GROWTH_MANAGER), wrap(async (req, res) => {
+        const { reason } = req.body || {};
+        const admin_user = req.admin.name;
         if (!reason || String(reason).trim().length < 10 || String(reason).trim().length > 250) {
             return res.status(400).json({ error: 'VALIDATION', message: 'Enter a reason of 10–250 characters.' });
         }
@@ -1014,13 +1045,19 @@ function registerReferralRoutes(app, db) {
         for (const c of credits) {
             if (c.remaining > 0 && c.status !== 'EXPIRED' && c.status !== 'REVERSED' && (!c.expires_at || c.expires_at >= today)) bucket(c.currency || 'GBP').available += c.remaining;
         }
+        const debts = await q.all(`SELECT currency, -SUM(amount) AS d FROM credit_ledger WHERE user_id = ? AND type IN ('CLAWBACK', 'CLAWBACK_SETTLED') GROUP BY currency`, [id]);
+        for (const d of debts) if (d.d > 0) bucket(d.currency || 'GBP');
+        const debtOf = (cur) => round2((debts.find((x) => (x.currency || 'GBP') === cur) || { d: 0 }).d);
         const balances = Object.values(byCurrency).map((b) => ({
+            outstanding_debt: debtOf(b.currency),
             currency: b.currency, available: round2(b.available), earned: round2(b.earned), used: round2(b.used), expired: round2(b.expired),
             used_transfer_count: b.used_transfers.size, referral_credit_count: b.referral_credits, other_credit_count: b.other_credits,
         }));
         const promos = await q.all(`SELECT pr.*, pc.code, pc.currency FROM promo_redemptions pr LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code) WHERE pr.user_id = ? ORDER BY pr.created_at DESC`, [id]);
         res.json({
             customer_id: id, balances,
+            // Only the fact, never the reason: the customer is told to contact support (admins see the reason in Blocked Customers)
+            bonus_blocked: !!(await blocks.activeBlock(q, id)),
             unused: credits.filter((c) => c.remaining > 0 && ['UNUSED', 'PARTLY_USED'].includes(c.status)).map((c) => ({
                 id: c.id, source: c.notes, reason_code: c.reason_code, amount: c.amount, remaining: c.remaining, currency: c.currency, earned_on: c.created_at, expires_on: c.expires_at, status: c.status,
             })),

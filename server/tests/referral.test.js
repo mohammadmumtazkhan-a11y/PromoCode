@@ -3,6 +3,12 @@ const express = require('express');
 const sqlite3 = require('sqlite3');
 const { registerReferralRoutes, clock } = require('../referral');
 
+// Admin access tokens (see server/auth.js)
+process.env.ADMIN_USERS = JSON.stringify([
+    { name: 'Grace Growth', role: 'GROWTH_MANAGER', token: 'gm-token' },
+    { name: 'Adam Admin', role: 'ADMIN', token: 'admin-token' },
+]);
+
 // Each test file gets an isolated in-memory database
 function makeApp() {
     const db = new sqlite3.Database(':memory:');
@@ -266,7 +272,7 @@ describe('Referral lifecycle (US-3.1 – US-4.4)', () => {
         expect((await transfer(app, 'CANCELLED')).body.referral.status).toBe('REGISTERED');
     });
 
-    it('voids only the unused part after a reversal (AC-4.4.2, AC-4.4.3)', async () => {
+    it('voids the unused part and turns the spent part into a debt after a reversal (AC-4.4.2, AC-4.4.3)', async () => {
         const app = makeApp();
         await seedReferral(app);
         await transfer(app, 'PAID');
@@ -279,6 +285,24 @@ describe('Referral lifecycle (US-3.1 – US-4.4)', () => {
         expect(a.body.balances[0].used).toBe(3);
         expect(a.body.balances[0].expired).toBe(2);
         expect(a.body.credits[0].status).toBe('REVERSED');
+        expect(a.body.balances[0].outstanding_debt).toBe(3); // the 3 already spent is repaid from the next bonus
+    });
+
+    it('does not pay a blocked customer; the referral becomes Not eligible until a Growth Manager approves it', async () => {
+        const app = makeApp();
+        const blocks = require('../bonusBlocks');
+        const db = app.locals.db;
+        const q = { run: (sql, p = []) => new Promise((res, rej) => db.run(sql, p, function (e) { e ? rej(e) : res(this); })) };
+        await blocks.ensureSchema({ ...q, get: () => null });
+        await q.run(`INSERT INTO bonus_blocks (id, customer_id, status, strikes, reason, blocked_at) VALUES ('bb1', 'B', 'ACTIVE', 3, '3 transfers cancelled or refunded', '2026-10-01T00:00:00Z')`);
+        await seedReferral(app);
+        await transfer(app, 'PAID');
+        const done = await transfer(app, 'COMPLETED');
+        expect(done.body.referral.status).toBe('NOT_ELIGIBLE');
+        expect(done.body.referral.status_reason).toMatch(/Bonus blocked for referee B/);
+        expect((await request(app).get('/api/wallet/B?currency=GBP')).body.balances).toEqual([]);
+        const ok = await request(app).post(`/api/referral/referrals/${done.body.referral.id}/approve`).set('Authorization', 'Bearer gm-token').send({ reason: 'Checked the customer, genuine' });
+        expect(ok.body.data.status).toBe('REWARDED');
     });
 
     it('expires referrals after the qualification window (AC-4.2.1, AC-4.2.2)', async () => {
@@ -423,14 +447,42 @@ describe('Admin reporting (US-1.6, US-1.8)', () => {
         expect((await request(app).get('/api/referral/tracking?status=REWARDED')).body.total).toBe(0);
     });
 
-    it('lets an admin approve a not-eligible referral with a reason (AC-4.3.5)', async () => {
+    it('lets a Growth Manager approve a not-eligible referral with a reason (AC-4.3.5)', async () => {
         const app = makeApp();
         const { referral } = await seedReferral(app, { referee: { device_id: 'dev-a' } });
-        const short = await request(app).post(`/api/referral/referrals/${referral.id}/approve`).send({ reason: 'ok' });
+        const gm = (r) => r.set('Authorization', 'Bearer gm-token');
+        const short = await gm(request(app).post(`/api/referral/referrals/${referral.id}/approve`)).send({ reason: 'ok' });
         expect(short.status).toBe(400);
-        const ok = await request(app).post(`/api/referral/referrals/${referral.id}/approve`).send({ admin_user: 'Jane', reason: 'Shared family device, verified by phone' });
+        const ok = await gm(request(app).post(`/api/referral/referrals/${referral.id}/approve`)).send({ admin_user: 'Jane', reason: 'Shared family device, verified by phone' });
         expect(ok.body.data.status).toBe('REWARDED');
         expect(ok.body.data.referee_credited).toBe(10);
+        // The approver is the person the token belongs to, not whatever the request body claims
+        expect(ok.body.data.approved_by).toBe('Grace Growth');
+    });
+
+    it('refuses approval without a token, with a bad token, or without the Growth Manager role', async () => {
+        const app = makeApp();
+        const { referral } = await seedReferral(app, { referee: { device_id: 'dev-a' } });
+        const url = `/api/referral/referrals/${referral.id}/approve`;
+        const body = { reason: 'Shared family device, verified by phone' };
+        expect((await request(app).post(url).send(body)).status).toBe(401);
+        expect((await request(app).post(url).set('Authorization', 'Bearer nope').send(body)).status).toBe(401);
+        const adminOnly = await request(app).post(url).set('Authorization', 'Bearer admin-token').send(body);
+        expect(adminOnly.status).toBe(403);
+        expect(adminOnly.body.error).toBe('FORBIDDEN_ROLE');
+        const row = await request(app).get('/api/referral/tracking');
+        expect(row.body.data[0].status).toBe('NOT_ELIGIBLE'); // nothing was credited
+    });
+
+    it('fails closed when no admin users are configured', async () => {
+        const saved = process.env.ADMIN_USERS;
+        delete process.env.ADMIN_USERS;
+        try {
+            const app = makeApp();
+            const res = await request(app).post('/api/referral/referrals/R1/approve').set('Authorization', 'Bearer gm-token').send({ reason: 'Shared family device, verified by phone' });
+            expect(res.status).toBe(503);
+            expect(res.body.error).toBe('AUTH_NOT_CONFIGURED');
+        } finally { process.env.ADMIN_USERS = saved; }
     });
 });
 
