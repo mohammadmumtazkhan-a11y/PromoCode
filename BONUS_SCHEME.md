@@ -156,9 +156,10 @@ Promo codes are validated and redeemed only on Mito Admin (`server/promoEngine.j
 
 `ADMIN_USERS=[{"name":"Aisha Bello","role":"GROWTH_MANAGER","token":"<long random string>"},{"name":"Tunde Ade","role":"ADMIN","token":"<another>"}]`
 
-- No token or an unknown token: 401. A token without the role: 403. `ADMIN_USERS` missing: 503 (fails closed).
+- **Prototype mode (default):** when `ADMIN_USERS` is not set, there is no sign-in. Every caller acts as "Demo Growth Manager", so the prototype works without logging in and no setting is needed on Render.
+- Once `ADMIN_USERS` is set, the token check is on: no token or an unknown token gives 401, and a token without the role gives 403.
 - The approver's name is taken from the token.
-- For local development only, set `ADMIN_AUTH_DISABLED=true` to skip the check. It is ignored when `NODE_ENV=production`.
+- `ADMIN_AUTH_DISABLED=true` (local development only) skips the token check even when `ADMIN_USERS` is set. It is ignored when `NODE_ENV=production`.
 
 ## UI behavior (Growth -> Bonus Scheme Manager)
 

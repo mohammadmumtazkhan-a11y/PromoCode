@@ -8,6 +8,10 @@
 //
 // Roles: GROWTH_MANAGER may approve "Not eligible" referral rewards. ADMIN is every other admin.
 //
+// Prototype mode: when ADMIN_USERS is not set (and ADMIN_AUTH_DISABLED is not set) there is no sign-in at all.
+// Every caller is treated as a demo Growth Manager, so the prototype works without logging in. Set ADMIN_USERS
+// to switch the real token check on.
+//
 // Local development: set ADMIN_AUTH_DISABLED=true to skip the token check. The caller is then treated as
 // a GROWTH_MANAGER unless it sends an "X-Admin-Role" header (handy for trying the denied path).
 // This switch is ignored when NODE_ENV is "production", so it cannot be left on by mistake.
@@ -27,10 +31,14 @@ function loadUsers(env = process.env) {
         .map((u) => ({ name: String(u.name), role: ROLES[String(u.role).toUpperCase()], tokenHash: digest(u.token) }));
 }
 
+const DEMO_ADMIN = Object.freeze({ name: 'Demo Growth Manager', role: ROLES.GROWTH_MANAGER, demo: true });
+const prototypeMode = (env = process.env) => loadUsers(env).length === 0 && !devBypass(env);
+
 const devBypass = (env = process.env) => String(env.ADMIN_AUTH_DISABLED).toLowerCase() === 'true' && env.NODE_ENV !== 'production';
 
 // Returns { name, role } for a valid caller, or null.
 function authenticate(req, env = process.env) {
+    if (prototypeMode(env)) return { ...DEMO_ADMIN };
     if (devBypass(env)) {
         const role = ROLES[String(req.get('x-admin-role') || ROLES.GROWTH_MANAGER).toUpperCase()] || ROLES.ADMIN;
         return { name: req.get('x-admin-user') || 'Dev Admin', role, dev: true };
@@ -47,10 +55,6 @@ function authenticate(req, env = process.env) {
 // Express middleware: caller must hold one of the given roles.
 function requireRole(...allowed) {
     return (req, res, next) => {
-        const configured = loadUsers().length > 0 || devBypass();
-        if (!configured) {
-            return res.status(503).json({ error: 'AUTH_NOT_CONFIGURED', message: 'Admin access is not set up on the server yet (ADMIN_USERS).' });
-        }
         const admin = authenticate(req);
         if (!admin) return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Sign in with your admin access token to do this.' });
         if (!allowed.includes(admin.role)) {
