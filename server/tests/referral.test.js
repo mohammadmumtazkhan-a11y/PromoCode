@@ -398,13 +398,13 @@ describe('Bonus wallet (US-5.1 – US-5.4)', () => {
         expect(b.body.balances[0]).toMatchObject({ available: 10, used: 0 });
     });
 
-    it('enforces the minimum send amount to redeem (AC-5.2.6)', async () => {
+    it('has no minimum send amount to use a bonus (the Floor is the only minimum)', async () => {
         const app = makeApp();
-        await seedReferral(app, { rule: { ...GBP_RULE, min_redeem_amount: 20 } });
+        await seedReferral(app, { rule: { ...GBP_RULE, min_redeem_amount: 20 } }); // old field is ignored
         await transfer(app, 'PAID');
         await transfer(app, 'COMPLETED');
         const res = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', transfer_id: 'T6', send_amount: 19.99 });
-        expect(res.body.message).toBe('Send £20.00 or more to use your bonus.');
+        expect(res.status).toBe(200);
     });
 
     it('expires unused credit after its validity (AC-5.4.1)', async () => {
@@ -676,14 +676,4 @@ describe('Corridor rules (send currency → receive currency)', () => {
         expect(csv.text.split('\n')[0]).toContain('Send Currency,Receive Currency');
     });
 
-    it('checks the minimum-to-redeem of the transfer\'s corridor', async () => {
-        const app = makeApp();
-        await request(app).post('/api/referral-rules').send({ ...GBP_RULE, min_redeem_amount: 20 }).expect(201);
-        await request(app).post('/api/referral-rules').send({ ...INR_RULE, min_redeem_amount: 200 }).expect(201);
-        await request(app).post('/api/referral/customers').send({ id: 'B', first_name: 'Sarah', send_currency: 'GBP', kyc_status: 'PASSED' });
-        await new Promise((res) => app.locals.db.run(`INSERT INTO credit_ledger (id, user_id, amount, type, reason_code, currency, expires_at, created_at) VALUES ('c1', 'B', 10, 'EARNED', 'LOYALTY', 'GBP', '2027-01-01', '2026-10-01T00:00:00Z')`, res));
-        const inr = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', receive_currency: 'INR', transfer_id: 'X1', send_amount: 150 });
-        expect(inr.body.message).toBe('Send £200.00 or more to use your bonus.');
-        await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', receive_currency: 'NGN', transfer_id: 'X2', send_amount: 150 }).expect(200);
-    });
 });

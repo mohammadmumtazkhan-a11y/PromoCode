@@ -18,7 +18,7 @@ const EMPTY_FORM = {
     name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP', receive_currency: '',
     referrer_reward: '5', referee_reward: '10', min_transaction_threshold: '50',
     qualification_window_days: '30', bonus_validity_days: '90', max_referrals_per_referrer: '',
-    min_redeem_amount: '', start_date: '', end_date: '', notify: true,
+    start_date: '', end_date: '', notify: true,
 };
 
 const TYPE_LABELS = { BOTH: 'Both Parties', REFERRER: 'Referrer Only', REFEREE: 'Referee Only' };
@@ -174,7 +174,6 @@ const ReferralSettings = () => {
             min_transaction_threshold: String(rule.min_transaction_threshold),
             qualification_window_days: String(rule.qualification_window_days ?? 30), bonus_validity_days: String(rule.bonus_validity_days ?? 90),
             max_referrals_per_referrer: rule.max_referrals_per_referrer ? String(rule.max_referrals_per_referrer) : '',
-            min_redeem_amount: rule.min_redeem_amount ? String(rule.min_redeem_amount) : '',
             start_date: rule.start_date || '', end_date: rule.end_date || '', notify: true,
         });
         setErrors({});
@@ -327,13 +326,7 @@ const ReferralSettings = () => {
                                 value={form.max_referrals_per_referrer} onChange={(e) => set({ max_referrals_per_referrer: e.target.value })} />
                         </Field>
                     </div>
-                    <div className="rf-grid rf-grid-3">
-                        <Field id="rf-min_redeem_amount" label="Minimum Send Amount to Redeem" error={err('min_redeem_amount')} hint="Leave blank for no minimum.">
-                            <div className="rf-affix"><span className="rf-prefix">{sym}</span>
-                                <input {...aria('min_redeem_amount')} className={inputCls('min_redeem_amount')} inputMode="decimal" placeholder="0.00"
-                                    value={form.min_redeem_amount} onChange={(e) => set({ min_redeem_amount: e.target.value })} />
-                            </div>
-                        </Field>
+                    <div className="rf-grid rf-grid-2">
                         <Field id="rf-start_date" label="Start Date" error={err('start_date')} hint="Blank = starts immediately.">
                             <input {...aria('start_date')} type="date" className={inputCls('start_date')} min={editingId ? undefined : ukTodayIso()}
                                 value={form.start_date} onChange={(e) => set({ start_date: e.target.value })} />

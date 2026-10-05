@@ -5,7 +5,7 @@ import { corridorLabel, formatMoney, formatUkDate } from './referralUtils';
 const base = {
     name: 'UK Standard Programme', reward_type: 'BOTH', base_currency: 'GBP', receive_currency: 'NGN', referrer_reward: '5', referee_reward: '10',
     min_transaction_threshold: '50', qualification_window_days: '30', bonus_validity_days: '90',
-    max_referrals_per_referrer: '', min_redeem_amount: '', start_date: '', end_date: '',
+    max_referrals_per_referrer: '', start_date: '', end_date: '',
 };
 const ctx = { isNew: true, rules: [], editingId: null };
 

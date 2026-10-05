@@ -212,9 +212,6 @@ function validateRule(body, { isNew }) {
     if (!blank(body.max_referrals_per_referrer) && !isIntIn(body.max_referrals_per_referrer, 1, 10000)) {
         errors.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
     }
-    if (!blank(body.min_redeem_amount) && (isNaN(Number(body.min_redeem_amount)) || Number(body.min_redeem_amount) < 0 || !decimalsOk(body.min_redeem_amount, currency))) {
-        errors.min_redeem_amount = 'Enter 0 or an amount with up to 2 decimal places.';
-    }
     const today = ukToday();
     const start = blank(body.start_date) ? null : String(body.start_date).slice(0, 10);
     const end = blank(body.end_date) ? null : String(body.end_date).slice(0, 10);
@@ -233,7 +230,7 @@ function validateRule(body, { isNew }) {
         qualification_window_days: Number(qw),
         bonus_validity_days: Number(bv),
         max_referrals_per_referrer: blank(body.max_referrals_per_referrer) ? null : Number(body.max_referrals_per_referrer),
-        min_redeem_amount: blank(body.min_redeem_amount) ? 0 : round2(body.min_redeem_amount),
+        min_redeem_amount: 0, // retired: the Floor is the only minimum amount on a rule
         start_date: start,
         end_date: end,
     };
@@ -242,7 +239,7 @@ function validateRule(body, { isNew }) {
 
 const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'referrer_reward', 'referee_reward',
     'min_transaction_threshold', 'qualification_window_days', 'bonus_validity_days', 'max_referrals_per_referrer',
-    'min_redeem_amount', 'start_date', 'end_date'];
+    'start_date', 'end_date'];
 
 function offerText(rule) {
     const c = rule.base_currency;
@@ -262,7 +259,7 @@ function publicOffer(rule) {
         corridor: corridorLabel(rule.base_currency, rule.receive_currency), reward_type: rule.reward_type,
         referrer_reward: rule.referrer_reward, referee_reward: rule.referee_reward,
         floor: rule.min_transaction_threshold, qualification_window_days: rule.qualification_window_days,
-        bonus_validity_days: rule.bonus_validity_days, min_redeem_amount: rule.min_redeem_amount,
+        bonus_validity_days: rule.bonus_validity_days, min_redeem_amount: 0,
         max_referrals_per_referrer: rule.max_referrals_per_referrer, end_date: rule.end_date,
         text: offerText(rule),
     };
@@ -638,17 +635,7 @@ async function applyBonus(q, customerId, { amount, currency, receive_currency, t
     if (!transfer_id || !(amount > 0)) throw Object.assign(new Error('transfer_id and a positive amount are required'), { status: 400 });
     const already = await q.get(`SELECT id FROM credit_ledger WHERE user_id = ? AND transfer_id = ? AND type = 'APPLIED'`, [customerId, transfer_id]);
     if (already) throw Object.assign(new Error('Bonus has already been applied to this transfer.'), { status: 409, code: 'ALREADY_APPLIED' });
-    // Minimum-to-redeem follows the transfer's corridor. If the caller does not say where the money is going, use the most lenient live rule for the send currency.
-    let rule = receive ? await liveRuleFor(q, currency, receive) : null;
-    if (!rule && !receive) rule = (await liveRulesForSend(q, currency)).sort((a, b) => Number(a.min_redeem_amount || 0) - Number(b.min_redeem_amount || 0))[0] || null;
-    if (!rule) {
-        rule = await q.get(`SELECT * FROM referral_rules WHERE base_currency = ? ${receive ? 'AND (receive_currency = ? OR receive_currency IS NULL)' : ''} ORDER BY is_archived, id DESC LIMIT 1`,
-            receive ? [currency, receive] : [currency]);
-    }
-    const minRedeem = rule ? Number(rule.min_redeem_amount || 0) : 0;
-    if (minRedeem > 0 && Number(send_amount || 0) < minRedeem) {
-        throw Object.assign(new Error(`Send ${money(minRedeem, currency)} or more to use your bonus.`), { status: 400, code: 'BELOW_MIN_REDEEM' });
-    }
+    // There is no minimum send amount to use a bonus: the rule's Floor only decides whether a friend's transfer qualifies.
     if (send_amount !== undefined && amount > Number(send_amount)) throw Object.assign(new Error('Bonus cannot be more than the send amount.'), { status: 400 });
     const today = ukToday();
     const credits = (await creditsWithRemaining(q, customerId, currency)).filter((c) => c.remaining > 0 && (!c.expires_at || c.expires_at >= today) && c.status !== 'EXPIRED');

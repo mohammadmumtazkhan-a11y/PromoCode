@@ -141,7 +141,6 @@ These decisions close the gaps found in the original notes. Each one can be over
 | Qualification Window (days) | Integer | Yes | Whole number from 1 to 365. Default: 30. |
 | Bonus Validity (days) | Integer | Yes | Whole number from 1 to 730. Default: 90. |
 | Max Rewarded Referrals per Referrer | Integer | No | Blank = unlimited; otherwise a whole number from 1 to 10,000. |
-| Minimum Send Amount to Redeem | Decimal | No | Blank or 0 = no minimum; otherwise greater than 0, at most 2 decimal places. |
 | Start Date | Date | No | Today or a later date. Blank = starts immediately. |
 | End Date | Date | No | Must be later than the Start Date (or today, if no Start Date). Blank = no end date. |
 
@@ -1777,7 +1776,6 @@ And the message "We couldn't load your rewards. Please try again." with a "Retry
 ```gherkin
 Given the customer has £5.00 available Bonus Credit in GBP
 And the transfer is sent in GBP
-And the send amount is at least the rule's "Minimum Send Amount to Redeem"
 When the customer reaches step 4 "Payment"
 Then the "Referral Bonus Available" section shall be displayed with "Redeem your £5.00 bonus"
 And neither "Pay Less" nor "Send More" shall be selected by default
@@ -1819,13 +1817,15 @@ When the transfer is sent in EUR
 Then the bonus section shall not be shown
 ```
 
-**AC-5.2.6: Below the minimum send amount to redeem**
+**AC-5.2.6: No minimum send amount to redeem**
 
 ```gherkin
-Given the rule's Minimum Send Amount to Redeem is £20.00
-When the send amount is £19.99
-Then the bonus section shall show "Send £20.00 or more to use your £5.00 bonus." with the options disabled
+Given the customer has available Bonus Credit in GBP
+When the send amount is any amount the bonus can cover
+Then the bonus section shall be available with no minimum send amount
 ```
+
+The rule's Floor (Minimum Transaction Amount) is the only minimum on a rule. It decides whether a friend's transfer qualifies; it does not limit spending a bonus.
 
 **AC-5.2.7: Bonus and promo code together**
 

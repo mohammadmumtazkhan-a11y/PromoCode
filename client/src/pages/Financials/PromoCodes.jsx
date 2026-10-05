@@ -7,6 +7,24 @@ const PromoCodes = () => {
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [editingPromo, setEditingPromo] = useState(null); // a code that has not been used yet
+    const [usagePromo, setUsagePromo] = useState(null); // show where a code was used
+    const [usageRows, setUsageRows] = useState([]);
+    const [usageLoading, setUsageLoading] = useState(false);
+
+    const openUsage = async (promo) => {
+        setUsagePromo(promo);
+        setUsageRows([]);
+        setUsageLoading(true);
+        try {
+            const res = await fetch(`/api/promocodes/${promo.id}/redemptions`);
+            const data = await res.json();
+            setUsageRows(data.data || []);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setUsageLoading(false);
+        }
+    };
     const [showDistributeModal, setShowDistributeModal] = useState(false);
     const [selectedPromo, setSelectedPromo] = useState(null);
 
@@ -68,7 +86,7 @@ const PromoCodes = () => {
                                     <th style={{ width: 100, textAlign: 'center' }}>Usage</th>
                                     <th style={{ width: 110, textAlign: 'center' }}>Period</th>
                                     <th style={{ width: 80, textAlign: 'center' }}>Status</th>
-                                    <th style={{ width: 150, textAlign: 'center' }}>Actions</th>
+                                    <th style={{ width: 210, textAlign: 'center' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -115,6 +133,17 @@ const PromoCodes = () => {
                                             })()}
                                         </td>
                                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            <button
+                                                className="btn-primary"
+                                                style={{ padding: '4px 10px', fontSize: '0.7rem', background: '#6b7280', boxShadow: 'none', marginRight: 6 }}
+                                                title="See the transfers this code was used on"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openUsage(promo);
+                                                }}
+                                            >
+                                                Usage
+                                            </button>
                                             {(promo.usage_count || 0) === 0 && (
                                                 <button
                                                     className="btn-primary"
@@ -156,6 +185,41 @@ const PromoCodes = () => {
                     onClose={() => setShowCreateModal(false)}
                     onSuccess={fetchPromos}
                 />
+            )}
+
+            {usagePromo && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+                    onClick={() => setUsagePromo(null)}>
+                    <div className="glass-panel" style={{ width: 720, maxHeight: '80vh', overflowY: 'auto', padding: 28, background: 'white' }}
+                        onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+                            <h3 style={{ margin: 0 }}>Where <span style={{ fontFamily: 'monospace' }}>{usagePromo.code}</span> was used</h3>
+                            <button onClick={() => setUsagePromo(null)} style={{ background: 'transparent', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+                        </div>
+                        {usageLoading ? (
+                            <div style={{ padding: 16, textAlign: 'center' }}>Loading...</div>
+                        ) : usageRows.length === 0 ? (
+                            <div style={{ padding: 16, textAlign: 'center', color: '#6b7280' }}>This code has not been used on any transfer yet.</div>
+                        ) : (
+                            <table className="table-container" style={{ width: '100%' }}>
+                                <thead>
+                                    <tr><th>Transfer</th><th>Customer</th><th>Discount</th><th>Status</th><th>Date</th></tr>
+                                </thead>
+                                <tbody>
+                                    {usageRows.map((r) => (
+                                        <tr key={r.id}>
+                                            <td style={{ fontFamily: 'monospace' }}>{r.transaction_id}</td>
+                                            <td>{r.user_id || '-'}</td>
+                                            <td>{usagePromo.currency} {Number(r.discount_amount || 0).toFixed(2)}</td>
+                                            <td>{r.status === 'Released' ? 'Released (refunded/cancelled)' : r.status}</td>
+                                            <td>{new Date(r.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
             )}
 
             {editingPromo && (

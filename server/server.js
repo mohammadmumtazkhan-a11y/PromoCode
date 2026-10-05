@@ -523,13 +523,27 @@ app.post('/api/promocodes', (req, res) => {
     stmt.finalize();
 });
 
+// Every use of one promo code (the transfers it was applied to), newest first.
+app.get('/api/promocodes/:id/redemptions', (req, res) => {
+    db.get('SELECT code FROM promo_codes WHERE id = ?', [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: 'Promo code not found' });
+        db.all(`SELECT id, transaction_id, user_id, discount_amount, COALESCE(status, 'Redeemed') AS status, created_at
+                FROM promo_redemptions WHERE promo_code_id = ? OR promo_code_id = ? ORDER BY created_at DESC`,
+            [String(req.params.id), row.code], (e2, rows) => {
+                if (e2) return res.status(500).json({ error: e2.message });
+                res.json({ data: rows });
+            });
+    });
+});
+
 // Edit a promo code. Only a code that has never been used can be changed.
 app.put('/api/promocodes/:id', (req, res) => {
     const id = req.params.id;
     db.get('SELECT * FROM promo_codes WHERE id = ?', [id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!row) return res.status(404).json({ error: 'Promo code not found' });
-        db.get('SELECT COUNT(*) AS n FROM promo_redemptions WHERE promo_code_id = ?', [String(id)], (err2, r) => {
+        db.get("SELECT COUNT(*) AS n FROM promo_redemptions WHERE (promo_code_id = ? OR promo_code_id = ?) AND COALESCE(status, 'Redeemed') = 'Redeemed'", [String(id), row.code], (err2, r) => {
             if (err2) return res.status(500).json({ error: err2.message });
             if ((row.usage_count || 0) > 0 || (r && r.n > 0)) {
                 return res.status(409).json({ error: 'This code has already been used, so it cannot be edited. Create a new code instead.' });

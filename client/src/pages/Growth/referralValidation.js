@@ -33,7 +33,6 @@ export function validateForm(f, { isNew, rules, editingId }) {
     if (!intIn(f.qualification_window_days, 1, 365)) e.qualification_window_days = 'Enter a whole number of days from 1 to 365.';
     if (!intIn(f.bonus_validity_days, 1, 730)) e.bonus_validity_days = 'Enter a whole number of days from 1 to 730.';
     if (!blank(f.max_referrals_per_referrer) && !intIn(f.max_referrals_per_referrer, 1, 10000)) e.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
-    if (!blank(f.min_redeem_amount) && (Number.isNaN(Number(f.min_redeem_amount)) || Number(f.min_redeem_amount) < 0 || !dpOk(f.min_redeem_amount, cur))) e.min_redeem_amount = 'Enter 0 or an amount with up to 2 decimal places.';
     const today = ukTodayIso();
     if (f.start_date && isNew && f.start_date < today) e.start_date = 'Start date cannot be in the past.';
     if (f.end_date && (isNew ? f.end_date <= (f.start_date || today) : f.start_date && f.end_date <= f.start_date)) e.end_date = 'End date must be after the start date.';
