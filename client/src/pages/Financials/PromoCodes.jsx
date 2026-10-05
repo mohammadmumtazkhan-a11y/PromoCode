@@ -103,9 +103,15 @@ const PromoCodes = () => {
                                             <div>{new Date(promo.end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}</div>
                                         </td>
                                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                            <span className={`badge ${promo.status === 'Active' ? 'success' : 'danger'}`}>
-                                                {promo.status}
-                                            </span>
+                                            {(() => {
+                                                const expired = promo.status === 'Active' && new Date(promo.end_date) < new Date();
+                                                return (
+                                                    <span className={`badge ${promo.status === 'Active' && !expired ? 'success' : 'danger'}`}
+                                                        title={expired ? 'The end date has passed, so customers cannot use this code.' : undefined}>
+                                                        {expired ? 'Expired' : promo.status}
+                                                    </span>
+                                                );
+                                            })()}
                                         </td>
                                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                                             <button
