@@ -35,7 +35,7 @@ function makeApp(overrides = {}) {
         onSpentCreditReversed: (ev) => { calls.spent.push(ev); return real.onSpentCreditReversed(ev); },
         onRewardIssued: (ev) => { calls.issued.push(ev); },
     };
-    registerReferralRoutes(app, db, { dependsOn: ready, ...ports, afterTransferEvent: (ev) => bonus.transferEventForHook(ev) });
+    registerReferralRoutes(app, db, { dependsOn: ready, ...ports });
     app.locals.db = db;
     app.locals.calls = calls;
     return app;
@@ -139,7 +139,7 @@ describe('reversal (BR-41, BR-42)', () => {
         app.use(express.json());
         const { ready } = bonus.register(app, db, {}, { seed: false });
         const { rewardWallet } = referralHost.referralPorts();
-        registerReferralRoutes(app, db, { dependsOn: ready, rewardWallet, afterTransferEvent: (ev) => bonus.transferEventForHook(ev) });
+        registerReferralRoutes(app, db, { dependsOn: ready, rewardWallet });
         await seed(app);
         await transfer(app, 'PAID');
         await transfer(app, 'COMPLETED');
@@ -160,5 +160,14 @@ describe('report (BR-53)', () => {
         const row = perf.body.data[0];
         expect(row).toMatchObject({ bonus_issued: 15, bonus_used: 4, bonus_expired: 0, bonus_unused: 11 });
         expect(app.locals.calls.summary.at(-1)).toEqual({ referralIds: [ref.id] });
+    });
+});
+
+describe('Referral transfer-events no longer drives other modules', () => {
+    it('answers with the referral result only (no bonuses field)', async () => {
+        const app = makeApp();
+        const res = await request(app).post('/api/referral/transfer-events').send({ transfer_id: 'NOHOOK-1', customer_id: 'NOBODY', amount: 100, currency: 'GBP', status: 'COMPLETED' });
+        expect(res.status).toBe(200);
+        expect(res.body.bonuses).toBeUndefined();
     });
 });

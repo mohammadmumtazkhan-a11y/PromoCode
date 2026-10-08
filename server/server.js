@@ -305,14 +305,6 @@ const referralModule = registerReferralRoutes(app, db, {
     ...referralHost.referralPorts(),
     // The bonus module creates credit_ledger (and its seeds) first
     dependsOn: bonusModule.ready,
-    // Transition (BONUS-MITO §6, PROMO-MITO C3): until Rhemito reports to POST /api/bonus/transfer-events and
-    // /api/promocodes/transfer-events, both modules also hear transfer events here. Every step is idempotent, so both
-    // paths running is safe, and a failure here never fails the transfer event.
-    afterTransferEvent: async (ev) => {
-        try { await promo.handleTransferEvent(ev); } catch (err) { console.error('[promo] transfer event not recorded', ev.transfer_id, err.message); }
-        // Loyalty / threshold awards for a completed transfer; reversal and returned bonus for a cancelled or refunded one
-        return bonus.transferEventForHook(ev);
-    },
 });
 // Once the referral tables exist, the promo and bonus modules copy the customer activity they need (idempotent)
 Promise.resolve(referralModule && referralModule.ready)

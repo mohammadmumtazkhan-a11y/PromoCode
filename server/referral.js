@@ -893,10 +893,8 @@ function registerReferralRoutes(app, db, hooks = {}) {
 
     // Transfer lifecycle events from Rhemito (US-4.1, US-4.4, AC-5.2.10)
     app.post('/api/referral/transfer-events', wrap(async (req, res) => {
-        const result = await handleTransferEvent(q, req.body || {});
-        // Other bonus schemes (loyalty, threshold) react to the same completed transfer
-        if (hooks.afterTransferEvent) result.bonuses = await hooks.afterTransferEvent(req.body || {});
-        res.json(result);
+        // Promo and bonus modules hear transfer events on their own endpoints; referral only handles referrals
+        res.json(await handleTransferEvent(q, req.body || {}));
     }));
 
     // Only a Growth Manager may approve a "Not eligible" referral (AC-4.3.5). Name and role come from the access token, not the request body.

@@ -160,10 +160,10 @@ describe('Redeem, release, transfer events (§3.4, §6.2)', () => {
         const rows = await promo.listRedemptions({ userId: 'SAV1' });
         expect(rows[0].customer_name).toBe('Sam Ade');
     });
-    it('the old referral transfer-event path still releases promo uses (C3)', async () => {
+    it('a cancelled transfer reported on the promo endpoint releases the promo use', async () => {
         const { code } = await create();
         await redeem(code, 'OLD-1', { userId: 'O1' });
-        await request(app).post('/api/referral/transfer-events').send({ transfer_id: 'OLD-1', customer_id: 'O1', amount: 100, currency: 'GBP', status: 'CANCELLED' }).expect(200);
+        await request(app).post('/api/promocodes/transfer-events').send({ transfer_id: 'OLD-1', customer_id: 'O1', amount: 100, currency: 'GBP', status: 'CANCELLED' }).expect(200);
         expect((await codeRow(code)).usage_count).toBe(0);
     });
 });
