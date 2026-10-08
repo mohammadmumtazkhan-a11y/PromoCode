@@ -24,7 +24,7 @@ function makeApp() {
     // The bonus wallet (/api/wallet/...) and credit expiry belong to the bonus module (BONUS-MITO v1.1)
     const { ready } = bonus.register(app, db, {}, { seed: false });
     // The host wires the referral module's rewardWallet port to the bonus module; the transfer-event hook gives back used bonus
-    registerReferralRoutes(app, db, { dependsOn: ready, ...referralHost.referralPorts(), afterTransferEvent: (ev) => bonus.transferEventForHook(ev) });
+    registerReferralRoutes(app, db, { dependsOn: ready, ...referralHost.referralPorts() });
     app.locals.db = db;
     return app;
 }
@@ -399,7 +399,7 @@ describe('Bonus wallet (US-5.1 – US-5.4)', () => {
         await request(app).post('/api/wallet/B/apply').send({ amount: 10, currency: 'GBP', transfer_id: 'T5', send_amount: 500 }).expect(200);
         let b = await request(app).get('/api/wallet/B?currency=GBP');
         expect(b.body.balances[0]).toMatchObject({ available: 0, earned: 10, used: 10, expired: 0 });
-        await request(app).post('/api/referral/transfer-events').send({ transfer_id: 'T5', customer_id: 'B', amount: 500, currency: 'GBP', status: 'REFUNDED' });
+        await request(app).post('/api/bonus/transfer-events').send({ transfer_id: 'T5', customer_id: 'B', amount: 500, currency: 'GBP', status: 'REFUNDED' }); // the bonus module hears the refund on its own endpoint
         b = await request(app).get('/api/wallet/B?currency=GBP');
         expect(b.body.balances[0]).toMatchObject({ available: 10, used: 0 });
     });

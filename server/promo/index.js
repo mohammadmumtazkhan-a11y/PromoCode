@@ -46,7 +46,5 @@ module.exports = {
     savingsFor: async (userId) => engine.savingsFor(await need(), userId),
     // Copy customer activity/profiles from tables other modules create at startup (idempotent; spec §4.4)
     runBackfill: async () => backfill(await need()),
-    // Called by the host while the old referral transfer-event path is still in use (C3); idempotent
-    handleTransferEvent: async (ev) => engine.handleTransferEvent(await need(), ev),
     engine,
 };

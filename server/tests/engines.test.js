@@ -32,9 +32,15 @@ const scheme = (over = {}) => request(app).post('/api/bonus-schemes').send({
     name: `S-${Math.random().toString(36).slice(2, 7)}`, bonus_type: 'TRANSACTION_THRESHOLD_CREDIT', credit_amount: 5, currency: 'GBP',
     min_transaction_threshold: 100, eligibility_rules: { oneTimeOnly: false }, start_date: '2024-01-01', end_date: FAR, ...over,
 });
-const transferEvent = (id, customer, amount, over = {}) => request(app).post('/api/referral/transfer-events').send({
-    transfer_id: id, customer_id: customer, amount, currency: 'GBP', receive_currency: 'NGN', status: 'COMPLETED', created_at: new Date().toISOString(), ...over,
-});
+// Rhemito reports each transfer to the promo and bonus modules on their own endpoints (API-S1); `bonuses` is what the
+// bonus module did for it: awards for a completed transfer, reversals for a cancelled / failed / refunded one.
+const transferEvent = async (id, customer, amount, over = {}) => {
+    const ev = { transfer_id: id, customer_id: customer, amount, currency: 'GBP', receive_currency: 'NGN', status: 'COMPLETED', created_at: new Date().toISOString(), ...over };
+    await request(app).post('/api/promocodes/transfer-events').send(ev);
+    const res = await request(app).post('/api/bonus/transfer-events').send(ev);
+    const bonuses = String(ev.status).toUpperCase() === 'COMPLETED' ? (res.body.awards || []) : (res.body.reversed || []).map((r) => ({ ...r, status: 'REVERSED' }));
+    return { status: res.status, body: { ...res.body, bonuses } };
+};
 const awardedBy = (res, schemeId) => (res.body.bonuses || []).find((b) => b.scheme_id === schemeId);
 
 describe('Promo codes: Mito Admin is the source of truth', () => {

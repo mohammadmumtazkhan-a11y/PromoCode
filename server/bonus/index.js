@@ -52,22 +52,6 @@ const need = async () => {
     return current.q;
 };
 
-// What the old referral transfer-event hook returned in `bonuses` (C1): awards for a completed transfer,
-// reversals (status REVERSED) for a cancelled / failed / refunded one, [] otherwise. Never throws (BS-43).
-async function transferEventForHook(ev) {
-    try {
-        const q = await need();
-        const status = String((ev && ev.status) || '').toUpperCase();
-        if (!ev || !ev.transfer_id || !ev.customer_id || !status) return [];
-        const result = await write(q, () => engine.handleTransferEvent(q, ev));
-        if (status === 'COMPLETED') return result.awards;
-        return result.reversed.map((r) => ({ ...r, status: 'REVERSED' }));
-    } catch (err) {
-        console.error('[bonus] transfer event not processed', ev && ev.transfer_id, err.message);
-        return [];
-    }
-}
-
 module.exports = {
     register,
     // ---- public functions for other modules (spec §1.3); they never call back into those modules ----
@@ -91,7 +75,6 @@ module.exports = {
         });
     },
     // ---- host wiring ----
-    transferEventForHook,
     handleTransferEvent: async (ev) => { const q = await need(); return write(q, () => engine.handleTransferEvent(q, ev)); },
     runBackfill: async () => backfill(await need(), { dbFile: current && current.dbFile }),
     runJobs: async (opts) => jobs.runJobs(await need(), opts),
