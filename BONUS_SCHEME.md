@@ -1,3 +1,6 @@
+> **Current specification:** [`Docs/Requirements/BONUS_MODULE_SPEC_MITO_ADMIN.md`](Docs/Requirements/BONUS_MODULE_SPEC_MITO_ADMIN.md) (v1.1, one customer balance, trackable by source).
+> The bonus code now lives in `server/bonus/` (backend) and `client/src/pages/Bonus/` (admin pages). `server/bonusEngine.js`, `bonusDebt.js` and `bonusBlocks.js` are re-export shims. Parts of this older summary (for example "see `server/server.js`") describe the code before that move.
+
 # Bonus Scheme functionality ("Binus" assumed to mean "Bonus")
 
 This document summarizes how bonus schemes are modeled, managed, and applied in the current codebase.

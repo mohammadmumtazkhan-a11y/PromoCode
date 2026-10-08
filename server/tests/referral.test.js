@@ -2,6 +2,7 @@ const request = require('supertest');
 const express = require('express');
 const sqlite3 = require('sqlite3');
 const { registerReferralRoutes, clock } = require('../referral');
+const bonus = require('../bonus');
 
 // Admin access tokens (see server/auth.js)
 process.env.ADMIN_USERS = JSON.stringify([
@@ -13,13 +14,14 @@ process.env.ADMIN_USERS = JSON.stringify([
 function makeApp() {
     const db = new sqlite3.Database(':memory:');
     db.serialize(() => {
-        db.run(`CREATE TABLE bonus_schemes (id INTEGER PRIMARY KEY, name TEXT, currency TEXT)`);
         db.run(`CREATE TABLE promo_codes (id INTEGER PRIMARY KEY, code TEXT, currency TEXT)`);
         db.run(`CREATE TABLE promo_redemptions (id TEXT, promo_code_id TEXT, transaction_id TEXT, user_id TEXT, discount_amount REAL, status TEXT, created_at TEXT)`);
     });
     const app = express();
     app.use(express.json());
-    registerReferralRoutes(app, db);
+    // The bonus wallet (/api/wallet/...) and credit expiry belong to the bonus module (BONUS-MITO v1.1)
+    const { ready } = bonus.register(app, db, {}, { seed: false });
+    registerReferralRoutes(app, db, { dependsOn: ready });
     app.locals.db = db;
     return app;
 }
@@ -410,7 +412,7 @@ describe('Bonus wallet (US-5.1 – US-5.4)', () => {
     it('expires unused credit after its validity (AC-5.4.1)', async () => {
         const app = await rewarded();
         setNow('2026-12-31T10:00:00Z');
-        const jobs = await request(app).post('/api/referral/run-jobs');
+        const jobs = await request(app).post('/api/bonus/run-jobs'); // credit expiry is the bonus module's job (BS-65)
         expect(jobs.body.credits_expired).toBe(2);
         const b = await request(app).get('/api/wallet/B?currency=GBP');
         expect(b.body.balances[0]).toMatchObject({ available: 0, expired: 10 });

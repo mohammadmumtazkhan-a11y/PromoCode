@@ -9,9 +9,9 @@ import logo from './assets/logo.png';
 import ReferralSettings from './pages/Growth/ReferralSettings';
 import ReferralPerformance from './pages/Growth/ReferralPerformance';
 import ReferralTracking from './pages/Growth/ReferralTracking';
-import UserCreditLedger from './pages/Growth/UserCreditLedger';
-import BonusSchemeManager from './pages/Growth/BonusSchemeManager';
-import BonusBlocks from './pages/Growth/BonusBlocks';
+import UserCreditLedger from './pages/Bonus/UserCreditLedger';
+import BonusSchemeManager from './pages/Bonus/BonusSchemeManager';
+import BonusBlocks from './pages/Bonus/BonusBlocks';
 const Sidebar = ({ isOpen, onClose }) => {
 
   const location = useLocation();
