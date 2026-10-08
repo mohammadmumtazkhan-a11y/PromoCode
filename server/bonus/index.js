@@ -82,6 +82,14 @@ module.exports = {
     issueCredit: async (input) => { const q = await need(); return write(q, () => wallet.issueCredit(q, input)); },
     voidCredit: async (creditId, opts) => { const q = await need(); return write(q, () => wallet.voidCredit(q, creditId, opts)); },
     creditSummary: async (filters) => wallet.creditSummary(await need(), filters),
+    // A credit that was already spent when its earning event was reversed: record what is owed, repaid from the next bonus (BS-50)
+    clawbackCredit: async (creditId, opts) => {
+        const q = await need();
+        return write(q, async () => {
+            const credit = await q.get(`SELECT * FROM credit_ledger WHERE id = ? AND type = 'EARNED'`, [creditId]);
+            return credit ? debt.clawback(q, credit, opts || {}) : 0;
+        });
+    },
     // ---- host wiring ----
     transferEventForHook,
     handleTransferEvent: async (ev) => { const q = await need(); return write(q, () => engine.handleTransferEvent(q, ev)); },

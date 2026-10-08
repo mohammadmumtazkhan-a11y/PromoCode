@@ -299,7 +299,10 @@ const bonusModule = bonus.register(app, db, {
 // --- Referral programme (rules, referrals, reporting) ---
 // See server/referral.js and Docs/Requirements/referral-and-bonus-user-stories.md
 const { registerReferralRoutes } = require('./referral');
+const referralHost = require('./referralHost');
 const referralModule = registerReferralRoutes(app, db, {
+    // The referral module's only required dependency is the rewardWallet port; the host maps the ports to the bonus module
+    ...referralHost.referralPorts(),
     // The bonus module creates credit_ledger (and its seeds) first
     dependsOn: bonusModule.ready,
     // Transition (BONUS-MITO §6, PROMO-MITO C3): until Rhemito reports to POST /api/bonus/transfer-events and
@@ -313,6 +316,8 @@ const referralModule = registerReferralRoutes(app, db, {
 });
 // Once the referral tables exist, the promo and bonus modules copy the customer activity they need (idempotent)
 Promise.resolve(referralModule && referralModule.ready)
+    // The referral seed fixes and credit links go first: the bonus backfill reads what they write
+    .then(() => referralHost.finishSetup(db).catch((e) => console.error('[referral] host setup failed', e.message)))
     .then(() => Promise.all([
         promo.runBackfill().catch((e) => console.error('[promo] backfill failed', e.message)),
         bonus.runBackfill().catch((e) => console.error('[bonus] backfill failed', e.message)),

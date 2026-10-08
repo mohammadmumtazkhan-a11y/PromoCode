@@ -3,6 +3,8 @@ const express = require('express');
 const sqlite3 = require('sqlite3');
 const { registerReferralRoutes, clock } = require('../referral');
 const bonus = require('../bonus');
+const referralHost = require('../referralHost');
+const { clock: bonusClock } = require('../bonus/time');
 
 // Admin access tokens (see server/auth.js)
 process.env.ADMIN_USERS = JSON.stringify([
@@ -21,12 +23,14 @@ function makeApp() {
     app.use(express.json());
     // The bonus wallet (/api/wallet/...) and credit expiry belong to the bonus module (BONUS-MITO v1.1)
     const { ready } = bonus.register(app, db, {}, { seed: false });
-    registerReferralRoutes(app, db, { dependsOn: ready });
+    // The host wires the referral module's rewardWallet port to the bonus module; the transfer-event hook gives back used bonus
+    registerReferralRoutes(app, db, { dependsOn: ready, ...referralHost.referralPorts(), afterTransferEvent: (ev) => bonus.transferEventForHook(ev) });
     app.locals.db = db;
     return app;
 }
 
-const setNow = (iso) => { clock.now = () => new Date(iso); };
+// The two modules keep their own clocks; tests move both
+const setNow = (iso) => { clock.now = () => new Date(iso); bonusClock.now = () => new Date(iso); };
 const GBP_RULE = {
     name: 'UK Standard Programme', reward_type: 'BOTH', base_currency: 'GBP', receive_currency: 'NGN',
     referrer_reward: 5, referee_reward: 10, min_transaction_threshold: 50,
