@@ -214,12 +214,12 @@ const ReferralTracking = () => {
                                     </td>
                                     <td className="rf-num">
                                         {r.referrer_credited > 0
-                                            ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referrer_id)}&schemeId=rr_${r.rule_id}`)}>{formatMoney(r.referrer_credited, r.currency)}</button>
+                                            ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referrer_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referrer_credited, r.currency)}</button>
                                             : <span className="rf-muted">{r.reward_type === 'REFEREE' || !r.rule_id ? '—' : formatMoney(r.referrer_reward, r.currency) + ' due'}</span>}
                                     </td>
                                     <td className="rf-num">
                                         {r.referee_credited > 0
-                                            ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referee_id)}&schemeId=rr_${r.rule_id}`)}>{formatMoney(r.referee_credited, r.currency)}</button>
+                                            ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referee_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referee_credited, r.currency)}</button>
                                             : <span className="rf-muted">{r.reward_type === 'REFERRER' || !r.rule_id ? '—' : formatMoney(r.referee_reward, r.currency) + ' due'}</span>}
                                     </td>
                                     <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.rewarded_at)}</td>

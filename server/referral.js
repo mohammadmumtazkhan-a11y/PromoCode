@@ -1,14 +1,14 @@
 // Referral & Bonus engine (see Docs/Requirements/referral-and-bonus-user-stories.md)
 // Owns: referral rules, customers' referral codes, referrals, link visits,
-// offer notifications, bonus wallet (on top of credit_ledger) and admin reporting.
+// offer notifications and admin reporting. Bonus rewards are issued through the rewardWallet port (see ./referral/ports.js).
 const crypto = require('crypto');
 const { requireRole, ROLES } = require('./auth');
-const debt = require('./bonusDebt');
-const blocks = require('./bonusBlocks');
-// The customer's bonus wallet belongs to the bonus module (BONUS-MITO v1.1, one balance). Referral rewards are paid
-// into it and tagged with credit_source REFERRAL; spending, returning and expiry happen there.
-const wallet = require('./bonus/wallet');
-const { clock } = require('./bonus/time'); // one clock for both modules (tests move it)
+const { resolvePorts } = require('./referral/ports');
+// The customer's bonus wallet belongs to the bonus module (one balance). This module never touches it directly: rewards are
+// issued and voided through the `rewardWallet` port, and everything else the host plugs in comes through ./referral/ports.js.
+let ports = null;
+// Dates are UK calendar days. `clock.now` can be replaced in tests (the host keeps other modules on the same clock if it wants).
+const clock = { now: () => new Date() };
 
 // ---------- small helpers ----------
 
@@ -48,7 +48,6 @@ function promisify(db) {
 async function addColumnIfMissing(q, table, column, ddl) {
     const cols = await q.all(`PRAGMA table_info(${table})`);
     if (cols.some((c) => c.name === column)) return;
-    // The bonus module may add the same credit_ledger column at the same moment on the shared connection
     try { await q.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`); } catch (err) { if (!/duplicate column/i.test(String(err.message))) throw err; }
 }
 
@@ -103,56 +102,9 @@ async function initSchema(db) {
     await addColumnIfMissing(q, 'referrals', 'referrer_deadline', 'TEXT');
     await addColumnIfMissing(q, 'referral_transfers', 'receive_currency', 'TEXT');
 
-    // credit_ledger gains currency + referral linkage + per-credit tracking
-    await q.run(`CREATE TABLE IF NOT EXISTS credit_ledger (
-        id TEXT PRIMARY KEY, user_id TEXT, amount REAL, type TEXT, scheme_id INTEGER, reference_id TEXT,
-        reason_code TEXT, notes TEXT, admin_user TEXT, admin_user_id TEXT, expires_at TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
-    await addColumnIfMissing(q, 'credit_ledger', 'currency', "TEXT DEFAULT 'GBP'");
-    await addColumnIfMissing(q, 'credit_ledger', 'referral_id', 'TEXT');
-    await addColumnIfMissing(q, 'credit_ledger', 'referral_rule_id', 'INTEGER');
-    await addColumnIfMissing(q, 'credit_ledger', 'source_credit_id', 'TEXT');
-    await addColumnIfMissing(q, 'credit_ledger', 'transfer_id', 'TEXT');
-
-    await q.run(`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT)`);
-    await runDataMigrations(q);
-}
-
-// One-off data corrections for the seeded prototype data (US-1.9)
-async function runDataMigrations(q) {
-    const done = await q.get(`SELECT name FROM schema_migrations WHERE name = 'referral_v1_seed_fix'`);
-    if (done) return;
-    const hasRows = await q.get(`SELECT COUNT(*) AS c FROM credit_ledger`);
-    const hasRules = await q.get(`SELECT COUNT(*) AS c FROM referral_rules`);
-    if (!hasRows.c || !hasRules.c) return; // fresh database: seeds not written yet, try again on next start
-    await q.run(`UPDATE credit_ledger SET id = 'cl_' || rowid WHERE id IS NULL`);
-    // Currency from the bonus scheme where one is linked, otherwise GBP
-    await q.run(`UPDATE credit_ledger SET currency = COALESCE((SELECT currency FROM bonus_schemes bs WHERE bs.id = credit_ledger.scheme_id AND credit_ledger.reason_code NOT IN ('LOYALTY','REFERRAL_REWARD','PAYMENT_OFFSET','EXPIRY')), 'GBP')`).catch(() => {});
-    // Seeded LOYALTY / REFERRAL rows were linked to unrelated schemes
-    await q.run(`UPDATE credit_ledger SET scheme_id = NULL WHERE reason_code IN ('LOYALTY','REFERRAL_REWARD') OR reference_id IN ('tx_999','exp_001')`);
-    const gbpRule = await q.get(`SELECT id FROM referral_rules WHERE base_currency = 'GBP' ORDER BY id LIMIT 1`);
-    const refCredit = await q.get(`SELECT id FROM credit_ledger WHERE reference_id = 'ref_101'`);
-    if (refCredit) {
-        await q.run(`UPDATE credit_ledger SET referral_rule_id = ? WHERE id = ?`, [gbpRule ? gbpRule.id : null, refCredit.id]);
-        await q.run(`UPDATE credit_ledger SET source_credit_id = ?, referral_rule_id = ? WHERE reference_id = 'tx_999'`, [refCredit.id, gbpRule ? gbpRule.id : null]);
-    }
-    const loyalty = await q.get(`SELECT id FROM credit_ledger WHERE reference_id = 'loyalty_001'`);
-    if (loyalty) await q.run(`UPDATE credit_ledger SET source_credit_id = ? WHERE reference_id = 'exp_001'`, [loyalty.id]);
-
-    // Named customers for the seeded ledger users
-    const seed = [
-        ['user_101', 'Olayinka', 'Adebayo', 'olayinka@example.com', '+447700900101', 'GB', 'GBP'],
-        ['user_102', 'Sarah', 'Smith', 'sarah.smith@example.com', '+447700900102', 'GB', 'GBP'],
-        ['user_105', 'Mike', 'Ross', 'mike.ross@example.com', '+12025550105', 'US', 'USD'],
-        ['user_123', 'John', 'Doe', 'john.doe@example.com', '+447700900123', 'GB', 'GBP'],
-        ['user_999', 'Amaka', 'Okafor', 'amaka@example.com', '+447700900999', 'GB', 'GBP'],
-    ];
-    for (const [id, f, l, e, p, c, cur] of seed) {
-        await q.run(`INSERT OR IGNORE INTO customers (id, first_name, last_name, email, phone, country, send_currency, kyc_status, account_status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'PASSED', 'ACTIVE', ?)`, [id, f, l, e, p, c, cur, '2025-01-01T00:00:00.000Z']);
-        await ensureReferralCode(q, id);
-    }
-    await q.run(`INSERT INTO schema_migrations (name, applied_at) VALUES ('referral_v1_seed_fix', ?)`, [nowIso()]);
+    // Where the wallet credits of this referral live (ids returned by rewardWallet.issueCredit), so reversal can void them
+    await addColumnIfMissing(q, 'referrals', 'referrer_credit_id', 'TEXT');
+    await addColumnIfMissing(q, 'referrals', 'referee_credit_id', 'TEXT');
 }
 
 // ---------- rules ----------
@@ -351,20 +303,23 @@ async function ensureReferralCode(q, customerId) {
     throw new Error('Could not generate a unique referral code');
 }
 
-// ---------- ledger (the bonus module's wallet) ----------
-const creditRemaining = (q, credit) => wallet.creditRemaining(q, credit);
+// ---------- rewards (issued through the rewardWallet port) ----------
 
-// Pay a referral reward into the customer's one bonus wallet, tagged with its source (BONUS-MITO BS-80)
-async function addCredit(q, { userId, amount, currency, reason, referenceId, notes, referralId, ruleId, validityDays, expiresOn }) {
-    const out = await wallet.issueCredit(q, {
-        customerId: userId, amount: round2(amount), currency, validityDays: validityDays || 90, expiresOn,
+// Pay a referral reward into the customer's one bonus balance. Idempotent on `referenceId` (BR-36, BR-50).
+// Returns the wallet's credit id, which is kept on the referral so a reversal can void exactly these credits.
+async function addCredit({ userId, amount, currency, referenceId, notes, referralId, ruleId, validityDays }) {
+    const out = await ports.rewardWallet.issueCredit({
+        customerId: userId, amount: round2(amount), currency, validityDays: validityDays || 90,
         creditSource: 'REFERRAL', creditSourceDetail: String(referenceId || '').endsWith(':referrer') ? 'REFERRER' : 'REFEREE',
-        reason: reason || 'REFERRAL_REWARD', referralId, ruleId, referenceId, notes, actor: 'System',
+        referralId, ruleId, referenceId, notes, actor: 'System',
     });
     return out.creditId;
 }
 
-const debitCredit = (q, credit, amount, type, opts) => wallet.debit(q, credit, amount, type, opts);
+// Tell the host a reward was issued (BR-36). The host's errors never fail the award.
+async function announceIssued(event) {
+    try { await ports.onRewardIssued(event); } catch (err) { console.error('[referral] onRewardIssued failed', err.message); }
+}
 
 // ---------- referrals ----------
 function sameIdentity(a, b) {
@@ -484,8 +439,9 @@ async function tryAward(q, referral) {
     // A customer blocked from earning bonus (too many cancelled / refunded bonus-earning transfers) gets nothing until a Growth Manager approves.
     // The referral becomes "Not eligible" with the reason, and the existing "Approve reward" step pays it once the admin is satisfied.
     const blockedParties = [];
-    if (rewardsReferrer && (await blocks.activeBlock(q, r.referrer_id))) blockedParties.push(`referrer ${r.referrer_id}`);
-    if (rewardsReferee && (await blocks.activeBlock(q, r.referee_id))) blockedParties.push(`referee ${r.referee_id}`);
+    const isBlocked = async (id) => !!((await ports.eligibilityGuard.isEarningBlocked(id)) || {}).blocked;
+    if (rewardsReferrer && (await isBlocked(r.referrer_id))) blockedParties.push(`referrer ${r.referrer_id}`);
+    if (rewardsReferee && (await isBlocked(r.referee_id))) blockedParties.push(`referee ${r.referee_id}`);
     if (blockedParties.length) {
         await q.run(`UPDATE referrals SET status = 'NOT_ELIGIBLE', status_reason = ?, updated_at = ? WHERE id = ?`,
             [`Bonus blocked for ${blockedParties.join(' and ')} (repeated cancelled or refunded bonus-earning transfers). See Growth > Blocked Customers.`, nowIso(), r.id]);
@@ -495,55 +451,68 @@ async function tryAward(q, referral) {
     const rule = await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [r.rule_id]);
     const notes = [];
     if (referrerEntitled && referrerLate) notes.push('Referrer qualification window ended');
-    let referrerCredited = 0, refereeCredited = 0;
-    if (rewardsReferrer) {
-        const cap = rule && rule.max_referrals_per_referrer;
-        if (referrer.account_status !== 'ACTIVE') notes.push('Referrer account not active');
-        else if (cap && (await rewardedCountForReferrer(q, r.referrer_id, r.rule_id)) >= cap) notes.push('Referrer cap reached');
-        else {
-            await addCredit(q, {
-                userId: r.referrer_id, amount: r.referrer_reward, currency: r.currency, reason: 'REFERRAL_REWARD',
-                referenceId: `${r.id}:referrer`, notes: `Referrer reward – referred ${maskName(referee.first_name, referee.last_name)}`,
+    let referrerCredited = 0, refereeCredited = 0, referrerCreditId = null, refereeCreditId = null;
+    try {
+        if (rewardsReferrer) {
+            const cap = rule && rule.max_referrals_per_referrer;
+            if (referrer.account_status !== 'ACTIVE') notes.push('Referrer account not active');
+            else if (cap && (await rewardedCountForReferrer(q, r.referrer_id, r.rule_id)) >= cap) notes.push('Referrer cap reached');
+            else {
+                referrerCreditId = await addCredit({
+                    userId: r.referrer_id, amount: r.referrer_reward, currency: r.currency,
+                    referenceId: `${r.id}:referrer`, notes: `Referrer reward – referred ${maskName(referee.first_name, referee.last_name)}`,
+                    referralId: r.id, ruleId: r.rule_id, validityDays: r.bonus_validity_days,
+                });
+                referrerCredited = r.referrer_reward;
+            }
+        }
+        if (rewardsReferee) {
+            refereeCreditId = await addCredit({
+                userId: r.referee_id, amount: r.referee_reward, currency: r.currency,
+                referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}`,
                 referralId: r.id, ruleId: r.rule_id, validityDays: r.bonus_validity_days,
             });
-            referrerCredited = r.referrer_reward;
+            refereeCredited = r.referee_reward;
         }
+    } catch (err) {
+        // BR-51: the referral stays PENDING and the daily job tries again. Credits already issued are not issued twice (idempotent on referenceId).
+        console.error('[referral] reward could not be issued', r.id, err.message);
+        await q.run(`UPDATE referrals SET status_reason = ?, updated_at = ? WHERE id = ?`, [REWARD_RETRY_REASON, nowIso(), r.id]);
+        return q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
     }
-    if (rewardsReferee) {
-        await addCredit(q, {
-            userId: r.referee_id, amount: r.referee_reward, currency: r.currency, reason: 'REFERRAL_REWARD',
-            referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}`,
-            referralId: r.id, ruleId: r.rule_id, validityDays: r.bonus_validity_days,
-        });
-        refereeCredited = r.referee_reward;
-    }
-    await q.run(`UPDATE referrals SET status = 'REWARDED', status_reason = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?, updated_at = ? WHERE id = ?`,
-        [notes.join('; ') || null, nowIso(), referrerCredited, refereeCredited, nowIso(), r.id]);
-    return q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
+    await q.run(`UPDATE referrals SET status = 'REWARDED', status_reason = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?,
+        referrer_credit_id = ?, referee_credit_id = ?, updated_at = ? WHERE id = ?`,
+    [notes.join('; ') || null, nowIso(), referrerCredited, refereeCredited, referrerCreditId, refereeCreditId, nowIso(), r.id]);
+    const done = await q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
+    await announceIssued({ referralId: r.id, referrerCredited, refereeCredited, currency: r.currency, referrerCreditId, refereeCreditId });
+    return done;
 }
 
+// A reward the wallet could not issue is retried by the daily job (BR-51)
+const REWARD_RETRY_REASON = 'Reward could not be issued – will retry';
+
 async function voidReferralCredits(q, r) {
-    const credits = await q.all(`SELECT * FROM credit_ledger WHERE referral_id = ? AND type = 'EARNED' AND amount > 0`, [r.id]);
-    const lost = {};
-    let currency = null;
-    for (const c of credits) {
-        const remaining = await creditRemaining(q, c);
-        if (remaining > 0) {
-            await debitCredit(q, c, remaining, 'VOIDED', {
-                reason: 'REFERRAL_REVERSAL', referenceId: r.qualifying_transfer_id,
-                notes: 'Qualifying transfer reversed – unused referral bonus removed',
-            });
+    const parties = [[r.referrer_id, r.referrer_credit_id], [r.referee_id, r.referee_credit_id]].filter(([, creditId]) => creditId);
+    let lost = 0;
+    for (const [customerId, creditId] of parties) {
+        // Unused credit is removed; nothing is clawed back by this module (BR-41, BR-42)
+        const out = await ports.rewardWallet.voidCredit(creditId, {
+            reason: 'REFERRAL_REVERSAL', notes: 'Qualifying transfer reversed – unused referral bonus removed',
+            eventId: r.qualifying_transfer_id, clawback: false,
+        });
+        lost += Number(out.voided || 0);
+        if (Number(out.spent || 0) > 0) {
+            // Part was already spent: the host decides what to do (e.g. record a debt) and may say how much it recorded
+            const owed = await ports.onSpentCreditReversed({ customerId, creditId, currency: r.currency, amount: round2(out.spent), referralId: r.id, transferId: r.qualifying_transfer_id });
+            lost += Number(owed) > 0 ? Number(owed) : 0;
         }
-        // Referral bonus the customer already spent becomes a debt repaid from their next bonus (see bonusDebt.js)
-        const clawed = await debt.clawback(q, c, { eventId: r.qualifying_transfer_id, notes: 'Referral bonus already spent – qualifying transfer reversed' });
-        lost[c.user_id] = (lost[c.user_id] || 0) + clawed + (remaining > 0 ? remaining : 0);
-        currency = c.currency;
     }
     // The customer who made the reversed transfer (the referee) gets the strike, not the referrer
-    const totalLost = round2(Object.values(lost).reduce((a, b) => a + b, 0));
+    const totalLost = round2(lost);
     if (totalLost > 0) {
-        await blocks.recordStrike(q, { customerId: r.referee_id, eventId: r.qualifying_transfer_id, kind: 'REFERRAL', outcome: 'REFUNDED', amountLost: totalLost, currency });
+        await ports.eligibilityGuard.recordStrike({ customerId: r.referee_id, eventId: r.qualifying_transfer_id, kind: 'REFERRAL', outcome: 'REFUNDED', amountLost: totalLost, currency: r.currency });
     }
+    return { referral: await q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]) };
 }
 
 // Fix a deferred referral to the rule of the corridor the referee actually sent on (terms are snapshotted now)
@@ -569,8 +538,7 @@ async function handleTransferEvent(q, ev) {
         String(ev.receive_currency || (prev && prev.receive_currency) || '').toUpperCase() || null, status, createdAt, nowIso()]);
     const transfer = await q.get(`SELECT * FROM referral_transfers WHERE transfer_id = ?`, [ev.transfer_id]);
 
-    // A refunded transfer that used bonus gets the bonus back (AC-5.2.10)
-    if (FAIL_STATUSES.includes(status) || REVERSE_STATUSES.includes(status)) await wallet.releaseBonus(q, ev.customer_id, ev.transfer_id);
+    // Giving back bonus that a cancelled or refunded transfer used is the bonus module's job (BR-43)
 
     let r = await q.get(`SELECT * FROM referrals WHERE referee_id = ?`, [ev.customer_id]);
     if (!r) return { referral: null };
@@ -620,6 +588,13 @@ async function runJobs(q) {
             await q.run(`UPDATE referrals SET status = 'EXPIRED', status_reason = ?, updated_at = ? WHERE id = ?`, [`${r.status_reason} – not completed in time`, nowIso(), r.id]);
         }
     }
+    // BR-51: rewards the wallet could not issue are tried again
+    let retried = 0;
+    const stuck = await q.all(`SELECT * FROM referrals WHERE status = 'PENDING' AND status_reason = ?`, [REWARD_RETRY_REASON]);
+    for (const r of stuck) {
+        const after = await tryAward(q, r);
+        if (after && after.status === 'REWARDED') retried++;
+    }
     let ending = 0;
     const rules = await q.all(`SELECT * FROM referral_rules WHERE COALESCE(is_archived,0) = 0 AND end_date IS NOT NULL`);
     for (const rule of rules) {
@@ -629,10 +604,22 @@ async function runJobs(q) {
         }
     }
     // Bonus credit expiry is the bonus module's job for every source (BONUS-MITO BS-65): POST /api/bonus/run-jobs
-    return { referrals_expired: expiredReferrals.changes, ending_notifications: ending };
+    return { referrals_expired: expiredReferrals.changes, rewards_retried: retried, ending_notifications: ending };
 }
 
 // ---------- reporting ----------
+
+// Issued / used / returned / expired / voided bonus for the referrals a query selects, summed over currencies (a referral has one)
+async function creditTotals(q, referralIdsSql) {
+    const ids = (await q.all(referralIdsSql)).map((r) => r.id);
+    const total = { issued: 0, used: 0, returned: 0, expired: 0, voided: 0 };
+    for (let i = 0; i < ids.length; i += 400) { // keep each call well under SQLite's variable limit
+        const out = await ports.rewardWallet.creditSummary({ referralIds: ids.slice(i, i + 400) });
+        for (const row of Object.values(out || {})) for (const k of Object.keys(total)) total[k] = round2(total[k] + Number(row[k] || 0));
+    }
+    return total;
+}
+
 const STATUS_LABELS = {
     REGISTERED: 'Joined', PENDING: 'In progress', REWARDED: 'Earned', EXPIRED: 'Expired', NOT_ELIGIBLE: 'Not eligible', REVERSED: 'Reversed',
 };
@@ -695,10 +682,9 @@ async function performance(q, { from, to, include_archived }) {
         const rewarded = cnt(['REWARDED']);
         const refIds = `SELECT id FROM referrals WHERE rule_id = ${Number(rule.id)}${rangeCond('registered_at')}`;
         const sum = async (sql) => round2((await q.get(sql)).s || 0);
-        const issued = await sum(`SELECT SUM(amount) AS s FROM credit_ledger WHERE type = 'EARNED' AND reason_code = 'REFERRAL_REWARD' AND referral_id IN (${refIds})`);
-        const used = -(await sum(`SELECT SUM(amount) AS s FROM credit_ledger WHERE type = 'APPLIED' AND referral_id IN (${refIds}) AND source_credit_id IN (SELECT id FROM credit_ledger WHERE reason_code = 'REFERRAL_REWARD')`));
-        const returned = await sum(`SELECT SUM(amount) AS s FROM credit_ledger WHERE reason_code = 'BONUS_RETURNED' AND referral_id IN (${refIds})`);
-        const expired = -(await sum(`SELECT SUM(amount) AS s FROM credit_ledger WHERE type IN ('EXPIRED','VOIDED') AND referral_id IN (${refIds})`));
+        // Bonus figures come from the wallet, never from its tables (BR-53)
+        const totals = await creditTotals(q, refIds);
+        const issued = totals.issued, used = totals.used, returned = totals.returned, expired = round2(totals.expired + totals.voided);
         const volume = await sum(`SELECT SUM(t.amount) AS s FROM referral_transfers t JOIN referrals r ON r.referee_id = t.customer_id
             WHERE r.rule_id = ${Number(rule.id)} AND t.status = 'COMPLETED' AND t.currency = r.currency
             AND (r.receive_currency IS NULL OR t.receive_currency = r.receive_currency)${rangeCond('r.registered_at')}`);
@@ -725,7 +711,8 @@ const toCsv = (headers, rows) => [headers.map((h) => csvEscape(h[0])).join(','),
 // ---------- routes ----------
 function registerReferralRoutes(app, db, hooks = {}) {
     const q = promisify(db);
-    // The bonus module creates credit_ledger and its seeds first (hooks.dependsOn), so the seed fixes below find them
+    ports = resolvePorts(hooks); // fails here, at start-up, when rewardWallet is not wired
+    // The host may ask for other modules' tables to exist first (hooks.dependsOn)
     const ready = Promise.resolve(hooks.dependsOn).then(() => initSchema(db)).catch((e) => console.error('Referral schema init failed', e));
     const wrap = (fn) => async (req, res) => {
         try { await ready; await fn(req, res); } catch (err) {
@@ -926,24 +913,23 @@ function registerReferralRoutes(app, db, hooks = {}) {
         if (!rule) return res.status(400).json({ error: 'NO_RULE', message: `There is no referral rule for ${corridorLabel(r.currency, r.receive_currency)} to approve against.` });
         const referrer = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referrer_id]);
         const referee = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referee_id]);
-        let referrerCredited = 0, refereeCredited = 0;
+        let referrerCredited = 0, refereeCredited = 0, referrerCreditId = null, refereeCreditId = null;
         const rr = r.rule_id ? r.referrer_reward : rule.referrer_reward, re = r.rule_id ? r.referee_reward : rule.referee_reward;
         const type = r.reward_type || rule.reward_type;
         const note = ` (approved by ${admin_user || 'Admin'}: ${String(reason).trim()})`;
         if (type !== 'REFEREE' && rr > 0) {
-            await addCredit(q, { userId: r.referrer_id, amount: rr, currency: r.currency, reason: 'REFERRAL_REWARD', referenceId: `${r.id}:referrer`, notes: `Referrer reward – referred ${maskName(referee.first_name, referee.last_name)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
+            referrerCreditId = await addCredit({ userId: r.referrer_id, amount: rr, currency: r.currency, referenceId: `${r.id}:referrer`, notes: `Referrer reward – referred ${maskName(referee.first_name, referee.last_name)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
             referrerCredited = rr;
         }
         if (type !== 'REFERRER' && re > 0) {
-            await addCredit(q, { userId: r.referee_id, amount: re, currency: r.currency, reason: 'REFERRAL_REWARD', referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
+            refereeCreditId = await addCredit({ userId: r.referee_id, amount: re, currency: r.currency, referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
             refereeCredited = re;
         }
-        await q.run(`UPDATE referrals SET status = 'REWARDED', rule_id = ?, receive_currency = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?, approved_by = ?, approval_reason = ?, status_reason = 'Approved by admin', updated_at = ? WHERE id = ?`,
-            [rule.id, rule.receive_currency, nowIso(), referrerCredited, refereeCredited, admin_user || 'Admin', String(reason).trim(), nowIso(), r.id]);
+        await q.run(`UPDATE referrals SET status = 'REWARDED', rule_id = ?, receive_currency = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?, referrer_credit_id = ?, referee_credit_id = ?, approved_by = ?, approval_reason = ?, status_reason = 'Approved by admin', updated_at = ? WHERE id = ?`,
+            [rule.id, rule.receive_currency, nowIso(), referrerCredited, refereeCredited, referrerCreditId, refereeCreditId, admin_user || 'Admin', String(reason).trim(), nowIso(), r.id]);
+        await announceIssued({ referralId: r.id, referrerCredited, refereeCredited, currency: r.currency, referrerCreditId, refereeCreditId, approvedBy: admin_user || 'Admin' });
         res.json({ data: await q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]) });
     }));
-
-    // The bonus wallet routes (/api/wallet/...) moved to the bonus module (BONUS-MITO API-S3 – S5)
 
     app.get('/api/referral/offer-notifications', wrap(async (req, res) => {
         const cond = [], params = [];
@@ -997,5 +983,5 @@ function registerReferralRoutes(app, db, hooks = {}) {
 }
 
 module.exports = {
-    registerReferralRoutes, initSchema, clock, ruleStatus, validateRule, offerText, ukDate, addDays, money, maskName, corridorLabel,
+    registerReferralRoutes, initSchema, clock, ensureReferralCode, promisify, ruleStatus, validateRule, offerText, ukDate, addDays, money, maskName, corridorLabel,
 };
