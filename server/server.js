@@ -3,8 +3,6 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-const bonusEngine = require('./bonusEngine');
-const bonusBlocks = require('./bonusBlocks');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -16,46 +14,7 @@ app.use(bodyParser.json());
 // Serve Static Files
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
-// --- User Segments API ---
-app.get('/api/user-segments', (req, res) => {
-    db.all("SELECT * FROM user_segments ORDER BY created_at DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        const segments = rows.map(seg => ({
-            ...seg,
-            criteria: JSON.parse(seg.criteria || '{}')
-        }));
-        res.json({ data: segments });
-    });
-});
-
-app.post('/api/user-segments', (req, res) => {
-    const { name, description, criteria } = req.body;
-    if (!name) return res.status(400).json({ error: "Name is required" });
-
-    const stmt = db.prepare("INSERT INTO user_segments (name, description, criteria) VALUES (?, ?, ?)");
-    stmt.run(name, description, JSON.stringify(criteria || {}), function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, id: this.lastID });
-    });
-    stmt.finalize();
-});
-
-app.put('/api/user-segments/:id', (req, res) => {
-    const { name, description, criteria } = req.body;
-    const stmt = db.prepare("UPDATE user_segments SET name = ?, description = ?, criteria = ? WHERE id = ?");
-    stmt.run(name, description, JSON.stringify(criteria || {}), req.params.id, function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, changes: this.changes });
-    });
-    stmt.finalize();
-});
-
-app.delete('/api/user-segments/:id', (req, res) => {
-    db.run("DELETE FROM user_segments WHERE id = ?", [req.params.id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, changes: this.changes });
-    });
-});
+// User segments, bonus schemes, the bonus wallet and the credit ledger are served by the bonus module (server/bonus).
 
 // SPA Catch-all Route (Must be after API routes, handled at bottom)
 
@@ -75,13 +34,6 @@ const dbq = {
     get: (sql, params = []) => new Promise((res, rej) => db.get(sql, params, (err, row) => (err ? rej(err) : res(row)))),
     all: (sql, params = []) => new Promise((res, rej) => db.all(sql, params, (err, rows) => (err ? rej(err) : res(rows || [])))),
 };
-
-// Business-rule refusals keep their status and code; anything else is a 500
-function sendEngineError(res, err) {
-    if (err instanceof bonusEngine.Reject) return res.status(err.status).json(err.body());
-    console.error('[engine]', err);
-    return res.status(500).json({ error: err.message });
-}
 
 function initializeDatabase() {
     db.serialize(() => {
@@ -182,118 +134,7 @@ function initializeDatabase() {
         });
 
         // User Segments (New)
-        db.run(`CREATE TABLE IF NOT EXISTS user_segments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            description TEXT,
-            criteria TEXT DEFAULT '{}', -- JSON: { type: 'TRANSACTION_COUNT'|'TRANSACTION_VOLUME', min, max, period_days, currency }
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )`);
-
-        // Bonus Schemes (Phase 1: FRD)
-        db.run(`CREATE TABLE IF NOT EXISTS bonus_schemes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            bonus_type TEXT NOT NULL, -- REFERRAL_CREDIT, LOYALTY_CREDIT, TRANSACTION_THRESHOLD_CREDIT, REQUEST_MONEY
-            credit_amount REAL NOT NULL,
-            currency TEXT DEFAULT 'GBP',
-            min_transaction_threshold REAL DEFAULT 0,
-            min_transactions INTEGER DEFAULT 0,
-            time_period_days INTEGER DEFAULT 0,
-            commission_type TEXT DEFAULT 'FIXED', -- FIXED, PERCENTAGE
-            commission_percentage REAL DEFAULT 0,
-            is_tiered INTEGER DEFAULT 0, -- Boolean (0/1)
-            tiers TEXT DEFAULT '[]', -- JSON: [{min, max, value}]
-            eligibility_rules TEXT,
-            start_date TEXT NOT NULL,
-            end_date TEXT NOT NULL,
-            status TEXT DEFAULT 'ACTIVE',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )`, () => {
-            // Migration: Ensure new columns exist
-            const migrations = [
-                "ALTER TABLE bonus_schemes ADD COLUMN currency TEXT DEFAULT 'GBP'",
-                "ALTER TABLE bonus_schemes ADD COLUMN min_transactions INTEGER DEFAULT 0",
-                "ALTER TABLE bonus_schemes ADD COLUMN time_period_days INTEGER DEFAULT 0",
-                "ALTER TABLE bonus_schemes ADD COLUMN commission_type TEXT DEFAULT 'FIXED'",
-                "ALTER TABLE bonus_schemes ADD COLUMN commission_percentage REAL DEFAULT 0",
-                "ALTER TABLE bonus_schemes ADD COLUMN is_tiered INTEGER DEFAULT 0",
-                "ALTER TABLE bonus_schemes ADD COLUMN tiers TEXT DEFAULT '[]'"
-            ];
-
-            // Migrations (Redundant for fresh DB)
-            /*
-            db.serialize(() => {
-                migrations.forEach(query => {
-                    db.run(query, (err) => { });
-                });
-            });
-            */
-
-            // Seed sample bonus schemes if empty
-            db.get("SELECT count(*) as count FROM bonus_schemes", (err, row) => {
-                if (row && row.count === 0) {
-                    const stmt = db.prepare(`INSERT INTO bonus_schemes 
-                        (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, eligibility_rules, start_date, end_date, status) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-                    stmt.run('High Value Threshold Bonus', 'TRANSACTION_THRESHOLD_CREDIT', 25.00, 'USD', 500.0, 0, 0,
-                        JSON.stringify({ paymentMethods: ['bank_transfer'], segments: ['all'] }),
-                        '2024-06-01', '2024-12-31', 'ACTIVE');
-                    stmt.run('Loyalty Credit (Expired)', 'LOYALTY_CREDIT', 5.00, 'EUR', 0.0, 3, 30,
-                        JSON.stringify({ segments: ['existing_customers'] }),
-                        '2023-01-01', '2023-12-31', 'EXPIRED');
-
-                    // NEW: Request Money Scheme Seed (ID will be 3)
-                    stmt.run('Request Money Scheme', 'REQUEST_MONEY', 0.00, 'GBP', 0.0, 0, 0,
-                        JSON.stringify({ segments: ['all'] }),
-                        '2024-01-01', '2025-12-31', 'ACTIVE');
-
-                    stmt.finalize();
-                }
-            });
-        });
-
-        // Credit Ledger (Append-Only) - Enhanced with FRD fields
-        db.run(`CREATE TABLE IF NOT EXISTS credit_ledger (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            amount REAL, -- Positive for earn, Negative for spend/void
-            type TEXT, -- EARNED, APPLIED, EXPIRED, VOIDED
-            scheme_id INTEGER, -- FK to bonus_schemes
-            reference_id TEXT, -- Transaction ID, Promo Code ID, or Manual Reason Code
-            reason_code TEXT, -- LOYALTY, CORRECTION, MANUAL_ADJUSTMENT (Phase 3: FRD)
-            notes TEXT, -- Admin notes (Phase 3: FRD)
-            admin_user TEXT, -- For audit trail
-            admin_user_id TEXT, -- Admin ID (Phase 4: FRD)
-            expires_at TEXT, -- Credit expiry date (Phase 4: FRD)
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (scheme_id) REFERENCES bonus_schemes(id)
-        )`, () => {
-            // Seed data for Credit Ledger if empty (or just append dummy for dev for user_123, user_101, etc)
-            db.get("SELECT count(*) as count FROM credit_ledger", (err, row) => {
-                if (row && row.count === 0) {
-                    const stmt = db.prepare("INSERT INTO credit_ledger (user_id, amount, type, scheme_id, reference_id, reason_code, notes, created_at, admin_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    // User 123 (Main Demo User)
-                    stmt.run('user_123', 50.00, 'EARNED', 1, 'ref_001', 'LOYALTY', 'Initial Loyalty Bonus', '2025-01-01 10:00:00', 'System');
-
-                    // Global View Dummy Data
-                    stmt.run('user_101', 15.00, 'EARNED', 2, 'ref_101', 'REFERRAL_REWARD', 'Referral: user_999', '2025-01-10 10:00:00', 'System');
-                    stmt.run('user_101', -5.00, 'APPLIED', 2, 'tx_999', 'PAYMENT_OFFSET', 'Used for Txn #123', '2025-01-12 14:00:00', 'System');
-
-                    stmt.run('user_102', 25.00, 'EARNED', 1, 'loyalty_001', 'LOYALTY', 'VIP Tier reached', '2025-01-01 09:00:00', 'Admin_Jane');
-                    stmt.run('user_102', -25.00, 'EXPIRED', 1, 'exp_001', 'EXPIRY', 'Unused credit expired', '2025-04-01 00:00:00', 'System');
-
-                    stmt.run('user_105', 10.00, 'EARNED', 1, 'bonus_105', 'TRANSACTION_THRESHOLD', 'Hit 500 USD volume', '2025-01-15 16:20:00', 'System');
-
-                    // NEW: Request Money Scheme Entry (ID 3)
-                    stmt.run('user_105', 100.00, 'EARNED', 3, 'req_001', 'REQUEST_MONEY', 'Money Requested', '2025-01-16 09:00:00', 'System');
-
-                    stmt.finalize();
-                }
-            });
-        });
+        // user_segments, bonus_schemes and credit_ledger (with their seeds) are created by the bonus module (server/bonus/schema.js)
 
         // Rate Audit Log
         db.run(`CREATE TABLE IF NOT EXISTS rate_audit_log (
@@ -401,434 +242,81 @@ app.get('/api/segments', (req, res) => {
     res.json({ data: { new_users: 10, churned_users: 5 } }); // Mock
 });
 
-// --- Referral & Bonus engine (rules, referrals, wallet, reporting) ---
-// See server/referral.js and Docs/Requirements/referral-and-bonus-user-stories.md
-const { registerReferralRoutes } = require('./referral');
-bonusBlocks.registerBonusBlockRoutes(app, dbq);
-const referralModule = registerReferralRoutes(app, db, {
+// --- Bonus module (spec BONUS_MODULE_SPEC_MITO_ADMIN.md v1.1) ---
+// Owns bonus schemes, user segments, the customer's one bonus wallet (credit_ledger, every source), clawback debt,
+// blocks and the Bonus admin API. The host connects other modules through its ports.
+const bonus = require('./bonus');
+const bonusModule = bonus.register(app, db, {
+    customerDirectory: hostCustomerFacts,
     // The wallet's promo_redemptions list comes from the promo module's read function (PROMO-MITO §8.4)
     promoRedemptions: (customerId) => promo.listRedemptions({ userId: customerId }),
-    // A completed transfer may also earn loyalty / threshold bonuses; failures here must never fail the transfer event
-    afterTransferEvent: async (ev) => {
-        const status = String(ev.status || '').toUpperCase();
-        // Transition (PROMO-MITO C3): until Rhemito reports to POST /api/promocodes/transfer-events, the promo module also
-        // hears transfer events here (records the activity, releases the code use on failure). Idempotent, so both paths are safe.
-        try { await promo.handleTransferEvent(ev); } catch (err) { console.error('[promo] transfer event not recorded', ev.transfer_id, err.message); }
-        // Cancelled, failed or refunded: take back scheme bonuses the transfer earned
-        if (['CANCELLED', 'FAILED', 'REFUNDED', 'RECALLED', 'CHARGEBACK'].includes(status)) {
-            try {
-                return (await bonusEngine.reverseEvent(dbq, ev.transfer_id, status)).map((r) => ({ ...r, status: 'REVERSED' }));
-            } catch (err) {
-                console.error('[bonus] could not reverse bonuses for transfer', ev.transfer_id, err.message);
-                return [];
-            }
-        }
-        if (status !== 'COMPLETED') return [];
-        try {
-            return await bonusEngine.triggerEvent(dbq, {
-                type: 'TRANSFER_COMPLETED', customer_id: ev.customer_id, event_id: ev.transfer_id, amount: Number(ev.amount), currency: ev.currency,
-            });
-        } catch (err) {
-            console.error('[bonus] could not evaluate bonus schemes for transfer', ev.transfer_id, err.message);
-            return [];
-        }
-    },
-});// Once the referral tables exist, let the promo module copy their customer activity (PROMO-MITO §4.4)
-Promise.resolve(referralModule && referralModule.ready).then(() => promo.runBackfill()).catch((e) => console.error('[promo] backfill failed', e.message));
-
-
-// --- Phase 1: Bonus Scheme Configuration API (FRD) ---
-
-// 1. Get All Bonus Schemes
-app.get('/api/bonus-schemes', (req, res) => {
-    db.all("SELECT * FROM bonus_schemes ORDER BY created_at DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-
-        // Parse JSON fields
-        const schemes = rows.map(scheme => ({
-            ...scheme,
-            eligibility_rules: JSON.parse(scheme.eligibility_rules || '{}'),
-            tiers: JSON.parse(scheme.tiers || '[]'),
-            is_tiered: !!scheme.is_tiered // Convert to boolean
+    // Promo redemptions shown in the admin ledger (same row shape as before; source_type 'PROMO')
+    historySources: [async (f) => {
+        if (!((!f.eventType || f.eventType === 'APPLIED') && !f.isReferralRule)) return [];
+        const ids = [];
+        if (!f.isGlobal) ids.push(f.userId);
+        if (f.customerId) ids.push(f.customerId);
+        if (ids.length === 2 && ids[0] !== ids[1]) return [];
+        const rows = await promo.listRedemptions({ userId: ids[0], codeId: f.schemeId || undefined, from: f.startDate, to: f.endDate });
+        const names = await hostCustomerFacts.names(rows.map((r) => r.user_id).filter(Boolean));
+        return rows.map((r) => ({
+            id: r.id, created_at: r.created_at, amount: -r.discount_amount, type: 'APPLIED',
+            scheme_id: r.promo_code_id, reference_id: r.transaction_id, reason_code: 'PROMO_REDEMPTION', source_type: 'PROMO',
+            scheme_name: r.code ? `${r.code} (Promo Code)` : null, notes: r.code ? `Promo Code: ${r.code}` : null,
+            admin_user: 'System', user_id: r.user_id, currency: r.currency || 'GBP',
+            customer_name: names[r.user_id] || r.customer_name || null,
         }));
-
-        res.json({ data: schemes });
-    });
-});
-
-// 2. Create Bonus Scheme
-// 2. Create Bonus Scheme
-app.post('/api/bonus-schemes', (req, res) => {
-    const {
-        name, bonus_type, credit_amount, currency, min_transaction_threshold,
-        min_transactions, time_period_days, commission_type, commission_percentage,
-        is_tiered, tiers, eligibility_rules, start_date, end_date, status
-    } = req.body;
-
-    // FRD Validations (Section 3.1)
-    if (!name) return res.status(400).json({ error: "Bonus Name is required" });
-    if (!bonus_type) return res.status(400).json({ error: "Bonus Type is required" });
-    if (bonus_type === 'REFERRAL_CREDIT') {
-        return res.status(400).json({ error: "Referral rewards are managed in Growth > Referral Settings." });
-    }
-    if (!credit_amount && commission_type !== 'PERCENTAGE') {
-        // It's okay if credit_amount is 0 if it's percentage or tiered (maybe)
-        // But for simplicity let's keep basic check or refine it.
-        // If tiered, credit_amount might be 0/unused.
-    }
-
-    if (!start_date || !end_date) return res.status(400).json({ error: "Validity Period is required" });
-    if (new Date(start_date) >= new Date(end_date)) {
-        return res.status(400).json({ error: "Please select a valid date range. Start date must be before end date." });
-    }
-
-    // Loyalty Credit specific validations
-    if (bonus_type === 'LOYALTY_CREDIT') {
-        if (!min_transactions || min_transactions <= 0) {
-            return res.status(400).json({ error: "Number of Transactions is required for Loyalty Credit" });
+    }],
+    // Referral rule names, corridors and the customer's role, for ledger rows paid by the referral programme
+    ledgerDecorator: async (rows) => {
+        const ruleIds = [...new Set(rows.filter((r) => r.referral_rule_id).map((r) => r.referral_rule_id))];
+        const refIds = [...new Set(rows.filter((r) => r.referral_id).map((r) => r.referral_id))];
+        const rules = {}; const refs = {};
+        for (const id of ruleIds) { try { rules[id] = await dbq.get('SELECT id, name, base_currency, receive_currency FROM referral_rules WHERE id = ?', [id]); } catch { /* table absent */ } }
+        for (const id of refIds) { try { refs[id] = await dbq.get('SELECT referrer_id, referee_id FROM referrals WHERE id = ?', [id]); } catch { /* table absent */ } }
+        for (const r of rows) {
+            const rule = rules[r.referral_rule_id];
+            const ref = refs[r.referral_id];
+            if (rule) {
+                if (!r.scheme_name) r.scheme_name = `${rule.name} (Referral)`;
+                r.rule_send_currency = rule.base_currency; r.rule_receive_currency = rule.receive_currency;
+            }
+            r.referral_role = ref ? (ref.referrer_id === r.user_id ? 'Referrer' : ref.referee_id === r.user_id ? 'Referee' : null) : null;
         }
-        if (!time_period_days || time_period_days <= 0) {
-            return res.status(400).json({ error: "Time Period (Days) is required for Loyalty Credit" });
-        }
-    }
+        return rows;
+    },
+    // Promo codes that target a saved segment (so the segment cannot be deleted from under them)
+    segmentUsage: async (segmentId) => {
+        const rows = await dbq.all('SELECT user_segment, restrictions FROM promo_codes').catch(() => []);
+        const typeOf = (s) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+        return rows.filter((r) => {
+            const top = typeOf(r.user_segment); const restr = typeOf(r.restrictions);
+            return String((top && top.type) || '') === String(segmentId) || String((restr && restr.user_segment && restr.user_segment.type) || '') === String(segmentId);
+        }).length;
+    },
+}, { dbFile: path.resolve('./database.sqlite') });
 
-    const stmt = db.prepare(`INSERT INTO bonus_schemes 
-        (name, bonus_type, credit_amount, currency, min_transaction_threshold, min_transactions, time_period_days, commission_type, commission_percentage, is_tiered, tiers, eligibility_rules, start_date, end_date, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-    // Default to GBP if not provided (Safety net)
-    const safeCurrency = currency || 'GBP';
-
-    stmt.run(
-        name,
-        bonus_type,
-        credit_amount || 0,
-        safeCurrency,
-        min_transaction_threshold || 0,
-        min_transactions || 0,
-        time_period_days || 0,
-        commission_type || 'FIXED',
-        commission_percentage || 0,
-        is_tiered ? 1 : 0,
-        JSON.stringify(tiers || []),
-        JSON.stringify(eligibility_rules || {}),
-        start_date,
-        end_date,
-        status || 'ACTIVE',
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, id: this.lastID });
-        }
-    );
-    stmt.finalize();
+// --- Referral programme (rules, referrals, reporting) ---
+// See server/referral.js and Docs/Requirements/referral-and-bonus-user-stories.md
+const { registerReferralRoutes } = require('./referral');
+const referralModule = registerReferralRoutes(app, db, {
+    // The bonus module creates credit_ledger (and its seeds) first
+    dependsOn: bonusModule.ready,
+    // Transition (BONUS-MITO §6, PROMO-MITO C3): until Rhemito reports to POST /api/bonus/transfer-events and
+    // /api/promocodes/transfer-events, both modules also hear transfer events here. Every step is idempotent, so both
+    // paths running is safe, and a failure here never fails the transfer event.
+    afterTransferEvent: async (ev) => {
+        try { await promo.handleTransferEvent(ev); } catch (err) { console.error('[promo] transfer event not recorded', ev.transfer_id, err.message); }
+        // Loyalty / threshold awards for a completed transfer; reversal and returned bonus for a cancelled or refunded one
+        return bonus.transferEventForHook(ev);
+    },
 });
-
-// 3. Update Bonus Scheme
-app.put('/api/bonus-schemes/:id', (req, res) => {
-    const { id } = req.params;
-    const {
-        name, bonus_type, credit_amount, currency, min_transaction_threshold,
-        min_transactions, time_period_days, commission_type, commission_percentage,
-        is_tiered, tiers, eligibility_rules, start_date, end_date, status
-    } = req.body;
-
-    // FRD Validations
-    if (start_date && end_date && new Date(start_date) >= new Date(end_date)) {
-        return res.status(400).json({ error: "Please select a valid date range" });
-    }
-
-    const stmt = db.prepare(`UPDATE bonus_schemes SET 
-        name = ?,
-        bonus_type = ?,
-        credit_amount = ?,
-        currency = ?,
-        min_transaction_threshold = ?,
-        min_transactions = ?,
-        time_period_days = ?,
-        commission_type = ?,
-        commission_percentage = ?,
-        is_tiered = ?,
-        tiers = ?,
-        eligibility_rules = ?,
-        start_date = ?,
-        end_date = ?,
-        status = ?,
-        updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?`);
-
-    // Default to GBP if not provided (safety)
-    const safeCurrency = currency || 'GBP';
-
-    stmt.run(
-        name,
-        bonus_type,
-        credit_amount || 0,
-        safeCurrency,
-        min_transaction_threshold || 0,
-        min_transactions || 0,
-        time_period_days || 0,
-        commission_type || 'FIXED',
-        commission_percentage || 0,
-        is_tiered ? 1 : 0,
-        JSON.stringify(tiers || []),
-        JSON.stringify(eligibility_rules || {}),
-        start_date,
-        end_date,
-        status,
-        id,
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        }
-    );
-    stmt.finalize();
-});
-
-// 4. Delete Bonus Scheme
-app.delete('/api/bonus-schemes/:id', (req, res) => {
-    const { id } = req.params;
-
-    db.run("UPDATE bonus_schemes SET status = 'ARCHIVED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true, message: "Scheme archived" });
-    });
-});
-
-// --- Phase 2: Enhanced Credits Ledger API (FRD) ---
-
-// 1. Get User Credit Balance & History with Advanced Filtering
-app.get('/api/credits/:userId', (req, res) => {
-    const userId = req.params.userId;
-    const { startDate, endDate, eventType, schemeId, customerId } = req.query;
-    const isReferralRule = typeof schemeId === 'string' && schemeId.startsWith('rr_');
-
-    db.serialize(() => {
-        // Calculate Balance
-        const isGlobal = userId === 'all';
-
-        // Calculate Balance (Individual or Total Liability)
-        const balanceQuery = isGlobal
-            ? "SELECT SUM(amount) as balance FROM credit_ledger"
-            : "SELECT SUM(amount) as balance FROM credit_ledger WHERE user_id = ?";
-        const balanceParams = isGlobal ? [] : [userId];
-
-        db.get(balanceQuery, balanceParams, (err, row) => {
-            if (err) return res.status(500).json({ error: err.message });
-
-            const balance = row && row.balance ? row.balance : 0;
-
-            // Build dynamic query with filters
-            let query = `
-                SELECT cl.*, COALESCE(cl.currency, 'GBP') as currency, 'BONUS' as source_type,
-                    COALESCE(bs.name, CASE WHEN rr.id IS NOT NULL THEN rr.name || ' (Referral)' END,
-                        CASE WHEN COALESCE(src.reason_code, cl.reason_code) = 'LOYALTY' THEN 'Manual loyalty credit' END) as scheme_name,
-                    NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') as customer_name,
-                    rr.base_currency as rule_send_currency, rr.receive_currency as rule_receive_currency,
-                    CASE WHEN rf.referrer_id = cl.user_id THEN 'Referrer' WHEN rf.referee_id = cl.user_id THEN 'Referee' END as referral_role
-                FROM credit_ledger cl
-                LEFT JOIN bonus_schemes bs ON cl.scheme_id = bs.id
-                LEFT JOIN referral_rules rr ON cl.referral_rule_id = rr.id
-                LEFT JOIN referrals rf ON rf.id = cl.referral_id
-                LEFT JOIN customers cu ON cu.id = cl.user_id
-                LEFT JOIN credit_ledger src ON src.id = cl.source_credit_id
-            `;
-            const params = [];
-
-            // Add WHERE clause start if needed
-            let conditions = [];
-            if (!isGlobal) {
-                conditions.push("cl.user_id = ?");
-                params.push(userId);
-            }
-
-            // Phase 2: FRD Filters (Section 3.2)
-            if (startDate) {
-                conditions.push("date(cl.created_at) >= date(?)");
-                params.push(startDate);
-            }
-            if (endDate) {
-                conditions.push("date(cl.created_at) <= date(?)");
-                params.push(endDate);
-            }
-            if (eventType) {
-                conditions.push("cl.type = ?");
-                params.push(eventType);
-            }
-            if (customerId) {
-                conditions.push("cl.user_id = ?");
-                params.push(customerId);
-            }
-            if (isReferralRule) {
-                conditions.push("cl.referral_rule_id = ?");
-                params.push(parseInt(schemeId.slice(3)));
-            } else if (schemeId) {
-                conditions.push("cl.scheme_id = ?");
-                params.push(parseInt(schemeId));
-            }
-
-            if (conditions.length > 0) {
-                query += " WHERE " + conditions.join(" AND ");
-            }
-
-            query += " ORDER BY cl.created_at DESC";
-
-            // Get Filtered History (Union of Credit Ledger + Promo Redemptions)
-
-            // 1. Credit Ledger Query
-            const ledgerPromise = new Promise((resolve, reject) => {
-                db.all(query, params, (err, rows) => {
-                    if (err) reject(err);
-                    else resolve(rows || []);
-                });
-            });
-
-            // 2. Promo redemptions, read through the promo module (PROMO-MITO §8.4). Same row shape as before.
-            const promoPromise = (async () => {
-                // Only include promos if no specific non-APPLIED event type is requested
-                if (!((!eventType || eventType === 'APPLIED') && !isReferralRule)) return [];
-                const ids = [];
-                if (!isGlobal) ids.push(userId);
-                if (customerId) ids.push(customerId);
-                if (ids.length === 2 && ids[0] !== ids[1]) return [];
-                const rows = await promo.listRedemptions({ userId: ids[0], codeId: schemeId || undefined, from: startDate, to: endDate });
-                const names = await hostCustomerFacts.names(rows.map((r) => r.user_id).filter(Boolean));
-                return rows.map((r) => ({
-                    id: r.id, created_at: r.created_at, amount: -r.discount_amount, type: 'APPLIED',
-                    scheme_id: r.promo_code_id, reference_id: r.transaction_id, reason_code: 'PROMO_REDEMPTION', source_type: 'PROMO',
-                    scheme_name: r.code ? `${r.code} (Promo Code)` : null, notes: r.code ? `Promo Code: ${r.code}` : null,
-                    admin_user: 'System', user_id: r.user_id, currency: r.currency || 'GBP',
-                    customer_name: names[r.user_id] || r.customer_name || null,
-                }));
-            })();
-
-            Promise.all([ledgerPromise, promoPromise]).then(([ledgerRows, promoRows]) => {
-                // Merge and Sort by Date Descending
-                const allHistory = [...ledgerRows, ...promoRows].sort((a, b) => {
-                    return new Date(b.created_at) - new Date(a.created_at);
-                });
-
-                // Calculate cost_incurred dynamically from exactly what's in the table
-                // Use absolute values to represent the total "volume" of rewards/spending incurrence
-                const dynamicCost = allHistory.reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
-                // Never add different currencies together (AC-1.9.3)
-                const costByCurrency = {};
-                allHistory.forEach(entry => {
-                    const cur = entry.currency || 'GBP';
-                    costByCurrency[cur] = Math.round(((costByCurrency[cur] || 0) + Math.abs(entry.amount)) * 100) / 100;
-                });
-                // Running balance per customer (oldest first), shown when one customer is selected (AC-1.9.4)
-                const running = {};
-                [...allHistory].reverse().forEach(entry => {
-                    if (entry.source_type !== 'BONUS') return; // promo discounts are not wallet money
-                    const key = `${entry.user_id}|${entry.currency || 'GBP'}`;
-                    running[key] = Math.round(((running[key] || 0) + entry.amount) * 100) / 100;
-                    entry.running_balance = running[key];
-                });
-
-                res.json({
-                    balance: balance,
-                    cost_incurred: dynamicCost,
-                    cost_by_currency: costByCurrency,
-                    currency: 'GBP',
-                    history: allHistory
-                });
-            }).catch(err => res.status(500).json({ error: err.message }));
-        });
-    });
-});
-
-// 2. Manual Credit Adjustment (Grant/Void) - Phase 3 + 4: FRD  
-app.post('/api/credits/manual', (req, res) => {
-    const { user_id, amount, type, reason_code, notes, scheme_id, admin_user, idempotency_key } = req.body;
-
-    // Phase 3: FRD Validations (Section 3.3)
-    if (!user_id || !amount || !type) {
-        return res.status(400).json({ error: "Missing required fields: user_id, amount, type" });
-    }
-    if (!reason_code) {
-        return res.status(400).json({ error: "Reason code is required (GOODWILL, CORRECTION, MANUAL_ADJUSTMENT)" });
-    }
-    if (!notes || notes.trim().length === 0) {
-        return res.status(400).json({ error: "Notes must be provided for manual adjustments" });
-    }
-
-    // Phase 4: Idempotency Check (FRD Section 4.2)
-    if (idempotency_key) {
-        db.get("SELECT * FROM credit_ledger WHERE reference_id = ?", [`idem_${idempotency_key}`], (err, existing) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (existing) {
-                // Already processed - return existing record
-                return res.json({
-                    success: true,
-                    id: existing.id,
-                    new_balance_impact: existing.amount,
-                    idempotent: true,
-                    message: "Request already processed"
-                });
-            }
-            // Not found, proceed with insertion
-            performManualAdjustment();
-        });
-    } else {
-        performManualAdjustment();
-    }
-
-    function performManualAdjustment() {
-        const id = 'crd_' + Date.now();
-        const parsedAmount = parseFloat(amount);
-        const reference_id = idempotency_key ? `idem_${idempotency_key}` : `manual_${id}`;
-
-        const stmt = db.prepare(`INSERT INTO credit_ledger 
-            (id, user_id, amount, type, scheme_id, reference_id, reason_code, notes, admin_user) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-        stmt.run(
-            id,
-            user_id,
-            parsedAmount,
-            type,
-            scheme_id || null,
-            reference_id,
-            reason_code,
-            notes,
-            admin_user || 'Admin',
-            function (err) {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true, id: id, new_balance_impact: parsedAmount });
-            }
-        );
-        stmt.finalize();
-    }
-});
-
-// 3. Award Bonus Credit (with One-Time & Expiry Rules) - Phase 4: FRD
-// All eligibility rules (dates, currency, thresholds, loyalty counts, segments, one-time) are enforced in bonusEngine.js.
-app.post('/api/credits/award-bonus', async (req, res) => {
-    try {
-        res.json(await bonusEngine.awardScheme(dbq, req.body || {}));
-    } catch (err) {
-        sendEngineError(res, err);
-    }
-});
-
-// 3b. Rhemito reports an activity that can earn a non-referral bonus (money request paid).
-// Completed transfers reach the same engine through /api/referral/transfer-events.
-app.post('/api/bonus/events', async (req, res) => {
-    try {
-        const b = req.body || {};
-        if (b.type === 'MONEY_REQUEST_REFUNDED') {
-            // A paid money request was refunded: take back the unused part of the bonus it earned
-            if (!b.event_id) return res.status(400).json({ error: 'VALIDATION', message: 'event_id is required.' });
-            return res.json({ awards: (await bonusEngine.reverseEvent(dbq, b.event_id, 'REFUNDED')).map((r) => ({ ...r, status: 'REVERSED' })) });
-        }
-        const awards = await bonusEngine.triggerEvent(dbq, {
-            type: b.type, customer_id: b.customer_id, event_id: b.event_id, amount: b.amount, currency: b.currency,
-        });
-        res.json({ awards });
-    } catch (err) {
-        sendEngineError(res, err);
-    }
-});
+// Once the referral tables exist, the promo and bonus modules copy the customer activity they need (idempotent)
+Promise.resolve(referralModule && referralModule.ready)
+    .then(() => Promise.all([
+        promo.runBackfill().catch((e) => console.error('[promo] backfill failed', e.message)),
+        bonus.runBackfill().catch((e) => console.error('[bonus] backfill failed', e.message)),
+    ]));
 
 
 // --- Rate Audit Log API ---
@@ -874,7 +362,9 @@ if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
     });
-    // Daily referral jobs (expiry of referrals and bonus credit, "offer ending" notices) — checked hourly
+    // Daily bonus jobs (credit expiry for every source, expiring reminders) — hourly, acting once per UK day
+    bonus.startJobs();
+    // Daily referral jobs (expiry of referrals, "offer ending" notices) — checked hourly
     const runReferralJobs = () => fetch(`http://localhost:${PORT}/api/referral/run-jobs`, { method: 'POST' }).catch(() => {});
     setTimeout(runReferralJobs, 5000);
     setInterval(runReferralJobs, 60 * 60 * 1000);
