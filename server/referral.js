@@ -1040,7 +1040,13 @@ function registerReferralRoutes(app, db, hooks = {}) {
             currency: b.currency, available: round2(b.available), earned: round2(b.earned), used: round2(b.used), expired: round2(b.expired),
             used_transfer_count: b.used_transfers.size, referral_credit_count: b.referral_credits, other_credit_count: b.other_credits,
         }));
-        const promos = await q.all(`SELECT pr.*, pc.code, pc.currency FROM promo_redemptions pr LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code) WHERE pr.user_id = ? ORDER BY pr.created_at DESC`, [id]);
+        // Promo savings come from the promo module's read function when the host provides it (PROMO-MITO §8.4)
+        let promos = [];
+        if (hooks.promoRedemptions) {
+            try { promos = (await hooks.promoRedemptions(id)).filter((p) => p.status === 'Redeemed').map((p) => ({ ...p, code: p.code || p.promo_code_id })); } catch (e) { promos = []; }
+        } else {
+            promos = await q.all(`SELECT pr.*, pc.code, pc.currency FROM promo_redemptions pr LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code) WHERE pr.user_id = ? ORDER BY pr.created_at DESC`, [id]).catch(() => []);
+        }
         res.json({
             customer_id: id, balances,
             // Only the fact, never the reason: the customer is told to contact support (admins see the reason in Blocked Customers)

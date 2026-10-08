@@ -45,15 +45,19 @@ describe('Promo codes: Mito Admin is the source of truth', () => {
         const ok = await validate(code);
         expect(ok.status).toBe(200);
         expect(ok.body).toMatchObject({ valid: true, appliedDiscount: 1, appliesTo: 'fee' }); // £5 off, but the fee is only £1
-        expect((await validate(code, { amount: 10 })).body.error).toMatch(/too low/);
-        expect((await validate(code, { currency: 'USD' })).body.error).toMatch(/only valid for GBP/);
+        // PROMO-MITO §6.4: customer-facing wording changed on purpose; machine codes added
+        expect((await validate(code, { amount: 10 })).body).toMatchObject({ error: 'Send at least £50.00 to use this code.', code: 'BELOW_MIN' });
+        expect((await validate(code, { currency: 'USD' })).body).toMatchObject({ error: 'This code only works on GBP transfers.', code: 'CURRENCY' });
     });
 
     it('rejects unknown, expired and disabled codes', async () => {
         expect((await validate('NOSUCHCODE')).status).toBe(404);
-        const old = await makePromo({ start_date: '2020-01-01T00:00:00Z', end_date: '2020-02-01T00:00:00Z' });
+        // A code cannot be created already ended (PROMO-MITO §5.2), so create it, then move its dates into the past (edit of an unused code)
+        const old = await makePromo();
         const code = (await request(app).get('/api/promocodes')).body.data.find((p) => p.id === old.body.id).code;
-        expect((await validate(code)).body.error).toMatch(/has expired/);
+        await request(app).put(`/api/promocodes/${old.body.id}`).send({ code, type: 'Fixed', value: 5, min_threshold: 50, currency: 'GBP', usage_limit_per_user: 1, start_date: '2020-01-01T00:00:00Z', end_date: '2020-02-01T00:00:00Z' }).expect(200);
+        expect((await validate(code)).body).toMatchObject({ error: 'This promo code has expired.', code: 'EXPIRED' });
+        expect((await makePromo({ start_date: '2020-01-01T00:00:00Z', end_date: '2020-02-01T00:00:00Z' })).body.fields.end_date).toBe('End date must be in the future.');
     });
 
     it('matches payment methods whether written as Mito names or Rhemito ids', async () => {

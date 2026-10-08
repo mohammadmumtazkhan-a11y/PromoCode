@@ -4,7 +4,6 @@ const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bonusEngine = require('./bonusEngine');
-const promoEngine = require('./promoEngine');
 const bonusBlocks = require('./bonusBlocks');
 
 const app = express();
@@ -156,75 +155,6 @@ function initializeDatabase() {
         cStmt.run("c1", "t1", 5000.00, 2500.00, 7500.00, "Due");
         cStmt.finalize();
 
-        // Seed Promo Codes (Dummy Data for Kill Switch Demo)
-        db.run(`CREATE TABLE IF NOT EXISTS promo_redemptions (
-            id TEXT PRIMARY KEY,
-            promo_code_id TEXT,
-            transaction_id TEXT,
-            user_id TEXT,
-            discount_amount REAL,
-            status TEXT,
-            created_at TEXT,
-            FOREIGN KEY(promo_code_id) REFERENCES promo_codes(id)
-        )`, () => {
-            // Seed data for cost incurred demo & Global View
-            db.get("SELECT count(*) as count FROM promo_redemptions", (err, row) => {
-                if (row && row.count === 0) {
-                    const stmt = db.prepare("INSERT INTO promo_redemptions VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    // Existing Seed
-                    stmt.run('pr_1', 'SAVE20', 'txn_promo_1', 'user_123', 20.00, 'Redeemed', '2024-05-15T10:00:00Z');
-                    stmt.run('pr_2', 'BOOSTRATE', 'txn_promo_2', 'user_123', 5.00, 'Redeemed', '2024-06-01T14:30:00Z');
-
-                    // NEW: Global View Dummy Data
-                    stmt.run('pr_3', 'SAVE20', 'txn_promo_3', 'user_101', 20.00, 'Redeemed', '2025-01-10T09:30:00Z');
-                    stmt.run('pr_4', 'SAVE20', 'txn_promo_4', 'user_102', 20.00, 'Redeemed', '2025-01-11T14:15:00Z');
-                    stmt.run('pr_5', 'BOOSTRATE', 'txn_promo_5', 'user_105', 5.00, 'Redeemed', '2025-01-12T16:45:00Z');
-                    stmt.finalize();
-                }
-            });
-        });
-
-
-
-        db.run(`CREATE TABLE IF NOT EXISTS promo_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            type TEXT,
-            value REAL,
-            min_threshold REAL DEFAULT 0,
-            max_discount REAL,
-            currency TEXT,
-            usage_limit_global INTEGER DEFAULT -1,
-            usage_limit_per_user INTEGER DEFAULT 1,
-            usage_count INTEGER DEFAULT 0,
-            total_discount_utilized REAL DEFAULT 0,
-            budget_limit REAL DEFAULT -1,
-            start_date TEXT,
-            end_date TEXT,
-            status TEXT DEFAULT 'Active',
-            restrictions TEXT,
-            user_segment TEXT,
-            user_segment_criteria TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )`, () => {
-            // Demo codes are for local development only – production promo codes are created in the admin UI
-            if (process.env.NODE_ENV === 'production') return;
-            const pStmt = db.prepare(`INSERT OR IGNORE INTO promo_codes 
-                (code, type, value, min_threshold, currency, usage_limit_global, usage_count, start_date, end_date, status, restrictions) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-            // Active Code
-            pStmt.run('SAVE20', 'Percentage', 20, 100, 'USD', 1000, 45, '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 'Active', '{}');
-
-            // Disabled Code (Kill Switch Demo)
-            pStmt.run('GLITCH500', 'Fixed', 500, 0, 'USD', 50, 12, '2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z', 'Disabled', '{}');
-
-            // FX Boost Code
-            pStmt.run('BOOSTRATE', 'FX_BOOST', 5.0, 500, 'GBP', -1, 89, '2024-06-01T00:00:00Z', '2024-08-31T23:59:59Z', 'Active', '{}');
-
-            pStmt.finalize();
-
-        });
         // Referral Rules (Multi-Record)
         db.run(`CREATE TABLE IF NOT EXISTS referral_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -442,379 +372,51 @@ app.get('/api/merchants', (req, res) => {
 
 // NOTE: SPA catch-all and app.listen are at the end of the file, AFTER all API routes
 
-// --- Promo Code Logic ---
-
-// 1. List Promo Codes
-app.get('/api/promocodes', (req, res) => {
-    const query = `
-        SELECT *
-        FROM promo_codes
-        ORDER BY start_date DESC
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        const now = new Date();
-        const processed = rows.map(r => ({
-            ...r,
-            // A code whose end date has passed is shown as Expired, not Active (customers cannot use it).
-            status: r.status === 'Active' && r.end_date && new Date(r.end_date) < now ? 'Expired' : r.status,
-            restrictions: JSON.parse(r.restrictions || '{}'),
-            user_segment: r.user_segment ? JSON.parse(r.user_segment) : { type: 'all' },
-            user_segment_criteria: r.user_segment_criteria ? JSON.parse(r.user_segment_criteria) : {}
-        }));
-        res.json({ data: processed });
-    });
-});
-
-// 2. Create Promo Code
-app.post('/api/promocodes', (req, res) => {
-    const {
-        code, type, value, min_threshold, max_discount, currency,
-        usage_limit_global, usage_limit_per_user, budget_limit, start_date, end_date,
-        restrictions, user_segment, user_segment_criteria
-    } = req.body;
-
-    // Strict Input Validation (Basic)
-    if (!code || !type || !value || !start_date || !end_date) {
-        return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    // Explicit Column Insert
-    const stmt = db.prepare(`INSERT INTO promo_codes (
-        code, type, value, min_threshold, max_discount, currency, 
-        usage_limit_global, usage_limit_per_user, budget_limit, 
-        start_date, end_date, status, restrictions, user_segment, user_segment_criteria
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-    // Reliable parsing helper
-    const parseNum = (val, isInt = false) => {
-        if (val === '' || val === null || val === undefined) return null;
-        const num = isInt ? parseInt(val) : parseFloat(val);
-        return Number.isNaN(num) ? null : num;
-    };
-
-    console.log('[DEBUG] Creating Promo Payload:', { code, type, value });
-
-    stmt.run(
-        code.toUpperCase(),
-        type,
-        parseNum(value),
-        parseNum(min_threshold) || 0,
-        parseNum(max_discount),
-        currency || null,
-        parseNum(usage_limit_global, true) || -1,
-        parseNum(usage_limit_per_user, true) || 1,
-        parseNum(budget_limit) || -1,
-        start_date,
-        end_date,
-        'Active',
-        JSON.stringify(restrictions || {}),
-        JSON.stringify(user_segment || { type: 'all' }),
-        JSON.stringify(user_segment_criteria || {}),
-        function (err) {
-            if (err) {
-                console.error("[ERROR] Insert Failed:", err);
-                if (err.message.includes('UNIQUE')) return res.status(409).json({ error: "Promo code already exists" });
-                return res.status(500).json({ error: err.message });
-            }
-            res.json({ success: true, id: this.lastID });
+// --- Promo code module (spec PROMO_MODULE_SPEC_MITO_ADMIN.md) ---
+// Owns promo codes, validation, redemption, release and the Promo Codes admin API. Host wiring below only adds
+// customer facts this app already knows (signup date, names) through the module's optional ports.
+const promo = require('./promo');
+const hostCustomerFacts = {
+    async signupDate(id) {
+        for (const sql of ['SELECT created_at FROM customers WHERE id = ?', 'SELECT created_at FROM merchants WHERE id = ?']) {
+            try { const r = await dbq.get(sql, [id]); if (r && r.created_at) return r.created_at; } catch { /* table absent */ }
         }
-    );
-    stmt.finalize();
-});
-
-// Every use of one promo code (the transfers it was applied to), newest first.
-app.get('/api/promocodes/:id/redemptions', (req, res) => {
-    db.get('SELECT code FROM promo_codes WHERE id = ?', [req.params.id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!row) return res.status(404).json({ error: 'Promo code not found' });
-        db.all(`SELECT id, transaction_id, user_id, discount_amount, COALESCE(status, 'Redeemed') AS status, created_at
-                FROM promo_redemptions WHERE promo_code_id = ? OR promo_code_id = ? ORDER BY created_at DESC`,
-            [String(req.params.id), row.code], (e2, rows) => {
-                if (e2) return res.status(500).json({ error: e2.message });
-                res.json({ data: rows });
-            });
-    });
-});
-
-// Edit a promo code. Only a code that has never been used can be changed.
-app.put('/api/promocodes/:id', (req, res) => {
-    const id = req.params.id;
-    db.get('SELECT * FROM promo_codes WHERE id = ?', [id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!row) return res.status(404).json({ error: 'Promo code not found' });
-        db.get("SELECT COUNT(*) AS n FROM promo_redemptions WHERE (promo_code_id = ? OR promo_code_id = ?) AND COALESCE(status, 'Redeemed') = 'Redeemed'", [String(id), row.code], (err2, r) => {
-            if (err2) return res.status(500).json({ error: err2.message });
-            if ((row.usage_count || 0) > 0 || (r && r.n > 0)) {
-                return res.status(409).json({ error: 'This code has already been used, so it cannot be edited. Create a new code instead.' });
-            }
-            const b = req.body || {};
-            if (!b.code || !b.type || !b.start_date || !b.end_date || (b.type !== 'Waiver' && !b.value)) {
-                return res.status(400).json({ error: 'Missing required fields' });
-            }
-            if (new Date(b.start_date) >= new Date(b.end_date)) {
-                return res.status(400).json({ error: 'Start date must be before end date' });
-            }
-            const num = (v, isInt = false) => {
-                if (v === '' || v === null || v === undefined) return null;
-                const n = isInt ? parseInt(v) : parseFloat(v);
-                return Number.isNaN(n) ? null : n;
-            };
-            db.run(`UPDATE promo_codes SET code = ?, type = ?, value = ?, min_threshold = ?, max_discount = ?, currency = ?,
-                    usage_limit_global = ?, usage_limit_per_user = ?, budget_limit = ?, start_date = ?, end_date = ?,
-                    restrictions = ?, user_segment = ?, user_segment_criteria = ? WHERE id = ?`,
-                [String(b.code).toUpperCase(), b.type, num(b.value) || 0, num(b.min_threshold) || 0, num(b.max_discount), b.currency || null,
-                    num(b.usage_limit_global, true) || -1, num(b.usage_limit_per_user, true) || 1, num(b.budget_limit) || -1,
-                    b.start_date, b.end_date, JSON.stringify(b.restrictions || {}),
-                    JSON.stringify(b.user_segment || { type: 'all' }), JSON.stringify(b.user_segment_criteria || {}), id],
-                function (e3) {
-                    if (e3) {
-                        if (String(e3.message).includes('UNIQUE')) return res.status(409).json({ error: 'Promo code already exists' });
-                        return res.status(500).json({ error: e3.message });
-                    }
-                    res.json({ success: true, id });
-                });
-        });
-    });
-});
-
-// 3. Bulk Generate Codes (Story 1.3)
-const crypto = require('crypto');
-app.post('/api/promocodes/generate', (req, res) => {
-    const { batch_size, prefix, config } = req.body;
-    let createdCount = 0;
-
-    db.serialize(() => {
-        const stmt = db.prepare(`INSERT INTO promo_codes (
-            code, type, value, min_threshold, max_discount, currency, 
-            usage_limit_global, usage_limit_per_user, budget_limit, 
-            start_date, end_date, status, restrictions, user_segment, user_segment_criteria
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-        for (let i = 0; i < batch_size; i++) {
-            const randomStr = crypto.randomBytes(4).toString('hex').toUpperCase();
-            const code = (prefix ? prefix + '-' : '') + randomStr;
-
-            stmt.run(
-                code, config.type, config.value, config.min_threshold || 0, config.max_discount, config.currency,
-                config.usage_limit_global || -1, config.usage_limit_per_user || 1, config.budget_limit || -1,
-                config.start_date, config.end_date, 'Active',
-                JSON.stringify(config.restrictions || {}),
-                JSON.stringify(config.user_segment || { type: 'all' }),
-                JSON.stringify(config.user_segment_criteria || {}),
-                (err) => {
-                    if (!err) createdCount++;
-                }
-            );
+        return null;
+    },
+    async names(ids) {
+        const out = {};
+        for (const id of [...new Set(ids)]) {
+            try {
+                const r = await dbq.get("SELECT NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') AS n FROM customers WHERE id = ?", [id]);
+                if (r && r.n) out[id] = r.n;
+            } catch { /* table absent */ }
         }
-        stmt.finalize(() => {
-            res.json({ success: true, message: `Batch generation initiated for ${batch_size} codes.` });
-        });
-    });
-});
-
-// 4. Toggle Status / Emergency Kill Switch (Story 1.4)
-app.put('/api/promocodes/:id/status', (req, res) => {
-    const { status } = req.body; // 'Active' or 'Disabled'
-    db.run("UPDATE promo_codes SET status = ? WHERE id = ?", [status, req.params.id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
-});
-
-// 5. User Journey: Validate Code (Story 3.1)
-// Production promo validation lives here. Rhemito forwards the customer's code to this endpoint.
-app.post('/api/promocodes/validate', async (req, res) => {
-    try {
-        res.json(await promoEngine.validate(dbq, req.body || {}));
-    } catch (err) {
-        sendEngineError(res, err);
-    }
-});
-
-// 5c. Give a code use back when its transfer is cancelled or refunded (also done automatically by transfer events)
-app.post('/api/promocodes/release', async (req, res) => {
-    try {
-        res.json(await promoEngine.release(dbq, req.body || {}));
-    } catch (err) {
-        sendEngineError(res, err);
-    }
-});
-
-// 5b. Redeem a code when the transfer is paid. The discount is recomputed server-side and recorded once per transfer.
-app.post('/api/promocodes/redeem', async (req, res) => {
-    try {
-        res.json(await promoEngine.redeem(dbq, req.body || {}));
-    } catch (err) {
-        sendEngineError(res, err);
-    }
-});
-
-// 6. User Journey: Apply/Lock Code
-app.post('/api/promocodes/apply', (req, res) => {
-    const { code, discount_amount } = req.body;
-
-    // Simple update for prototype
-    db.run("UPDATE promo_codes SET usage_count = usage_count + 1, total_discount_utilized = total_discount_utilized + ? WHERE code = ?",
-        [discount_amount, code],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        }
-    );
-});
+        return out;
+    },
+};
+promo.register(app, db, { customerDirectory: hostCustomerFacts });
 
 // 7. Segments
 app.get('/api/segments', (req, res) => {
     res.json({ data: { new_users: 10, churned_users: 5 } }); // Mock
 });
 
-// 8. Distribute Promos (Story 2.0)
-app.post('/api/promocodes/distribute', (req, res) => {
-    const { segment, promo_config, criteria, existing_code_id } = req.body;
-
-    const distributeToTargets = (targets) => {
-        if (targets.length === 0) return res.json({ success: true, count: 0, message: "No users in segment" });
-
-        const now = new Date().toISOString();
-
-        // If distributing an EXISTING code, just log the campaign without creating new codes
-        if (existing_code_id) {
-            db.serialize(() => {
-                const logStmt = db.prepare("INSERT INTO email_logs VALUES (?, ?, ?, ?, ?, ?)");
-                let count = 0;
-                targets.forEach(user => {
-                    logStmt.run('log_' + Date.now() + '_' + count, user.id, existing_code_id, segment, now, 'Sent');
-                    console.log(`[EMAIL SIMULATION] Sending existing code ${existing_code_id} to ${user.email}`);
-                    count++;
-                });
-                logStmt.finalize();
-                res.json({ success: true, count, segment, existing_code: existing_code_id });
-            });
-            return;
-        }
-
-        // Otherwise, create NEW unique codes for each target
-        db.serialize(() => {
-            const stmt = db.prepare(`INSERT INTO promo_codes (
-                id, code, type, value, min_threshold, max_discount, currency, 
-                usage_limit_global, usage_limit_per_user, budget_limit, 
-                start_date, end_date, status, restrictions, user_segment, user_segment_criteria
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-
-            const logStmt = db.prepare("INSERT INTO email_logs VALUES (?, ?, ?, ?, ?, ?)");
-
-            let count = 0;
-            const parseNum = (val, isInt = false) => {
-                if (val === '' || val === null || val === undefined) return null;
-                const num = isInt ? parseInt(val) : parseFloat(val);
-                return Number.isNaN(num) ? null : num;
-            };
-
-            targets.forEach(user => {
-                const uniqueCode = (promo_config.prefix || 'OFFER') + Math.random().toString(36).substring(7).toUpperCase();
-                const id = 'pc_' + Date.now() + '_' + count;
-                const restrictions = { ...promo_config.restrictions };
-                if (promo_config.corridors) restrictions.corridors = promo_config.corridors;
-                if (promo_config.affiliates) restrictions.affiliates = promo_config.affiliates;
-
-                stmt.run(
-                    id, uniqueCode, promo_config.type, parseNum(promo_config.value), parseNum(promo_config.min_threshold) || 0,
-                    parseNum(promo_config.max_discount), promo_config.currency || null, 1, 1, -1,
-                    promo_config.start_date, promo_config.end_date, 'Active',
-                    JSON.stringify(restrictions),
-                    JSON.stringify({ type: 'targeted', user_id: user.id }),
-                    JSON.stringify({})
-                );
-
-                logStmt.run('log_' + Date.now() + '_' + count, user.id, uniqueCode, segment, now, 'Sent');
-                console.log(`[EMAIL SIMULATION] Sending code ${uniqueCode} to ${user.email}`);
-                count++;
-            });
-
-            stmt.finalize();
-            logStmt.finalize();
-            res.json({ success: true, count, segment });
-        });
-    };
-
-    // 1. Check if Segment is Dynamic (Numeric ID)
-    if (!isNaN(segment)) {
-        db.get("SELECT * FROM user_segments WHERE id = ?", [segment], (err, segRow) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!segRow) return res.status(404).json({ error: "Segment not found" });
-
-            const crit = JSON.parse(segRow.criteria || '{}');
-            let sql = "SELECT m.* FROM merchants m ";
-            const params = [];
-
-            // Build Dynamic Query
-            if (crit.type === 'TRANSACTION_COUNT' || crit.type === 'TRANSACTION_VOLUME') {
-                sql += " LEFT JOIN transactions t ON t.merchant_id = m.id ";
-
-                // Time Period Filter (Moved to ON clause for LEFT JOIN)
-                if (crit.period_days) {
-                    sql += " AND t.debit_date >= date('now', '-' || ? || ' days') ";
-                    params.push(crit.period_days);
-                }
-
-                sql += " GROUP BY m.id ";
-
-                // Aggregation Filter
-                if (crit.type === 'TRANSACTION_COUNT') {
-                    // Count(t.id) handles NULLs correctly (returns 0)
-                    sql += " HAVING COUNT(t.id) >= ? ";
-                    params.push(crit.min || 0);
-                    if (crit.max !== null && crit.max !== undefined) {
-                        sql += " AND COUNT(t.id) <= ? ";
-                        params.push(crit.max);
-                    }
-                } else { // VOLUME
-                    // Use COALESCE to handle NULL sums as 0
-                    sql += " HAVING COALESCE(SUM(t.amount_debit_ngn), 0) >= ? ";
-                    params.push(crit.min || 0);
-                    if (crit.max !== null && crit.max !== undefined) {
-                        sql += " AND COALESCE(SUM(t.amount_debit_ngn), 0) <= ? ";
-                        params.push(crit.max);
-                    }
-                }
-            } else {
-                // Default: All merchants if no valid type
-                // Or maybe 'New Users' logic if we implemented 'ACCOUNT_AGE'
-            }
-
-            console.log("[DEBUG] Segment Query:", sql, params);
-
-            db.all(sql, params, (err, users) => {
-                if (err) return res.status(500).json({ error: err.message });
-                distributeToTargets(users);
-            });
-        });
-    } else {
-        // 2. Handle 'all' users or Invalid
-        if (segment === 'all') {
-            db.all("SELECT * FROM merchants", [], (err, users) => {
-                if (err) return res.status(500).json({ error: err.message });
-                distributeToTargets(users);
-            });
-        } else {
-            return res.status(400).json({ error: "Invalid segment ID. Use a numeric ID or 'all'." });
-        }
-    }
-});
-
 // --- Referral & Bonus engine (rules, referrals, wallet, reporting) ---
 // See server/referral.js and Docs/Requirements/referral-and-bonus-user-stories.md
 const { registerReferralRoutes } = require('./referral');
 bonusBlocks.registerBonusBlockRoutes(app, dbq);
-registerReferralRoutes(app, db, {
+const referralModule = registerReferralRoutes(app, db, {
+    // The wallet's promo_redemptions list comes from the promo module's read function (PROMO-MITO §8.4)
+    promoRedemptions: (customerId) => promo.listRedemptions({ userId: customerId }),
     // A completed transfer may also earn loyalty / threshold bonuses; failures here must never fail the transfer event
     afterTransferEvent: async (ev) => {
         const status = String(ev.status || '').toUpperCase();
-        // Cancelled, failed or refunded: take back scheme bonuses the transfer earned and release its promo code use
+        // Transition (PROMO-MITO C3): until Rhemito reports to POST /api/promocodes/transfer-events, the promo module also
+        // hears transfer events here (records the activity, releases the code use on failure). Idempotent, so both paths are safe.
+        try { await promo.handleTransferEvent(ev); } catch (err) { console.error('[promo] transfer event not recorded', ev.transfer_id, err.message); }
+        // Cancelled, failed or refunded: take back scheme bonuses the transfer earned
         if (['CANCELLED', 'FAILED', 'REFUNDED', 'RECALLED', 'CHARGEBACK'].includes(status)) {
             try {
-                await promoEngine.release(dbq, { transaction_id: ev.transfer_id });
                 return (await bonusEngine.reverseEvent(dbq, ev.transfer_id, status)).map((r) => ({ ...r, status: 'REVERSED' }));
             } catch (err) {
                 console.error('[bonus] could not reverse bonuses for transfer', ev.transfer_id, err.message);
@@ -831,7 +433,9 @@ registerReferralRoutes(app, db, {
             return [];
         }
     },
-});
+});// Once the referral tables exist, let the promo module copy their customer activity (PROMO-MITO §4.4)
+Promise.resolve(referralModule && referralModule.ready).then(() => promo.runBackfill()).catch((e) => console.error('[promo] backfill failed', e.message));
+
 
 // --- Phase 1: Bonus Scheme Configuration API (FRD) ---
 
@@ -1078,63 +682,24 @@ app.get('/api/credits/:userId', (req, res) => {
                 });
             });
 
-            // 2. Promo Redemptions Query
-            const promoPromise = new Promise((resolve, reject) => {
+            // 2. Promo redemptions, read through the promo module (PROMO-MITO §8.4). Same row shape as before.
+            const promoPromise = (async () => {
                 // Only include promos if no specific non-APPLIED event type is requested
-                if ((!eventType || eventType === 'APPLIED') && !isReferralRule) {
-                    let pQuery = `
-                        SELECT pr.id, pr.created_at, -pr.discount_amount as amount, 'APPLIED' as type, 
-                        pr.promo_code_id as scheme_id, pr.transaction_id as reference_id, 
-                        'PROMO_REDEMPTION' as reason_code, 
-                        'PROMO' as source_type,
-                        (pc.code || ' (Promo Code)') as scheme_name,
-                        ('Promo Code: ' || pc.code) as notes,
-                        'System' as admin_user,
-                        pr.user_id,
-                        COALESCE(pc.currency, 'GBP') as currency,
-                        NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') as customer_name
-                        FROM promo_redemptions pr
-                        LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.id OR pr.promo_code_id = pc.code)
-                        LEFT JOIN customers cu ON cu.id = pr.user_id
-                    `;
-                    const pParams = [];
-                    let pConditions = [];
-
-                    if (!isGlobal) {
-                        pConditions.push("pr.user_id = ?");
-                        pParams.push(userId);
-                    }
-                    if (customerId) {
-                        pConditions.push("pr.user_id = ?");
-                        pParams.push(customerId);
-                    }
-                    if (startDate) {
-                        pConditions.push("date(pr.created_at) >= date(?)");
-                        pParams.push(startDate);
-                    }
-                    if (endDate) {
-                        pConditions.push("date(pr.created_at) <= date(?)");
-                        pParams.push(endDate);
-                    }
-                    // Fix for Scheme/Promo Filter Collision - Now works even when filtering
-                    if (schemeId) {
-                        pConditions.push("(pr.promo_code_id = ? OR pr.promo_code_id = (SELECT code FROM promo_codes WHERE id = ?))");
-                        pParams.push(schemeId);
-                        pParams.push(schemeId);
-                    }
-
-                    if (pConditions.length > 0) {
-                        pQuery += " WHERE " + pConditions.join(" AND ");
-                    }
-
-                    db.all(pQuery, pParams, (err, rows) => {
-                        if (err) reject(err);
-                        else resolve(rows || []);
-                    });
-                } else {
-                    resolve([]);
-                }
-            });
+                if (!((!eventType || eventType === 'APPLIED') && !isReferralRule)) return [];
+                const ids = [];
+                if (!isGlobal) ids.push(userId);
+                if (customerId) ids.push(customerId);
+                if (ids.length === 2 && ids[0] !== ids[1]) return [];
+                const rows = await promo.listRedemptions({ userId: ids[0], codeId: schemeId || undefined, from: startDate, to: endDate });
+                const names = await hostCustomerFacts.names(rows.map((r) => r.user_id).filter(Boolean));
+                return rows.map((r) => ({
+                    id: r.id, created_at: r.created_at, amount: -r.discount_amount, type: 'APPLIED',
+                    scheme_id: r.promo_code_id, reference_id: r.transaction_id, reason_code: 'PROMO_REDEMPTION', source_type: 'PROMO',
+                    scheme_name: r.code ? `${r.code} (Promo Code)` : null, notes: r.code ? `Promo Code: ${r.code}` : null,
+                    admin_user: 'System', user_id: r.user_id, currency: r.currency || 'GBP',
+                    customer_name: names[r.user_id] || r.customer_name || null,
+                }));
+            })();
 
             Promise.all([ledgerPromise, promoPromise]).then(([ledgerRows, promoRows]) => {
                 // Merge and Sort by Date Descending
