@@ -6,9 +6,12 @@ import {
 import { validatePromoForm, toPayload } from './lib/promoValidation';
 import { formFromPromo } from './lib/promoForm';
 
-const Field = ({ id, label, required, error, hint, children }) => (
+const Field = ({ id, label, required, rightLabel, error, hint, children }) => (
     <div className="rf-field">
-        <label htmlFor={id}>{label}{required && <span className="rf-req">*</span>}</label>
+        <label htmlFor={id}>
+            <span>{label}{required && <span className="rf-req">*</span>}</span>
+            {rightLabel}
+        </label>
         {children}
         {error ? <div className="rf-error" id={`${id}-error`}>{error}</div> : hint ? <div className="rf-hint">{hint}</div> : null}
     </div>
@@ -153,33 +156,73 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                 )}
                 <form className="promo-form" onSubmit={submit} noValidate>
                     <fieldset disabled={ro} className="promo-fieldset">
-                        <div className="rf-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>Code details</span>
-                            <label className="rf-check" style={{ fontSize: '0.78rem', color: '#9ca3af', cursor: 'not-allowed', fontWeight: 400 }} title="Batch code generation is disabled for this release">
+                        {/* SECTION 1: Code & Discount */}
+                        <div className="promo-section-head">
+                            <span className="rf-section-label">Code &amp; Discount</span>
+                            <label className="rf-check promo-inline-check" style={{ color: '#9ca3af', cursor: 'not-allowed' }} title="Batch code generation is disabled for this release">
                                 <input type="checkbox" disabled checked={false} readOnly /> Generate a batch of codes (Disabled)
                             </label>
                         </div>
-                        <div className="rf-grid rf-grid-2">
-                            <Field id="pf-code" label="Promo Code" required error={errors.code} hint={editing ? 'Editable until this promo code is used for the first time.' : undefined}>
+
+                        <div className="rf-grid rf-grid-3">
+                            <Field id="pf-code" label="Promo Code" required error={errors.code} hint={editing ? 'Editable until first use.' : '3–20 letters, numbers or hyphens.'}>
                                 <input {...aria('code')} className={`${cls('code')} promo-mono`} value={f.code} maxLength={20} placeholder="e.g. SAVE20"
                                     onChange={(e) => set({ code: e.target.value.toUpperCase() })} />
                             </Field>
-                            <Field id="pf-type" label="Type" required error={errors.type}>
+                            <Field id="pf-type" label="Discount Type" required error={errors.type}>
                                 <select {...aria('type')} className={cls('type', 'rf-select')} value={legacy ? promo.type : f.type} onChange={(e) => set({ type: e.target.value, value: e.target.value === 'Waiver' ? '' : f.value })}>
                                     {legacy && <option value={promo.type}>{TYPE_LABELS[promo.type]}</option>}
                                     {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                             </Field>
+                            <Field id="pf-description" label="Internal note (optional)" error={errors.description} hint="Only visible to admins.">
+                                <input {...aria('description')} className={cls('description')} value={f.description} maxLength={200} placeholder="e.g. Summer campaign"
+                                    onChange={(e) => set({ description: e.target.value })} />
+                            </Field>
                         </div>
-                        <Field id="pf-description" label="Internal note" error={errors.description}>
-                            <input {...aria('description')} className={cls('description')} value={f.description} maxLength={200} placeholder="Optional – only admins see this"
-                                onChange={(e) => set({ description: e.target.value })} />
-                        </Field>
 
-                        <div className="rf-section-label">Where it can be used</div>
-                        <div className="rf-grid rf-grid-2">
-                            <div className="rf-field">
-                                <Field id="pf-currency" label="From (Send Currency)" required error={errors.currency} hint="Anchors all discount values, caps, minimum send, and budget.">
+                        <div className={`rf-grid ${f.type === 'Percentage' ? 'rf-grid-3' : f.type === 'Fixed' ? 'rf-grid-2' : ''}`}>
+                            {f.type !== 'Waiver' && (
+                                <Field id="pf-value" label={f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${curTag})`} required error={errors.value}>
+                                    <div className="rf-affix">
+                                        {f.type === 'Fixed' && sym && <span className="rf-prefix">{sym}</span>}
+                                        <input {...aria('value')} className={cls('value')} inputMode="decimal" value={f.value}
+                                            placeholder={f.type === 'Percentage' ? 'e.g. 20' : 'e.g. 5.00'}
+                                            style={f.type === 'Percentage' ? { paddingLeft: 12, paddingRight: 32 } : !sym ? { paddingLeft: 12 } : undefined}
+                                            onChange={(e) => set({ value: e.target.value })} />
+                                        {f.type === 'Percentage' && <span className="promo-suffix">%</span>}
+                                    </div>
+                                </Field>
+                            )}
+                            {f.type === 'Percentage' && (
+                                <Field id="pf-max_discount" label={`Max discount (${curTag}, optional)`} error={errors.max_discount} hint="Caps the maximum fee discount.">
+                                    <div className="rf-affix">
+                                        {sym && <span className="rf-prefix">{sym}</span>}
+                                        <input {...aria('max_discount')} className={cls('max_discount')} inputMode="decimal" placeholder="No cap" value={f.max_discount}
+                                            style={!sym ? { paddingLeft: 12 } : undefined}
+                                            onChange={(e) => set({ max_discount: e.target.value })} />
+                                    </div>
+                                </Field>
+                            )}
+                            <Field id="pf-min_threshold" label={`Minimum send amount (${curTag}, optional)`} error={errors.min_threshold} hint="Customer must send at least this amount.">
+                                <div className="rf-affix">
+                                    {sym && <span className="rf-prefix">{sym}</span>}
+                                    <input {...aria('min_threshold')} className={cls('min_threshold')} inputMode="decimal" placeholder="0.00 (no minimum)" value={f.min_threshold}
+                                        style={!sym ? { paddingLeft: 12 } : undefined}
+                                        onChange={(e) => set({ min_threshold: e.target.value })} />
+                                </div>
+                            </Field>
+                        </div>
+
+                        {/* SECTION 2: Where it can be used */}
+                        <div className="promo-section-head">
+                            <span className="rf-section-label">Where it can be used</span>
+                        </div>
+
+                        <div className="rf-grid rf-grid-2" style={{ alignItems: 'stretch' }}>
+                            {/* Left Subcard: Send Currency & Receive Corridors */}
+                            <div className="promo-subcard">
+                                <Field id="pf-currency" label="From (Send Currency)" required error={errors.currency} hint="Sets the currency for discounts, minimum send, and budget.">
                                     <select
                                         {...aria('currency')}
                                         className={cls('currency', 'rf-select')}
@@ -190,8 +233,8 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     </select>
                                 </Field>
 
-                                <div style={{ marginTop: 10 }}>
-                                    <label className="rf-check" style={{ fontWeight: 600 }}>
+                                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                                    <label className="rf-check" style={{ marginBottom: f.allCorridors ? 0 : 8, fontWeight: 600, fontSize: '0.84rem' }}>
                                         <input
                                             type="checkbox"
                                             checked={f.allCorridors}
@@ -206,159 +249,140 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                             }}
                                         /> All corridors (all receive currencies from {activeCur})
                                     </label>
-                                </div>
 
-                                {!f.allCorridors && (
-                                    <div style={{ marginTop: 8 }}>
-                                        <div className="promo-typeahead-wrap" style={{ position: 'relative', marginBottom: 8 }}>
-                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                <span className="rf-pill rf-pill-blue" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>{activeCur} →</span>
-                                                <input
-                                                    type="text"
-                                                    className="rf-input"
-                                                    placeholder="Search or pick receive currency (e.g. NGN, Nigeria, GHS, KES)..."
-                                                    value={corridorQuery}
-                                                    onChange={(e) => setCorridorQuery(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter' && matchingReceiveCurrencies.length > 0) {
-                                                            e.preventDefault();
-                                                            addReceiveCurrency(matchingReceiveCurrencies[0].code);
-                                                            setCorridorQuery('');
-                                                        }
-                                                    }}
-                                                />
-                                            </div>
-                                            {matchingReceiveCurrencies.length > 0 && (
-                                                <div className="promo-typeahead-menu">
-                                                    {matchingReceiveCurrencies.map((c) => {
-                                                        const alreadyAdded = f.corridors.includes(`${activeCur}-${c.code}`);
-                                                        return (
-                                                            <button
-                                                                key={c.code}
-                                                                type="button"
-                                                                className="promo-typeahead-item"
-                                                                disabled={alreadyAdded}
-                                                                onClick={() => {
-                                                                    addReceiveCurrency(c.code);
-                                                                    setCorridorQuery('');
-                                                                }}
-                                                            >
-                                                                <strong>{activeCur} → {c.code}</strong> <span>({c.name}){alreadyAdded ? ' ✓ Added' : ''}</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-                                            {availableReceiveCurrencies.map((c) => {
-                                                const pair = `${activeCur}-${c.code}`;
-                                                const active = f.corridors.includes(pair);
-                                                return (
-                                                    <button
-                                                        key={c.code}
-                                                        type="button"
-                                                        className="rf-btn-sm"
-                                                        style={{
-                                                            fontSize: '0.74rem',
-                                                            padding: '2px 8px',
-                                                            background: active ? '#eff6ff' : '#f9fafb',
-                                                            borderColor: active ? '#3b82f6' : '#e5e7eb',
-                                                            color: active ? '#1d4ed8' : '#374151',
-                                                            fontWeight: active ? 600 : 400,
+                                    {!f.allCorridors && (
+                                        <div>
+                                            <div className="promo-typeahead-wrap" style={{ position: 'relative', marginBottom: 8 }}>
+                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                    <span className="rf-pill rf-pill-blue" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>{activeCur} →</span>
+                                                    <input
+                                                        type="text"
+                                                        className="rf-input"
+                                                        style={{ padding: '7px 10px', fontSize: '0.84rem' }}
+                                                        placeholder="Search receive currency (e.g. NGN, Nigeria)..."
+                                                        value={corridorQuery}
+                                                        onChange={(e) => setCorridorQuery(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && matchingReceiveCurrencies.length > 0) {
+                                                                e.preventDefault();
+                                                                addReceiveCurrency(matchingReceiveCurrencies[0].code);
+                                                                setCorridorQuery('');
+                                                            }
                                                         }}
-                                                        onClick={() => active ? removeCorridorPair(pair) : addReceiveCurrency(c.code)}
-                                                    >
-                                                        {active ? `✓ ${c.code}` : `+ ${c.code}`}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                                    />
+                                                </div>
+                                                {matchingReceiveCurrencies.length > 0 && (
+                                                    <div className="promo-typeahead-menu">
+                                                        {matchingReceiveCurrencies.map((c) => {
+                                                            const alreadyAdded = f.corridors.includes(`${activeCur}-${c.code}`);
+                                                            return (
+                                                                <button
+                                                                    key={c.code}
+                                                                    type="button"
+                                                                    className="promo-typeahead-item"
+                                                                    disabled={alreadyAdded}
+                                                                    onClick={() => {
+                                                                        addReceiveCurrency(c.code);
+                                                                        setCorridorQuery('');
+                                                                    }}
+                                                                >
+                                                                    <strong>{activeCur} → {c.code}</strong> <span>({c.name}){alreadyAdded ? ' ✓ Added' : ''}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
 
-                                        <div className="promo-chips">
-                                            {f.corridors.map((c) => (
-                                                <span key={c} className="rf-chip promo-chip">{formatCorridorChip(c)}
-                                                    <button type="button" aria-label={`Remove ${c}`} onClick={() => removeCorridorPair(c)}>×</button>
-                                                </span>
-                                            ))}
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                                {availableReceiveCurrencies.map((c) => {
+                                                    const pair = `${activeCur}-${c.code}`;
+                                                    const active = f.corridors.includes(pair);
+                                                    return (
+                                                        <button
+                                                            key={c.code}
+                                                            type="button"
+                                                            className="rf-btn-sm"
+                                                            style={{
+                                                                fontSize: '0.73rem',
+                                                                padding: '2px 7px',
+                                                                background: active ? '#eff6ff' : '#fff',
+                                                                borderColor: active ? '#3b82f6' : '#cbd5e1',
+                                                                color: active ? '#1d4ed8' : '#475569',
+                                                                fontWeight: active ? 600 : 500,
+                                                            }}
+                                                            onClick={() => active ? removeCorridorPair(pair) : addReceiveCurrency(c.code)}
+                                                        >
+                                                            {active ? `✓ ${c.code}` : `+ ${c.code}`}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="promo-chips">
+                                                {f.corridors.map((c) => (
+                                                    <span key={c} className="rf-chip promo-chip">{formatCorridorChip(c)}
+                                                        <button type="button" aria-label={`Remove ${c}`} onClick={() => removeCorridorPair(c)}>×</button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            {errors.corridors && <div className="rf-error">{errors.corridors}</div>}
                                         </div>
-                                        {errors.corridors && <div className="rf-error">{errors.corridors}</div>}
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
-                            <div className="rf-field">
+
+                            {/* Right Subcard: Transaction Flow & Payment Methods */}
+                            <div className="promo-subcard">
                                 <Field id="pf-applies_to_flow" label="Applies to transaction flow" hint="Send Money deducts from what sender pays; Receive Money adds bonus to receiver.">
-                                    <div className="promo-flow-options" role="radiogroup" aria-label="Applies to transaction flow" style={{ display: 'flex', gap: 14, paddingTop: 6, flexWrap: 'wrap' }}>
+                                    <div className="promo-flow-segmented" role="radiogroup" aria-label="Applies to transaction flow">
                                         {[
                                             ['send', 'Send Money'],
                                             ['receive', 'Receive Money'],
                                             ['both', 'Both'],
-                                        ].map(([val, label]) => (
-                                            <label key={val} className="rf-check">
-                                                <input type="radio" name="pf-applies-flow" value={val} checked={(f.applies_to_flow || 'send') === val} onChange={() => set({ applies_to_flow: val })} /> {label}
-                                            </label>
-                                        ))}
+                                        ].map(([val, label]) => {
+                                            const active = (f.applies_to_flow || 'send') === val;
+                                            return (
+                                                <label key={val} className={active ? 'active' : ''}>
+                                                    <input type="radio" name="pf-applies-flow" value={val} checked={active} onChange={() => set({ applies_to_flow: val })} />
+                                                    {label}
+                                                </label>
+                                            );
+                                        })}
                                     </div>
                                 </Field>
-                                <div style={{ marginTop: 12 }}>
-                                    <label className="rf-check">
+
+                                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                                    <label className="rf-check" style={{ marginBottom: f.allMethods ? 0 : 4, fontWeight: 600, fontSize: '0.84rem' }}>
                                         <input type="checkbox" checked={f.allMethods} onChange={(e) => set({ allMethods: e.target.checked, payment_methods: e.target.checked ? [] : f.payment_methods })} /> All payment methods
                                     </label>
                                     {!f.allMethods && (
-                                        <div className="promo-methods">
-                                            {PAYMENT_METHODS.map((m) => (
-                                                <label key={m} className="rf-check">
-                                                    <input type="checkbox" checked={f.payment_methods.includes(m)}
-                                                        onChange={(e) => set({ payment_methods: e.target.checked ? [...f.payment_methods, m] : f.payment_methods.filter((x) => x !== m) })} /> {m}
-                                                </label>
-                                            ))}
+                                        <>
+                                            <div className="promo-methods">
+                                                {PAYMENT_METHODS.map((m) => (
+                                                    <label key={m} className="rf-check">
+                                                        <input type="checkbox" checked={f.payment_methods.includes(m)}
+                                                            onChange={(e) => set({ payment_methods: e.target.checked ? [...f.payment_methods, m] : f.payment_methods.filter((x) => x !== m) })} /> {m}
+                                                    </label>
+                                                ))}
+                                            </div>
                                             {errors.payment_methods && <div className="rf-error">{errors.payment_methods}</div>}
-                                        </div>
+                                        </>
                                     )}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="rf-grid rf-grid-3" style={{ marginTop: 14 }}>
-                            {f.type !== 'Waiver' && (
-                                <Field id="pf-value" label={f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${curTag})`} required error={errors.value}>
-                                    <div className="rf-affix">
-                                        {f.type === 'Fixed' && sym && <span className="rf-prefix">{sym}</span>}
-                                        <input {...aria('value')} className={cls('value')} inputMode="decimal" value={f.value}
-                                            style={f.type === 'Percentage' ? { paddingLeft: 12, paddingRight: 32 } : !sym ? { paddingLeft: 12 } : undefined}
-                                            onChange={(e) => set({ value: e.target.value })} />
-                                        {f.type === 'Percentage' && <span className="promo-suffix">%</span>}
-                                    </div>
-                                </Field>
-                            )}
-                            {f.type === 'Percentage' && (
-                                <Field id="pf-max_discount" label={`Max discount (${curTag}, optional)`} error={errors.max_discount}>
-                                    <div className="rf-affix">
-                                        {sym && <span className="rf-prefix">{sym}</span>}
-                                        <input {...aria('max_discount')} className={cls('max_discount')} inputMode="decimal" value={f.max_discount}
-                                            style={!sym ? { paddingLeft: 12 } : undefined}
-                                            onChange={(e) => set({ max_discount: e.target.value })} />
-                                    </div>
-                                </Field>
-                            )}
-                            <Field id="pf-min_threshold" label={`Minimum send amount (${curTag}, optional)`} error={errors.min_threshold} hint="The customer must send at least this amount.">
-                                <div className="rf-affix">
-                                    {sym && <span className="rf-prefix">{sym}</span>}
-                                    <input {...aria('min_threshold')} className={cls('min_threshold')} inputMode="decimal" value={f.min_threshold}
-                                        style={!sym ? { paddingLeft: 12 } : undefined}
-                                        onChange={(e) => set({ min_threshold: e.target.value })} />
-                                </div>
-                            </Field>
+                        {/* SECTION 3: Limits */}
+                        <div className="promo-section-head">
+                            <span className="rf-section-label">Usage &amp; Budget Limits</span>
                         </div>
-
-                        <div className="rf-section-label">Limits</div>
                         <div className="rf-grid rf-grid-3">
-                            <Field id="pf-usage_limit_global" label="Total uses (optional)" error={errors.usage_limit_global}>
+                            <Field id="pf-usage_limit_global" label="Total uses (optional)" error={errors.usage_limit_global} hint="Maximum redemptions across all customers.">
                                 <input {...aria('usage_limit_global')} className={cls('usage_limit_global')} inputMode="numeric" placeholder="Unlimited" value={f.usage_limit_global}
                                     onChange={(e) => set({ usage_limit_global: e.target.value })} />
                             </Field>
-                            <Field id="pf-budget_limit" label={`Total budget (${curTag}, optional)`} error={errors.budget_limit} hint="Stops the code when this much discount has been given.">
+                            <Field id="pf-budget_limit" label={`Total budget (${curTag}, optional)`} error={errors.budget_limit} hint="Stops the code when this much discount is spent.">
                                 <div className="rf-affix">
                                     {sym && <span className="rf-prefix">{sym}</span>}
                                     <input {...aria('budget_limit')} className={cls('budget_limit')} inputMode="decimal" placeholder="Unlimited" value={f.budget_limit}
@@ -366,43 +390,66 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                         onChange={(e) => set({ budget_limit: e.target.value })} />
                                 </div>
                             </Field>
-                            <Field id="pf-usage_limit_per_user" label="Uses per customer" required error={errors.usage_limit_per_user}>
+                            <Field
+                                id="pf-usage_limit_per_user"
+                                label="Uses per customer"
+                                required
+                                error={errors.usage_limit_per_user}
+                                rightLabel={(
+                                    <label className="rf-check promo-inline-check">
+                                        <input type="checkbox" checked={f.perUserUnlimited} onChange={(e) => set({ perUserUnlimited: e.target.checked, usage_limit_per_user: f.usage_limit_per_user || '1' })} /> Unlimited
+                                    </label>
+                                )}
+                                hint="How many times a single customer can redeem."
+                            >
                                 <input {...aria('usage_limit_per_user')} className={cls('usage_limit_per_user')} inputMode="numeric" disabled={f.perUserUnlimited || ro}
                                     value={f.perUserUnlimited ? '' : f.usage_limit_per_user} placeholder={f.perUserUnlimited ? 'Unlimited' : ''}
                                     onChange={(e) => set({ usage_limit_per_user: e.target.value })} />
-                                <label className="rf-check promo-inline-check">
-                                    <input type="checkbox" checked={f.perUserUnlimited} onChange={(e) => set({ perUserUnlimited: e.target.checked, usage_limit_per_user: f.usage_limit_per_user || '1' })} /> Unlimited
-                                </label>
                             </Field>
                         </div>
 
-                        <div className="rf-section-label">Dates</div>
+                        {/* SECTION 4: Dates */}
+                        <div className="promo-section-head">
+                            <span className="rf-section-label">Validity Period</span>
+                        </div>
                         <div className="rf-grid rf-grid-2">
-                            <Field id="pf-start_date" label="Start" required error={errors.start_date}>
+                            <Field id="pf-start_date" label="Start date & time" required error={errors.start_date}>
                                 <input {...aria('start_date')} type="datetime-local" className={cls('start_date')} value={f.start_date} onChange={(e) => set({ start_date: e.target.value })} />
                             </Field>
-                            <Field id="pf-end_date" label="End" required error={errors.end_date}>
+                            <Field id="pf-end_date" label="End date & time" required error={errors.end_date}>
                                 <input {...aria('end_date')} type="datetime-local" className={cls('end_date')} value={f.end_date} onChange={(e) => set({ end_date: e.target.value })} />
                             </Field>
                         </div>
 
-                        <div className="rf-section-label">Who can use it</div>
-                        <div className="promo-audience" role="radiogroup" aria-label="Who can use it">
+                        {/* SECTION 5: Who can use it */}
+                        <div className="promo-section-head">
+                            <span className="rf-section-label">Who can use it</span>
+                        </div>
+                        <div className="promo-audience-grid" role="radiogroup" aria-label="Who can use it">
                             {[
-                                ['all', 'Everyone'],
-                                ['new_customers', 'New customers only', 'No completed transfers yet.'],
-                                ['existing_customers', 'Existing customers only', '(1 or more completed transactions)'],
-                                ['specific_customers', 'Specific customers'],
-                                ...(segments.length ? [['segment', 'Saved segment']] : []),
-                                ...(f.audience === 'targeted' ? [['targeted', `One customer (${f.targeted_user_id})`]] : []),
-                            ].map(([v, l, h]) => (
-                                <label key={v} className="rf-check"><input type="radio" name="pf-audience" value={v} checked={f.audience === v} onChange={() => set({ audience: v })} /> {l}{h && <span className="rf-sub" style={{ display: 'inline', marginLeft: 6 }}>{h}</span>}</label>
-                            ))}
+                                ['all', 'Everyone', 'All registered customers'],
+                                ['new_customers', 'New customers only', 'No completed transfers yet'],
+                                ['existing_customers', 'Existing customers only', '1 or more completed transactions'],
+                                ['specific_customers', 'Specific customers', 'Target by email, ID, or CSV upload'],
+                                ...(segments.length ? [['segment', 'Saved segment', 'Pre-defined customer segment']] : []),
+                                ...(f.audience === 'targeted' ? [['targeted', `One customer (${f.targeted_user_id})`, 'Single targeted customer']] : []),
+                            ].map(([v, l, h]) => {
+                                const active = f.audience === v;
+                                return (
+                                    <label key={v} className={`promo-audience-card${active ? ' active' : ''}`}>
+                                        <input type="radio" name="pf-audience" value={v} checked={active} onChange={() => set({ audience: v })} />
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.84rem', color: '#1e293b' }}>{l}</div>
+                                            {h && <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: 1 }}>{h}</div>}
+                                        </div>
+                                    </label>
+                                );
+                            })}
                         </div>
                         {f.audience === 'specific_customers' && (
                             <div className="promo-specific-box">
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
-                                    <label htmlFor="pf-customer_ids" style={{ fontWeight: 600, fontSize: '0.86rem' }}>
+                                    <label htmlFor="pf-customer_ids" style={{ fontWeight: 600, fontSize: '0.84rem', margin: 0 }}>
                                         Customer Email IDs or Customer IDs <span className="rf-req">*</span>
                                         {customerListCount > 0 && <span className="rf-pill rf-pill-blue" style={{ marginLeft: 8 }}>{customerListCount} selected</span>}
                                     </label>
@@ -424,7 +471,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 ) : (
                                     <div className="rf-hint">Copy-paste emails or customer IDs, or upload a CSV/TXT file (up to 500 customers).</div>
                                 )}
-                                <div className="rf-grid rf-grid-2" style={{ marginTop: 10 }}>
+                                <div className="rf-grid rf-grid-2" style={{ marginTop: 10, marginBottom: 0 }}>
                                     <Field id="pf-min_transactions" label="Min completed transactions (optional)" hint="Only qualify if customer has at least this many transfers.">
                                         <input id="pf-min_transactions" className="rf-input" inputMode="numeric" placeholder="e.g. 1" value={f.min_transactions || ''} onChange={(e) => set({ min_transactions: e.target.value })} />
                                     </Field>
@@ -440,12 +487,14 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                             </div>
                         )}
                         {f.audience === 'segment' && (
-                            <Field id="pf-segment_id" label="Segment" required error={errors.segment_id}>
-                                <select {...aria('segment_id')} className={cls('segment_id', 'rf-select')} value={f.segment_id} onChange={(e) => set({ segment_id: e.target.value })}>
-                                    <option value="">Choose a segment</option>
-                                    {segments.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
-                            </Field>
+                            <div style={{ marginTop: 10 }}>
+                                <Field id="pf-segment_id" label="Segment" required error={errors.segment_id}>
+                                    <select {...aria('segment_id')} className={cls('segment_id', 'rf-select')} value={f.segment_id} onChange={(e) => set({ segment_id: e.target.value })}>
+                                        <option value="">Choose a segment</option>
+                                        {segments.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                </Field>
+                            </div>
                         )}
                     </fieldset>
 
