@@ -15,7 +15,15 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     const errors = {};
     const code = String(body.code || '').trim().toUpperCase();
     const type = String(body.type || '');
-    const currency = String(body.currency || '').toUpperCase();
+    const r = parseJson(body.restrictions, {});
+    const corridors = Array.isArray(r.corridors) ? [...new Set(r.corridors.map((c) => String(c).toUpperCase()))] : [];
+    const validCorridorEndpoint = (c) => c === 'ALL' || SUPPORTED_CURRENCIES.includes(c);
+
+    let currency = String(body.currency || '').toUpperCase();
+    if (!currency) {
+        const sendSet = [...new Set(corridors.map((c) => String(c || '').split('-')[0]).filter(Boolean))];
+        currency = sendSet.length === 1 && sendSet[0] !== 'ALL' ? sendSet[0] : 'ALL';
+    }
 
     if (!code) errors.code = 'Enter a promo code.';
     else if (!CODE_RE.test(code)) errors.code = 'Use 3–20 letters, numbers or hyphens.';
@@ -24,11 +32,11 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     if (description && description.length > 200) errors.description = 'Keep the note under 200 characters.';
 
     if (!['Fixed', 'Percentage', 'Waiver'].includes(type)) errors.type = 'Choose a type.';
-    if (!SUPPORTED_CURRENCIES.includes(currency)) errors.currency = 'Choose a currency.';
+    if (currency !== 'ALL' && !SUPPORTED_CURRENCIES.includes(currency)) errors.currency = 'Choose a currency.';
 
     let value = 0;
     if (type === 'Fixed') {
-        if (blank(body.value) || Number.isNaN(num(body.value)) || num(body.value) <= 0 || num(body.value) > 1000000 || !decimalsOk(body.value, currency)) {
+        if (blank(body.value) || Number.isNaN(num(body.value)) || num(body.value) <= 0 || num(body.value) > 1000000 || !decimalsOk(body.value, currency === 'ALL' ? 'GBP' : currency)) {
             errors.value = 'Enter an amount greater than 0.';
         } else value = num(body.value);
     } else if (type === 'Percentage') {
@@ -79,11 +87,9 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
         else if (isNew && end <= now) errors.end_date = 'End date must be in the future.';
     }
 
-    const r = parseJson(body.restrictions, {});
-    const corridors = Array.isArray(r.corridors) ? [...new Set(r.corridors.map((c) => String(c).toUpperCase()))] : [];
     if (body.all_corridors === false && corridors.length === 0) errors.corridors = 'Add at least one corridor, or tick All corridors.';
-    if (corridors.some((c) => { const [s, d] = c.split('-'); return !SUPPORTED_CURRENCIES.includes(s) || !SUPPORTED_CURRENCIES.includes(d) || s === d; })) {
-        errors.corridors = 'Each corridor needs two different supported currencies.';
+    if (corridors.some((c) => { const [s, d] = c.split('-'); return !validCorridorEndpoint(s) || !validCorridorEndpoint(d) || s === d; })) {
+        errors.corridors = 'Each corridor needs valid send and receive currencies.';
     }
     const paymentMethods = Array.isArray(r.payment_methods) ? [...new Set(r.payment_methods)] : [];
     if (body.all_payment_methods === false && paymentMethods.length === 0) errors.payment_methods = 'Choose at least one payment method, or tick All payment methods.';

@@ -6,7 +6,7 @@ import ColHead from '../Growth/ColHead';
 import PromoCodeForm from './PromoCodeForm';
 import BulkCodesModal from './BulkCodesModal';
 import {
-    CURRENCIES, STATUS_OPTIONS, STATUS_TONE, TYPE_LABELS, formatMoney, formatShortDate, formatUkDate, valueLabel, whoLabel, downloadUrl,
+    CURRENCIES, STATUS_OPTIONS, STATUS_TONE, TYPE_LABELS, formatMoney, formatShortDate, formatUkDate, valueLabel, whoLabel, downloadUrl, formatCorridorChip,
 } from './lib/promoUtils';
 import '../Growth/referral.css';
 import './promo.css';
@@ -156,7 +156,7 @@ export default function PromoCodesPage() {
                                         <td style={{ whiteSpace: 'nowrap' }}>{valueLabel(p)}<span className="rf-sub">{TYPE_LABELS[p.type] || p.type}</span></td>
                                         <td className="promo-where">
                                             {corridors.length ? (
-                                                <span>{corridors.slice(0, 2).map((c) => <span key={c} className="rf-chip promo-chip-sm">{c.replace('-', ' → ')}</span>)}{corridors.length > 2 && <span className="rf-sub" style={{ display: 'inline' }}> +{corridors.length - 2}</span>}</span>
+                                                <span>{corridors.slice(0, 2).map((c) => <span key={c} className="rf-chip promo-chip-sm">{formatCorridorChip(c)}</span>)}{corridors.length > 2 && <span className="rf-sub" style={{ display: 'inline' }}> +{corridors.length - 2}</span>}</span>
                                             ) : <span>All corridors</span>}
                                             <span className="rf-sub">{(r.payment_methods || []).length ? r.payment_methods.join(', ') : 'All payment methods'}</span>
                                             <span className="rf-sub">{whoLabel(p.user_segment, segments)}{r.applies_to_flow && r.applies_to_flow !== 'send' ? ` · ${r.applies_to_flow === 'receive' ? 'Receive Money' : 'Send & Receive'}` : ''}</span>

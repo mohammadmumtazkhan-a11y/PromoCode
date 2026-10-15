@@ -30,14 +30,32 @@ export const STATUS_TONE = {
     Active: 'green', Scheduled: 'blue', Expired: 'red', Disabled: 'grey', 'Fully redeemed': 'amber', 'Budget spent': 'amber',
 };
 
-export const symbolFor = (code) => (CURRENCIES.find((c) => c.code === code) || {}).symbol || (code ? `${code} ` : '');
+export const symbolFor = (code) => {
+    if (!code || code === 'ALL') return '';
+    return (CURRENCIES.find((c) => c.code === code) || {}).symbol || `${code} `;
+};
 export const decimalsFor = (code) => (code === 'JPY' ? 0 : 2);
+
+export function formatCorridorChip(corridor) {
+    const [s, d] = String(corridor || '').split('-');
+    const sLabel = s === 'ALL' ? 'All Currencies' : s;
+    const dLabel = d === 'ALL' ? 'All Currencies' : d;
+    return `${sLabel} → ${dLabel}`;
+}
+
+export function deriveCurrencyFromCorridors(allCorridors, corridors = []) {
+    if (allCorridors || !Array.isArray(corridors) || corridors.length === 0) return 'ALL';
+    const sendSet = [...new Set(corridors.map((c) => String(c || '').split('-')[0]).filter(Boolean))];
+    if (sendSet.length === 1 && sendSet[0] !== 'ALL') return sendSet[0];
+    return 'ALL';
+}
 
 export function formatMoney(amount, currency) {
     const dp = decimalsFor(currency);
     const n = Number(amount || 0);
     const sign = n < 0 ? '-' : '';
-    return `${sign}${symbolFor(currency)}${Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
+    const sym = symbolFor(currency);
+    return `${sign}${sym}${Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -91,8 +109,8 @@ export function whoLabel(seg, segments = []) {
 
 // Live summary line under the form (PROMO-MITO §5.2)
 export function previewSentence(f) {
-    const cur = f.currency || 'GBP';
-    const corridors = f.allCorridors || !f.corridors.length ? '' : f.corridors.map((c) => c.replace('-', ' → ')).join(', ');
+    const cur = deriveCurrencyFromCorridors(f.allCorridors, f.corridors);
+    const corridors = f.allCorridors || !f.corridors.length ? 'across all corridors' : f.corridors.map(formatCorridorChip).join(', ');
     const methods = f.allMethods || !f.payment_methods.length ? '' : ` by ${f.payment_methods.join(' or ')}`;
     const who = { all: 'Customers', new_customers: 'New customers', existing_customers: 'Existing customers (1+ completed transfers)', specific_customers: 'Selected customers', segment: 'Customers in the selected segment' }[f.audience] || 'Customers';
     const flowVerb = f.applies_to_flow === 'receive' ? 'receiving' : f.applies_to_flow === 'both' ? 'sending or receiving' : 'sending';
@@ -103,7 +121,7 @@ export function previewSentence(f) {
     const min = Number(f.min_threshold) > 0 ? ` on transfers of ${formatMoney(f.min_threshold, cur)} or more` : '';
     const times = f.perUserUnlimited ? ', any number of times' : Number(f.usage_limit_per_user) === 1 ? ', once each' : `, up to ${f.usage_limit_per_user || '…'} times each`;
     const until = f.end_date ? `, until ${formatUkDate(new Date(f.end_date), true)}` : '';
-    return `${who} ${flowVerb} ${corridors || cur}${methods} get ${what}${min}${times}${until}.`;
+    return `${who} ${flowVerb} ${corridors}${methods} get ${what}${min}${times}${until}.`;
 }
 
 export const downloadUrl = (url) => {

@@ -68,14 +68,14 @@ function computeDiscount(promo, { amount, fee }) {
     return roundFor(d, promo.currency);
 }
 
-function displayText(promo, discount) {
-    const cur = promo.currency || '';
+function displayText(promo, discount, reqCurrency) {
+    const rawCur = promo.currency && String(promo.currency).toUpperCase() !== 'ALL' ? promo.currency : (reqCurrency || '');
     switch (promo.type) {
-        case 'Percentage': return `${promo.value}% off fees (${cur} ${discount.toFixed(2)} saved)`.replace('( ', '(');
-        case 'Fixed': return `${cur} ${discount.toFixed(2)} off`.trim();
+        case 'Percentage': return `${promo.value}% off fees (${rawCur} ${discount.toFixed(2)} saved)`.replace('( ', '(');
+        case 'Fixed': return `${rawCur} ${discount.toFixed(2)} off`.trim();
         case 'Waiver': return 'Fees waived';
         case 'FX_BOOST': return `+${promo.value} rate boost`;
-        case 'BONUS_CREDIT': return `${cur} ${promo.value} bonus credit`.trim();
+        case 'BONUS_CREDIT': return `${rawCur} ${promo.value} bonus credit`.trim();
         default: return 'Discount applied';
     }
 }
@@ -156,15 +156,24 @@ async function check(q, body) {
         throw new PromoError(400, 'BUDGET_SPENT', 'This promo code has reached its limit.');
     }
     const cur = n.currency || n.source;
-    if (promo.currency && cur && cur !== String(promo.currency).toUpperCase()) {
+    const promoCur = promo.currency ? String(promo.currency).toUpperCase() : '';
+    if (promoCur && promoCur !== 'ALL' && cur && cur !== promoCur) {
         throw new PromoError(400, 'CURRENCY', `This code only works on ${promo.currency} transfers.`);
     }
     if (n.amount !== undefined && n.amount < Number(promo.min_threshold || 0)) {
-        throw new PromoError(400, 'BELOW_MIN', `Send at least ${formatMoney(promo.min_threshold, promo.currency || cur)} to use this code.`);
+        throw new PromoError(400, 'BELOW_MIN', `Send at least ${formatMoney(promo.min_threshold, (promoCur && promoCur !== 'ALL' ? promoCur : cur) || 'GBP')} to use this code.`);
     }
     const restrictions = parseJson(promo.restrictions, {});
-    if (Array.isArray(restrictions.corridors) && restrictions.corridors.length > 0 && !restrictions.corridors.includes(`${n.source}-${n.dest}`)) {
-        throw new PromoError(400, 'CORRIDOR', "This code can't be used for this destination.");
+    if (Array.isArray(restrictions.corridors) && restrictions.corridors.length > 0) {
+        const matchesCorridor = restrictions.corridors.some((c) => {
+            const [s, d] = String(c).toUpperCase().split('-');
+            const sOk = s === 'ALL' || s === '*' || s === n.source;
+            const dOk = d === 'ALL' || d === '*' || d === n.dest;
+            return sOk && dOk;
+        });
+        if (!matchesCorridor) {
+            throw new PromoError(400, 'CORRIDOR', "This code can't be used for this destination.");
+        }
     }
     if (Array.isArray(restrictions.payment_methods) && restrictions.payment_methods.length > 0 && n.paymentMethod
         && !restrictions.payment_methods.some((m) => paymentMethodKey(m) === paymentMethodKey(n.paymentMethod))) {
@@ -205,9 +214,11 @@ async function check(q, body) {
 }
 
 async function validate(q, body) {
-    const { promo, discount } = await check(q, body);
-    const text = displayText(promo, discount);
-    return { valid: true, promo, appliedDiscount: discount, appliesTo: 'fee', displayText: text, display_text: text, currency: promo.currency || null };
+    const { promo, discount, n } = await check(q, body);
+    const reqCur = n.currency || n.source;
+    const effCur = promo.currency && String(promo.currency).toUpperCase() !== 'ALL' ? promo.currency : (reqCur || null);
+    const text = displayText(promo, discount, reqCur);
+    return { valid: true, promo, appliedDiscount: discount, appliesTo: 'fee', displayText: text, display_text: text, currency: effCur };
 }
 
 // Called when the transfer is paid. The discount is recomputed here, never trusted from the caller (D4).
@@ -228,11 +239,12 @@ function redeem(q, body) {
             if (discount > left) discount = left;
         }
         const id = `pr_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+        const effCur = (promo.currency && String(promo.currency).toUpperCase() !== 'ALL' ? promo.currency : null) || n.currency || n.source || null;
         await q.run(`INSERT INTO promo_redemptions (id, promo_code_id, transaction_id, user_id, discount_amount, status, created_at,
             currency, send_amount, fee, source_currency, dest_currency, payment_method)
             VALUES (?, ?, ?, ?, ?, 'Redeemed', ?, ?, ?, ?, ?, ?, ?)`,
         [id, promo.code, n.transactionId, n.userId || null, discount, clock.now().toISOString(),
-            promo.currency || n.currency || n.source || null, n.amount ?? null, n.fee ?? null, n.source || null, n.dest || null, n.paymentMethod || null]);
+            effCur, n.amount ?? null, n.fee ?? null, n.source || null, n.dest || null, n.paymentMethod || null]);
         await q.run('UPDATE promo_codes SET usage_count = usage_count + 1, total_discount_utilized = total_discount_utilized + ? WHERE id = ?', [discount, promo.id]);
         return { success: true, discount };
     });

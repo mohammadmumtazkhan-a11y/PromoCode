@@ -1,7 +1,7 @@
-import { toLocalInput } from './promoUtils';
+import { toLocalInput, deriveCurrencyFromCorridors } from './promoUtils';
 
 const EMPTY = {
-    code: '', description: '', type: 'Fixed', value: '', currency: 'GBP', max_discount: '', min_threshold: '',
+    code: '', description: '', type: 'Fixed', value: '', currency: 'ALL', max_discount: '', min_threshold: '',
     usage_limit_global: '', budget_limit: '', usage_limit_per_user: '1', perUserUnlimited: false,
     start_date: '', end_date: '', allCorridors: true, corridors: [], allMethods: true, payment_methods: [],
     applies_to_flow: 'send', audience: 'all', customer_ids: '', segment_id: '', targeted_user_id: '',
@@ -17,17 +17,20 @@ export function formFromPromo(p) {
     let audience = 'all';
     if (['new_customers', 'existing_customers', 'specific_customers', 'targeted'].includes(seg.type)) audience = seg.type;
     else if (seg.type && seg.type !== 'all') audience = 'segment';
+    const allCorridors = !(r.corridors && r.corridors.length);
+    const corridors = r.corridors || [];
     return {
         ...EMPTY,
         code: p.code || '', description: p.description || '', type: p.type, value: p.type === 'Waiver' ? '' : String(p.value ?? ''),
-        currency: p.currency || 'GBP', max_discount: p.max_discount ? String(p.max_discount) : '',
+        currency: deriveCurrencyFromCorridors(allCorridors, corridors) || p.currency || 'ALL',
+        max_discount: p.max_discount ? String(p.max_discount) : '',
         min_threshold: p.min_threshold ? String(p.min_threshold) : '',
         usage_limit_global: p.usage_limit_global === -1 || p.usage_limit_global == null ? '' : String(p.usage_limit_global),
         budget_limit: p.budget_limit === -1 || p.budget_limit == null ? '' : String(p.budget_limit),
         usage_limit_per_user: p.usage_limit_per_user === -1 ? '1' : String(p.usage_limit_per_user ?? 1),
         perUserUnlimited: p.usage_limit_per_user === -1,
         start_date: toLocalInput(p.start_date), end_date: toLocalInput(p.end_date),
-        allCorridors: !(r.corridors && r.corridors.length), corridors: r.corridors || [],
+        allCorridors, corridors,
         allMethods: !(r.payment_methods && r.payment_methods.length), payment_methods: r.payment_methods || [],
         applies_to_flow: r.applies_to_flow || 'send',
         audience, customer_ids: (seg.user_ids || []).join(', '), segment_id: audience === 'segment' ? String(seg.type) : '',

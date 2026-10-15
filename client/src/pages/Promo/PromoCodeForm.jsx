@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CURRENCIES, PAYMENT_METHODS, TYPE_OPTIONS, TYPE_LABELS, previewSentence, symbolFor, toUtcIso } from './lib/promoUtils';
+import {
+    CURRENCIES, PAYMENT_METHODS, TYPE_OPTIONS, TYPE_LABELS,
+    previewSentence, symbolFor, toUtcIso, formatCorridorChip, deriveCurrencyFromCorridors,
+} from './lib/promoUtils';
 import { validatePromoForm, toPayload } from './lib/promoValidation';
 import { formFromPromo } from './lib/promoForm';
 
@@ -18,7 +21,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
     const [f, setF] = useState(() => formFromPromo(promo));
     const [errors, setErrors] = useState({});
     const [saving, setSaving] = useState(false);
-    const [send, setSend] = useState(() => (promo && promo.currency) || 'GBP');
+    const [send, setSend] = useState('GBP');
     const [recv, setRecv] = useState('NGN');
     const [corridorQuery, setCorridorQuery] = useState('');
     const set = (patch) => { setF((x) => ({ ...x, ...patch })); setErrors((e) => { const n = { ...e }; Object.keys(patch).forEach((k) => delete n[k]); return n; }); };
@@ -39,17 +42,30 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
         if (!sendCur || !recvCur || sendCur === recvCur) return;
         const pair = `${sendCur}-${recvCur}`;
         if (!f.corridors.includes(pair)) {
-            set({ allCorridors: false, corridors: [...f.corridors, pair] });
+            const nextCorridors = [...f.corridors, pair];
+            set({
+                allCorridors: false,
+                corridors: nextCorridors,
+                currency: deriveCurrencyFromCorridors(false, nextCorridors),
+            });
         }
     };
 
-    const matchingReceiveCurrencies = useMemo(() => {
+    const removeCorridorPair = (pair) => {
+        const nextCorridors = f.corridors.filter((x) => x !== pair);
+        set({
+            corridors: nextCorridors,
+            currency: deriveCurrencyFromCorridors(f.allCorridors, nextCorridors),
+        });
+    };
+
+    const matchingCurrencies = useMemo(() => {
         const q = corridorQuery.trim().toLowerCase();
         if (!q) return [];
         return CURRENCIES.filter(
-            (c) => c.code !== f.currency && (c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q))
+            (c) => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
         );
-    }, [corridorQuery, f.currency]);
+    }, [corridorQuery]);
 
     const handleCustomerFileUpload = (ev) => {
         const file = ev.target.files && ev.target.files[0];
@@ -108,7 +124,9 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
     const cls = (k, base = 'rf-input') => `${base}${errors[k] ? ' rf-invalid' : ''}`;
     const aria = (k) => ({ id: `pf-${k}`, 'aria-invalid': !!errors[k], 'aria-describedby': errors[k] ? `pf-${k}-error` : undefined, onBlur: () => blurCheck(k) });
-    const sym = symbolFor(f.currency);
+    const activeCur = deriveCurrencyFromCorridors(f.allCorridors, f.corridors);
+    const curTag = activeCur === 'ALL' ? 'Send currency' : activeCur;
+    const sym = symbolFor(activeCur);
     const ro = legacy;
     const customerListCount = String(f.customer_ids || '').split(/[\s,;]+/).filter(Boolean).length;
 
@@ -145,55 +163,191 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 onChange={(e) => set({ description: e.target.value })} />
                         </Field>
 
-                        <div className="rf-section-label">Send &amp; Receive Currency (Corridors) &amp; Flow</div>
+                        <div className="rf-section-label">Where it can be used</div>
                         <div className="rf-grid rf-grid-2">
-                            <Field id="pf-currency" label="Send Currency" required error={errors.currency} hint="All discount, minimum send, cap, and budget amounts use this currency.">
-                                <select {...aria('currency')} className={cls('currency', 'rf-select')} value={f.currency} onChange={(e) => {
-                                    const nextCur = e.target.value;
-                                    set({ currency: nextCur });
-                                    setSend(nextCur);
-                                    if (nextCur === recv) setRecv(nextCur === 'NGN' ? 'GBP' : 'NGN');
-                                }}>
-                                    {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
-                                </select>
-                            </Field>
-                            <Field id="pf-applies_to_flow" label="Applies to transaction flow" hint="Send Money deducts from what sender pays; Receive Money adds bonus to receiver.">
-                                <div className="promo-flow-options" role="radiogroup" aria-label="Applies to transaction flow" style={{ display: 'flex', gap: 14, paddingTop: 6, flexWrap: 'wrap' }}>
-                                    {[
-                                        ['send', 'Send Money'],
-                                        ['receive', 'Receive Money'],
-                                        ['both', 'Both'],
-                                    ].map(([val, label]) => (
-                                        <label key={val} className="rf-check">
-                                            <input type="radio" name="pf-applies-flow" value={val} checked={(f.applies_to_flow || 'send') === val} onChange={() => set({ applies_to_flow: val })} /> {label}
-                                        </label>
-                                    ))}
+                            <div className="rf-field">
+                                <label className="rf-check" style={{ fontWeight: 600 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={f.allCorridors}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            const nextCorridors = checked ? [] : (f.corridors.length ? f.corridors : ['GBP-NGN']);
+                                            set({
+                                                allCorridors: checked,
+                                                corridors: nextCorridors,
+                                                currency: deriveCurrencyFromCorridors(checked, nextCorridors),
+                                            });
+                                        }}
+                                    /> All corridors (all receive currencies)
+                                </label>
+                                {!f.allCorridors && (
+                                    <>
+                                        <div className="promo-corridor-row" style={{ marginTop: 8 }}>
+                                            <select
+                                                className="rf-select"
+                                                aria-label="Send currency"
+                                                value={send}
+                                                onChange={(e) => {
+                                                    const nextSend = e.target.value;
+                                                    setSend(nextSend);
+                                                    if (nextSend === recv) setRecv(nextSend === 'ALL' ? 'NGN' : 'ALL');
+                                                }}
+                                            >
+                                                <option value="ALL">ALL (All Send Currencies)</option>
+                                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                                            </select>
+                                            <span aria-hidden="true">→</span>
+                                            <select
+                                                className="rf-select"
+                                                aria-label="Receive currency"
+                                                value={recv}
+                                                onChange={(e) => setRecv(e.target.value)}
+                                            >
+                                                <option value="">Choose</option>
+                                                {send !== 'ALL' && <option value="ALL">ALL (All Receive Currencies)</option>}
+                                                {CURRENCIES.filter((c) => c.code !== send).map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                className="rf-btn-sm"
+                                                disabled={!recv || send === recv}
+                                                onClick={() => addCorridorPair(send, recv)}
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                        <div className="promo-typeahead-wrap" style={{ position: 'relative', marginBottom: 8 }}>
+                                            <input
+                                                type="text"
+                                                className="rf-input"
+                                                placeholder="Search currency or country to add corridor (e.g. NGN, Nigeria, GBP, EUR)..."
+                                                value={corridorQuery}
+                                                onChange={(e) => setCorridorQuery(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && matchingCurrencies.length > 0) {
+                                                        e.preventDefault();
+                                                        const target = matchingCurrencies[0].code;
+                                                        addCorridorPair(send === target ? 'ALL' : send, target);
+                                                        setCorridorQuery('');
+                                                    }
+                                                }}
+                                            />
+                                            {matchingCurrencies.length > 0 && (
+                                                <div className="promo-typeahead-menu">
+                                                    {matchingCurrencies.map((c) => (
+                                                        <div key={c.code} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #f3f4f6' }}>
+                                                            {send !== c.code && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="promo-typeahead-item"
+                                                                    onClick={() => {
+                                                                        addCorridorPair(send, c.code);
+                                                                        setCorridorQuery('');
+                                                                    }}
+                                                                >
+                                                                    <strong>{send === 'ALL' ? 'All Currencies' : send} → {c.code}</strong> <span>({c.name})</span>
+                                                                </button>
+                                                            )}
+                                                            {send !== 'ALL' && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="promo-typeahead-item"
+                                                                    onClick={() => {
+                                                                        addCorridorPair('ALL', c.code);
+                                                                        setCorridorQuery('');
+                                                                    }}
+                                                                >
+                                                                    <strong>All Currencies → {c.code}</strong> <span>(Any send to {c.name})</span>
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                className="promo-typeahead-item"
+                                                                onClick={() => {
+                                                                    addCorridorPair(c.code, 'ALL');
+                                                                    setCorridorQuery('');
+                                                                }}
+                                                            >
+                                                                <strong>{c.code} → All Currencies</strong> <span>({c.name} to any destination)</span>
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="promo-chips">
+                                            {f.corridors.map((c) => (
+                                                <span key={c} className="rf-chip promo-chip">{formatCorridorChip(c)}
+                                                    <button type="button" aria-label={`Remove ${c}`} onClick={() => removeCorridorPair(c)}>×</button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        {errors.corridors && <div className="rf-error">{errors.corridors}</div>}
+                                    </>
+                                )}
+                            </div>
+                            <div className="rf-field">
+                                <Field id="pf-applies_to_flow" label="Applies to transaction flow" hint="Send Money deducts from what sender pays; Receive Money adds bonus to receiver.">
+                                    <div className="promo-flow-options" role="radiogroup" aria-label="Applies to transaction flow" style={{ display: 'flex', gap: 14, paddingTop: 6, flexWrap: 'wrap' }}>
+                                        {[
+                                            ['send', 'Send Money'],
+                                            ['receive', 'Receive Money'],
+                                            ['both', 'Both'],
+                                        ].map(([val, label]) => (
+                                            <label key={val} className="rf-check">
+                                                <input type="radio" name="pf-applies-flow" value={val} checked={(f.applies_to_flow || 'send') === val} onChange={() => set({ applies_to_flow: val })} /> {label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </Field>
+                                <div style={{ marginTop: 12 }}>
+                                    <label className="rf-check">
+                                        <input type="checkbox" checked={f.allMethods} onChange={(e) => set({ allMethods: e.target.checked, payment_methods: e.target.checked ? [] : f.payment_methods })} /> All payment methods
+                                    </label>
+                                    {!f.allMethods && (
+                                        <div className="promo-methods">
+                                            {PAYMENT_METHODS.map((m) => (
+                                                <label key={m} className="rf-check">
+                                                    <input type="checkbox" checked={f.payment_methods.includes(m)}
+                                                        onChange={(e) => set({ payment_methods: e.target.checked ? [...f.payment_methods, m] : f.payment_methods.filter((x) => x !== m) })} /> {m}
+                                                </label>
+                                            ))}
+                                            {errors.payment_methods && <div className="rf-error">{errors.payment_methods}</div>}
+                                        </div>
+                                    )}
                                 </div>
-                            </Field>
+                            </div>
                         </div>
 
                         <div className="rf-grid rf-grid-3" style={{ marginTop: 14 }}>
                             {f.type !== 'Waiver' && (
-                                <Field id="pf-value" label={f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${f.currency})`} required error={errors.value}>
+                                <Field id="pf-value" label={f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${curTag})`} required error={errors.value}>
                                     <div className="rf-affix">
-                                        {f.type === 'Fixed' && <span className="rf-prefix">{sym}</span>}
+                                        {f.type === 'Fixed' && sym && <span className="rf-prefix">{sym}</span>}
                                         <input {...aria('value')} className={cls('value')} inputMode="decimal" value={f.value}
-                                            style={f.type === 'Percentage' ? { paddingLeft: 12, paddingRight: 32 } : undefined}
+                                            style={f.type === 'Percentage' ? { paddingLeft: 12, paddingRight: 32 } : !sym ? { paddingLeft: 12 } : undefined}
                                             onChange={(e) => set({ value: e.target.value })} />
                                         {f.type === 'Percentage' && <span className="promo-suffix">%</span>}
                                     </div>
                                 </Field>
                             )}
                             {f.type === 'Percentage' && (
-                                <Field id="pf-max_discount" label={`Max discount (${f.currency}, optional)`} error={errors.max_discount}>
-                                    <div className="rf-affix"><span className="rf-prefix">{sym}</span>
-                                        <input {...aria('max_discount')} className={cls('max_discount')} inputMode="decimal" value={f.max_discount} onChange={(e) => set({ max_discount: e.target.value })} />
+                                <Field id="pf-max_discount" label={`Max discount (${curTag}, optional)`} error={errors.max_discount}>
+                                    <div className="rf-affix">
+                                        {sym && <span className="rf-prefix">{sym}</span>}
+                                        <input {...aria('max_discount')} className={cls('max_discount')} inputMode="decimal" value={f.max_discount}
+                                            style={!sym ? { paddingLeft: 12 } : undefined}
+                                            onChange={(e) => set({ max_discount: e.target.value })} />
                                     </div>
                                 </Field>
                             )}
-                            <Field id="pf-min_threshold" label={`Minimum send amount (${f.currency}, optional)`} error={errors.min_threshold} hint={`The customer must send at least this ${f.currency} amount.`}>
-                                <div className="rf-affix"><span className="rf-prefix">{sym}</span>
-                                    <input {...aria('min_threshold')} className={cls('min_threshold')} inputMode="decimal" value={f.min_threshold} onChange={(e) => set({ min_threshold: e.target.value })} />
+                            <Field id="pf-min_threshold" label={`Minimum send amount (${curTag}, optional)`} error={errors.min_threshold} hint="The customer must send at least this amount.">
+                                <div className="rf-affix">
+                                    {sym && <span className="rf-prefix">{sym}</span>}
+                                    <input {...aria('min_threshold')} className={cls('min_threshold')} inputMode="decimal" value={f.min_threshold}
+                                        style={!sym ? { paddingLeft: 12 } : undefined}
+                                        onChange={(e) => set({ min_threshold: e.target.value })} />
                                 </div>
                             </Field>
                         </div>
@@ -204,9 +358,12 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 <input {...aria('usage_limit_global')} className={cls('usage_limit_global')} inputMode="numeric" placeholder="Unlimited" value={f.usage_limit_global}
                                     onChange={(e) => set({ usage_limit_global: e.target.value })} />
                             </Field>
-                            <Field id="pf-budget_limit" label={`Total budget (${f.currency}, optional)`} error={errors.budget_limit} hint={`Stops the code when this much ${f.currency} discount has been given.`}>
-                                <div className="rf-affix"><span className="rf-prefix">{sym}</span>
-                                    <input {...aria('budget_limit')} className={cls('budget_limit')} inputMode="decimal" placeholder="Unlimited" value={f.budget_limit} onChange={(e) => set({ budget_limit: e.target.value })} />
+                            <Field id="pf-budget_limit" label={`Total budget (${curTag}, optional)`} error={errors.budget_limit} hint="Stops the code when this much discount has been given.">
+                                <div className="rf-affix">
+                                    {sym && <span className="rf-prefix">{sym}</span>}
+                                    <input {...aria('budget_limit')} className={cls('budget_limit')} inputMode="decimal" placeholder="Unlimited" value={f.budget_limit}
+                                        style={!sym ? { paddingLeft: 12 } : undefined}
+                                        onChange={(e) => set({ budget_limit: e.target.value })} />
                                 </div>
                             </Field>
                             <Field id="pf-usage_limit_per_user" label="Uses per customer" required error={errors.usage_limit_per_user}>
@@ -227,86 +384,6 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                             <Field id="pf-end_date" label="End" required error={errors.end_date}>
                                 <input {...aria('end_date')} type="datetime-local" className={cls('end_date')} value={f.end_date} onChange={(e) => set({ end_date: e.target.value })} />
                             </Field>
-                        </div>
-
-                        <div className="rf-section-label">Where it can be used</div>
-                        <div className="rf-grid rf-grid-2">
-                            <div className="rf-field">
-                                <label className="rf-check">
-                                    <input type="checkbox" checked={f.allCorridors} onChange={(e) => set({ allCorridors: e.target.checked, corridors: e.target.checked ? [] : (f.corridors.length ? f.corridors : [`${f.currency}-${f.currency === 'NGN' ? 'GBP' : 'NGN'}`]) })} /> All corridors (all receive currencies)
-                                </label>
-                                {!f.allCorridors && (
-                                    <>
-                                        <div className="promo-corridor-row">
-                                            <select className="rf-select" aria-label="Send currency" value={send} onChange={(e) => { setSend(e.target.value); if (e.target.value === recv) setRecv(''); }}>
-                                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-                                            </select>
-                                            <span aria-hidden="true">→</span>
-                                            <select className="rf-select" aria-label="Receive currency" value={recv} onChange={(e) => setRecv(e.target.value)}>
-                                                <option value="">Choose</option>
-                                                {CURRENCIES.filter((c) => c.code !== send).map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
-                                            </select>
-                                            <button type="button" className="rf-btn-sm" disabled={!recv}
-                                                onClick={() => addCorridorPair(send, recv)}>Add</button>
-                                        </div>
-                                        <div className="promo-typeahead-wrap" style={{ position: 'relative', marginBottom: 8 }}>
-                                            <input
-                                                type="text"
-                                                className="rf-input"
-                                                placeholder={`Type receive currency or country to add tag (e.g. NGN, Nigeria, EUR)...`}
-                                                value={corridorQuery}
-                                                onChange={(e) => setCorridorQuery(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && matchingReceiveCurrencies.length > 0) {
-                                                        e.preventDefault();
-                                                        addCorridorPair(send || f.currency, matchingReceiveCurrencies[0].code);
-                                                        setCorridorQuery('');
-                                                    }
-                                                }}
-                                            />
-                                            {matchingReceiveCurrencies.length > 0 && (
-                                                <div className="promo-typeahead-menu">
-                                                    {matchingReceiveCurrencies.map((c) => (
-                                                        <button
-                                                            key={c.code}
-                                                            type="button"
-                                                            className="promo-typeahead-item"
-                                                            onClick={() => {
-                                                                addCorridorPair(send || f.currency, c.code);
-                                                                setCorridorQuery('');
-                                                            }}
-                                                        >
-                                                            <strong>{send || f.currency} → {c.code}</strong> <span>({c.name})</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="promo-chips">
-                                            {f.corridors.map((c) => (
-                                                <span key={c} className="rf-chip promo-chip">{c.replace('-', ' → ')}
-                                                    <button type="button" aria-label={`Remove ${c}`} onClick={() => set({ corridors: f.corridors.filter((x) => x !== c) })}>×</button>
-                                                </span>
-                                            ))}
-                                        </div>
-                                        {errors.corridors && <div className="rf-error">{errors.corridors}</div>}
-                                    </>
-                                )}
-                            </div>
-                            <div className="rf-field">
-                                <label className="rf-check"><input type="checkbox" checked={f.allMethods} onChange={(e) => set({ allMethods: e.target.checked, payment_methods: e.target.checked ? [] : f.payment_methods })} /> All payment methods</label>
-                                {!f.allMethods && (
-                                    <div className="promo-methods">
-                                        {PAYMENT_METHODS.map((m) => (
-                                            <label key={m} className="rf-check">
-                                                <input type="checkbox" checked={f.payment_methods.includes(m)}
-                                                    onChange={(e) => set({ payment_methods: e.target.checked ? [...f.payment_methods, m] : f.payment_methods.filter((x) => x !== m) })} /> {m}
-                                            </label>
-                                        ))}
-                                        {errors.payment_methods && <div className="rf-error">{errors.payment_methods}</div>}
-                                    </div>
-                                )}
-                            </div>
                         </div>
 
                         <div className="rf-section-label">Who can use it</div>
@@ -351,9 +428,12 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     <Field id="pf-min_transactions" label="Min completed transactions (optional)" hint="Only qualify if customer has at least this many transfers.">
                                         <input id="pf-min_transactions" className="rf-input" inputMode="numeric" placeholder="e.g. 1" value={f.min_transactions || ''} onChange={(e) => set({ min_transactions: e.target.value })} />
                                     </Field>
-                                    <Field id="pf-min_volume" label={`Min transfer volume (${f.currency}, optional)`} hint={`Minimum lifetime completed volume in ${f.currency}.`}>
-                                        <div className="rf-affix"><span className="rf-prefix">{sym}</span>
-                                            <input id="pf-min_volume" className="rf-input" inputMode="decimal" placeholder="e.g. 500" value={f.min_volume || ''} onChange={(e) => set({ min_volume: e.target.value })} />
+                                    <Field id="pf-min_volume" label={`Min transfer volume (${curTag}, optional)`} hint="Minimum lifetime completed transfer volume.">
+                                        <div className="rf-affix">
+                                            {sym && <span className="rf-prefix">{sym}</span>}
+                                            <input id="pf-min_volume" className="rf-input" inputMode="decimal" placeholder="e.g. 500" value={f.min_volume || ''}
+                                                style={!sym ? { paddingLeft: 12 } : undefined}
+                                                onChange={(e) => set({ min_volume: e.target.value })} />
                                         </div>
                                     </Field>
                                 </div>
