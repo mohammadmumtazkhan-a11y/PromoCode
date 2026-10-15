@@ -20,9 +20,9 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     const validCorridorEndpoint = (c) => c === 'ALL' || SUPPORTED_CURRENCIES.includes(c);
 
     let currency = String(body.currency || '').toUpperCase();
-    if (!currency) {
+    if (!currency && corridors.length > 0) {
         const sendSet = [...new Set(corridors.map((c) => String(c || '').split('-')[0]).filter(Boolean))];
-        currency = sendSet.length === 1 && sendSet[0] !== 'ALL' ? sendSet[0] : 'ALL';
+        if (sendSet.length === 1 && SUPPORTED_CURRENCIES.includes(sendSet[0])) currency = sendSet[0];
     }
 
     if (!code) errors.code = 'Enter a promo code.';
@@ -32,11 +32,11 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     if (description && description.length > 200) errors.description = 'Keep the note under 200 characters.';
 
     if (!['Fixed', 'Percentage', 'Waiver'].includes(type)) errors.type = 'Choose a type.';
-    if (currency !== 'ALL' && !SUPPORTED_CURRENCIES.includes(currency)) errors.currency = 'Choose a currency.';
+    if (!SUPPORTED_CURRENCIES.includes(currency)) errors.currency = 'Choose a send currency.';
 
     let value = 0;
     if (type === 'Fixed') {
-        if (blank(body.value) || Number.isNaN(num(body.value)) || num(body.value) <= 0 || num(body.value) > 1000000 || !decimalsOk(body.value, currency === 'ALL' ? 'GBP' : currency)) {
+        if (blank(body.value) || Number.isNaN(num(body.value)) || num(body.value) <= 0 || num(body.value) > 1000000 || !decimalsOk(body.value, currency || 'GBP')) {
             errors.value = 'Enter an amount greater than 0.';
         } else value = num(body.value);
     } else if (type === 'Percentage') {
@@ -87,7 +87,7 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
         else if (isNew && end <= now) errors.end_date = 'End date must be in the future.';
     }
 
-    if (body.all_corridors === false && corridors.length === 0) errors.corridors = 'Add at least one corridor, or tick All corridors.';
+    if (body.all_corridors === false && corridors.length === 0) errors.corridors = 'Add at least one receive currency, or tick All receive currencies.';
     if (corridors.some((c) => { const [s, d] = c.split('-'); return !validCorridorEndpoint(s) || !validCorridorEndpoint(d) || s === d; })) {
         errors.corridors = 'Each corridor needs valid send and receive currencies.';
     }

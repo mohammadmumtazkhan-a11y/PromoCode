@@ -30,10 +30,7 @@ export const STATUS_TONE = {
     Active: 'green', Scheduled: 'blue', Expired: 'red', Disabled: 'grey', 'Fully redeemed': 'amber', 'Budget spent': 'amber',
 };
 
-export const symbolFor = (code) => {
-    if (!code || code === 'ALL') return '';
-    return (CURRENCIES.find((c) => c.code === code) || {}).symbol || `${code} `;
-};
+export const symbolFor = (code) => (CURRENCIES.find((c) => c.code === code) || {}).symbol || (code ? `${code} ` : '');
 export const decimalsFor = (code) => (code === 'JPY' ? 0 : 2);
 
 export function formatCorridorChip(corridor) {
@@ -41,13 +38,6 @@ export function formatCorridorChip(corridor) {
     const sLabel = s === 'ALL' ? 'All Currencies' : s;
     const dLabel = d === 'ALL' ? 'All Currencies' : d;
     return `${sLabel} → ${dLabel}`;
-}
-
-export function deriveCurrencyFromCorridors(allCorridors, corridors = []) {
-    if (allCorridors || !Array.isArray(corridors) || corridors.length === 0) return 'ALL';
-    const sendSet = [...new Set(corridors.map((c) => String(c || '').split('-')[0]).filter(Boolean))];
-    if (sendSet.length === 1 && sendSet[0] !== 'ALL') return sendSet[0];
-    return 'ALL';
 }
 
 export function formatMoney(amount, currency) {
@@ -109,8 +99,10 @@ export function whoLabel(seg, segments = []) {
 
 // Live summary line under the form (PROMO-MITO §5.2)
 export function previewSentence(f) {
-    const cur = deriveCurrencyFromCorridors(f.allCorridors, f.corridors);
-    const corridors = f.allCorridors || !f.corridors.length ? 'across all corridors' : f.corridors.map(formatCorridorChip).join(', ');
+    const cur = f.currency || 'GBP';
+    const corridors = f.allCorridors || !f.corridors.length
+        ? `${cur} → All receive currencies`
+        : f.corridors.map(formatCorridorChip).join(', ');
     const methods = f.allMethods || !f.payment_methods.length ? '' : ` by ${f.payment_methods.join(' or ')}`;
     const who = { all: 'Customers', new_customers: 'New customers', existing_customers: 'Existing customers (1+ completed transfers)', specific_customers: 'Selected customers', segment: 'Customers in the selected segment' }[f.audience] || 'Customers';
     const flowVerb = f.applies_to_flow === 'receive' ? 'receiving' : f.applies_to_flow === 'both' ? 'sending or receiving' : 'sending';

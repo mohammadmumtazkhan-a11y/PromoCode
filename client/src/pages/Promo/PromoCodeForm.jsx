@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     CURRENCIES, PAYMENT_METHODS, TYPE_OPTIONS, TYPE_LABELS,
-    previewSentence, symbolFor, toUtcIso, formatCorridorChip, deriveCurrencyFromCorridors,
+    previewSentence, symbolFor, toUtcIso, formatCorridorChip,
 } from './lib/promoUtils';
 import { validatePromoForm, toPayload } from './lib/promoValidation';
 import { formFromPromo } from './lib/promoForm';
@@ -21,8 +21,6 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
     const [f, setF] = useState(() => formFromPromo(promo));
     const [errors, setErrors] = useState({});
     const [saving, setSaving] = useState(false);
-    const [send, setSend] = useState('GBP');
-    const [recv, setRecv] = useState('NGN');
     const [corridorQuery, setCorridorQuery] = useState('');
     const set = (patch) => { setF((x) => ({ ...x, ...patch })); setErrors((e) => { const n = { ...e }; Object.keys(patch).forEach((k) => delete n[k]); return n; }); };
     const others = useMemo(() => existingCodes.filter((c) => !promo || c !== promo.code), [existingCodes, promo]);
@@ -38,34 +36,49 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
         setErrors((cur) => ({ ...cur, [key]: e[key] }));
     };
 
-    const addCorridorPair = (sendCur, recvCur) => {
-        if (!sendCur || !recvCur || sendCur === recvCur) return;
+    const handleSendCurrencyChange = (nextSend) => {
+        const reAnchored = (f.corridors || [])
+            .map((c) => {
+                const [, dest] = String(c).split('-');
+                return dest && dest !== nextSend ? `${nextSend}-${dest}` : null;
+            })
+            .filter(Boolean);
+        set({
+            currency: nextSend,
+            corridors: [...new Set(reAnchored)],
+        });
+    };
+
+    const addReceiveCurrency = (recvCur) => {
+        const sendCur = f.currency || 'GBP';
+        if (!recvCur || sendCur === recvCur) return;
         const pair = `${sendCur}-${recvCur}`;
         if (!f.corridors.includes(pair)) {
-            const nextCorridors = [...f.corridors, pair];
             set({
                 allCorridors: false,
-                corridors: nextCorridors,
-                currency: deriveCurrencyFromCorridors(false, nextCorridors),
+                corridors: [...f.corridors, pair],
             });
         }
     };
 
     const removeCorridorPair = (pair) => {
-        const nextCorridors = f.corridors.filter((x) => x !== pair);
         set({
-            corridors: nextCorridors,
-            currency: deriveCurrencyFromCorridors(f.allCorridors, nextCorridors),
+            corridors: f.corridors.filter((x) => x !== pair),
         });
     };
 
-    const matchingCurrencies = useMemo(() => {
+    const availableReceiveCurrencies = useMemo(
+        () => CURRENCIES.filter((c) => c.code !== f.currency),
+        [f.currency]
+    );
+
+    const matchingReceiveCurrencies = useMemo(() => {
         const q = corridorQuery.trim().toLowerCase();
         if (!q) return [];
-        return CURRENCIES.filter(
+        return availableReceiveCurrencies.filter(
             (c) => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
         );
-    }, [corridorQuery]);
+    }, [corridorQuery, availableReceiveCurrencies]);
 
     const handleCustomerFileUpload = (ev) => {
         const file = ev.target.files && ev.target.files[0];
@@ -124,8 +137,8 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
     const cls = (k, base = 'rf-input') => `${base}${errors[k] ? ' rf-invalid' : ''}`;
     const aria = (k) => ({ id: `pf-${k}`, 'aria-invalid': !!errors[k], 'aria-describedby': errors[k] ? `pf-${k}-error` : undefined, onBlur: () => blurCheck(k) });
-    const activeCur = deriveCurrencyFromCorridors(f.allCorridors, f.corridors);
-    const curTag = activeCur === 'ALL' ? 'Send currency' : activeCur;
+    const activeCur = f.currency || 'GBP';
+    const curTag = activeCur;
     const sym = symbolFor(activeCur);
     const ro = legacy;
     const customerListCount = String(f.customer_ids || '').split(/[\s,;]+/).filter(Boolean).length;
@@ -166,116 +179,103 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                         <div className="rf-section-label">Where it can be used</div>
                         <div className="rf-grid rf-grid-2">
                             <div className="rf-field">
-                                <label className="rf-check" style={{ fontWeight: 600 }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={f.allCorridors}
-                                        onChange={(e) => {
-                                            const checked = e.target.checked;
-                                            const nextCorridors = checked ? [] : (f.corridors.length ? f.corridors : ['GBP-NGN']);
-                                            set({
-                                                allCorridors: checked,
-                                                corridors: nextCorridors,
-                                                currency: deriveCurrencyFromCorridors(checked, nextCorridors),
-                                            });
-                                        }}
-                                    /> All corridors (all receive currencies)
-                                </label>
+                                <Field id="pf-currency" label="From (Send Currency)" required error={errors.currency} hint="Anchors all discount values, caps, minimum send, and budget.">
+                                    <select
+                                        {...aria('currency')}
+                                        className={cls('currency', 'rf-select')}
+                                        value={f.currency}
+                                        onChange={(e) => handleSendCurrencyChange(e.target.value)}
+                                    >
+                                        {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name} ({c.symbol.trim()})</option>)}
+                                    </select>
+                                </Field>
+
+                                <div style={{ marginTop: 10 }}>
+                                    <label className="rf-check" style={{ fontWeight: 600 }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={f.allCorridors}
+                                            onChange={(e) => {
+                                                const checked = e.target.checked;
+                                                const defaultDest = f.currency === 'NGN' ? 'GBP' : 'NGN';
+                                                const nextCorridors = checked ? [] : (f.corridors.length ? f.corridors : [`${f.currency}-${defaultDest}`]);
+                                                set({
+                                                    allCorridors: checked,
+                                                    corridors: nextCorridors,
+                                                });
+                                            }}
+                                        /> All corridors (all receive currencies from {activeCur})
+                                    </label>
+                                </div>
+
                                 {!f.allCorridors && (
-                                    <>
-                                        <div className="promo-corridor-row" style={{ marginTop: 8 }}>
-                                            <select
-                                                className="rf-select"
-                                                aria-label="Send currency"
-                                                value={send}
-                                                onChange={(e) => {
-                                                    const nextSend = e.target.value;
-                                                    setSend(nextSend);
-                                                    if (nextSend === recv) setRecv(nextSend === 'ALL' ? 'NGN' : 'ALL');
-                                                }}
-                                            >
-                                                <option value="ALL">ALL (All Send Currencies)</option>
-                                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
-                                            </select>
-                                            <span aria-hidden="true">→</span>
-                                            <select
-                                                className="rf-select"
-                                                aria-label="Receive currency"
-                                                value={recv}
-                                                onChange={(e) => setRecv(e.target.value)}
-                                            >
-                                                <option value="">Choose</option>
-                                                {send !== 'ALL' && <option value="ALL">ALL (All Receive Currencies)</option>}
-                                                {CURRENCIES.filter((c) => c.code !== send).map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
-                                            </select>
-                                            <button
-                                                type="button"
-                                                className="rf-btn-sm"
-                                                disabled={!recv || send === recv}
-                                                onClick={() => addCorridorPair(send, recv)}
-                                            >
-                                                Add
-                                            </button>
-                                        </div>
+                                    <div style={{ marginTop: 8 }}>
                                         <div className="promo-typeahead-wrap" style={{ position: 'relative', marginBottom: 8 }}>
-                                            <input
-                                                type="text"
-                                                className="rf-input"
-                                                placeholder="Search currency or country to add corridor (e.g. NGN, Nigeria, GBP, EUR)..."
-                                                value={corridorQuery}
-                                                onChange={(e) => setCorridorQuery(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && matchingCurrencies.length > 0) {
-                                                        e.preventDefault();
-                                                        const target = matchingCurrencies[0].code;
-                                                        addCorridorPair(send === target ? 'ALL' : send, target);
-                                                        setCorridorQuery('');
-                                                    }
-                                                }}
-                                            />
-                                            {matchingCurrencies.length > 0 && (
+                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                <span className="rf-pill rf-pill-blue" style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>{activeCur} →</span>
+                                                <input
+                                                    type="text"
+                                                    className="rf-input"
+                                                    placeholder="Search or pick receive currency (e.g. NGN, Nigeria, GHS, KES)..."
+                                                    value={corridorQuery}
+                                                    onChange={(e) => setCorridorQuery(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && matchingReceiveCurrencies.length > 0) {
+                                                            e.preventDefault();
+                                                            addReceiveCurrency(matchingReceiveCurrencies[0].code);
+                                                            setCorridorQuery('');
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                            {matchingReceiveCurrencies.length > 0 && (
                                                 <div className="promo-typeahead-menu">
-                                                    {matchingCurrencies.map((c) => (
-                                                        <div key={c.code} style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid #f3f4f6' }}>
-                                                            {send !== c.code && (
-                                                                <button
-                                                                    type="button"
-                                                                    className="promo-typeahead-item"
-                                                                    onClick={() => {
-                                                                        addCorridorPair(send, c.code);
-                                                                        setCorridorQuery('');
-                                                                    }}
-                                                                >
-                                                                    <strong>{send === 'ALL' ? 'All Currencies' : send} → {c.code}</strong> <span>({c.name})</span>
-                                                                </button>
-                                                            )}
-                                                            {send !== 'ALL' && (
-                                                                <button
-                                                                    type="button"
-                                                                    className="promo-typeahead-item"
-                                                                    onClick={() => {
-                                                                        addCorridorPair('ALL', c.code);
-                                                                        setCorridorQuery('');
-                                                                    }}
-                                                                >
-                                                                    <strong>All Currencies → {c.code}</strong> <span>(Any send to {c.name})</span>
-                                                                </button>
-                                                            )}
+                                                    {matchingReceiveCurrencies.map((c) => {
+                                                        const alreadyAdded = f.corridors.includes(`${activeCur}-${c.code}`);
+                                                        return (
                                                             <button
+                                                                key={c.code}
                                                                 type="button"
                                                                 className="promo-typeahead-item"
+                                                                disabled={alreadyAdded}
                                                                 onClick={() => {
-                                                                    addCorridorPair(c.code, 'ALL');
+                                                                    addReceiveCurrency(c.code);
                                                                     setCorridorQuery('');
                                                                 }}
                                                             >
-                                                                <strong>{c.code} → All Currencies</strong> <span>({c.name} to any destination)</span>
+                                                                <strong>{activeCur} → {c.code}</strong> <span>({c.name}){alreadyAdded ? ' ✓ Added' : ''}</span>
                                                             </button>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
+
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                                            {availableReceiveCurrencies.map((c) => {
+                                                const pair = `${activeCur}-${c.code}`;
+                                                const active = f.corridors.includes(pair);
+                                                return (
+                                                    <button
+                                                        key={c.code}
+                                                        type="button"
+                                                        className="rf-btn-sm"
+                                                        style={{
+                                                            fontSize: '0.74rem',
+                                                            padding: '2px 8px',
+                                                            background: active ? '#eff6ff' : '#f9fafb',
+                                                            borderColor: active ? '#3b82f6' : '#e5e7eb',
+                                                            color: active ? '#1d4ed8' : '#374151',
+                                                            fontWeight: active ? 600 : 400,
+                                                        }}
+                                                        onClick={() => active ? removeCorridorPair(pair) : addReceiveCurrency(c.code)}
+                                                    >
+                                                        {active ? `✓ ${c.code}` : `+ ${c.code}`}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
                                         <div className="promo-chips">
                                             {f.corridors.map((c) => (
                                                 <span key={c} className="rf-chip promo-chip">{formatCorridorChip(c)}
@@ -284,7 +284,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                             ))}
                                         </div>
                                         {errors.corridors && <div className="rf-error">{errors.corridors}</div>}
-                                    </>
+                                    </div>
                                 )}
                             </div>
                             <div className="rf-field">

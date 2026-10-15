@@ -1,7 +1,7 @@
-import { toLocalInput, deriveCurrencyFromCorridors } from './promoUtils';
+import { toLocalInput } from './promoUtils';
 
 const EMPTY = {
-    code: '', description: '', type: 'Fixed', value: '', currency: 'ALL', max_discount: '', min_threshold: '',
+    code: '', description: '', type: 'Fixed', value: '', currency: 'GBP', max_discount: '', min_threshold: '',
     usage_limit_global: '', budget_limit: '', usage_limit_per_user: '1', perUserUnlimited: false,
     start_date: '', end_date: '', allCorridors: true, corridors: [], allMethods: true, payment_methods: [],
     applies_to_flow: 'send', audience: 'all', customer_ids: '', segment_id: '', targeted_user_id: '',
@@ -19,10 +19,14 @@ export function formFromPromo(p) {
     else if (seg.type && seg.type !== 'all') audience = 'segment';
     const allCorridors = !(r.corridors && r.corridors.length);
     const corridors = r.corridors || [];
+    const firstCorridorSend = corridors.length ? String(corridors[0]).split('-')[0] : '';
+    const resolvedCurrency = (p.currency && p.currency !== 'ALL')
+        ? p.currency
+        : (firstCorridorSend && firstCorridorSend !== 'ALL' ? firstCorridorSend : 'GBP');
     return {
         ...EMPTY,
         code: p.code || '', description: p.description || '', type: p.type, value: p.type === 'Waiver' ? '' : String(p.value ?? ''),
-        currency: deriveCurrencyFromCorridors(allCorridors, corridors) || p.currency || 'ALL',
+        currency: resolvedCurrency,
         max_discount: p.max_discount ? String(p.max_discount) : '',
         min_threshold: p.min_threshold ? String(p.min_threshold) : '',
         usage_limit_global: p.usage_limit_global === -1 || p.usage_limit_global == null ? '' : String(p.usage_limit_global),

@@ -157,7 +157,7 @@ export default function PromoCodesPage() {
                                         <td className="promo-where">
                                             {corridors.length ? (
                                                 <span>{corridors.slice(0, 2).map((c) => <span key={c} className="rf-chip promo-chip-sm">{formatCorridorChip(c)}</span>)}{corridors.length > 2 && <span className="rf-sub" style={{ display: 'inline' }}> +{corridors.length - 2}</span>}</span>
-                                            ) : <span>All corridors</span>}
+                                            ) : <span>{p.currency && p.currency !== 'ALL' ? `${p.currency} → All currencies` : 'All corridors'}</span>}
                                             <span className="rf-sub">{(r.payment_methods || []).length ? r.payment_methods.join(', ') : 'All payment methods'}</span>
                                             <span className="rf-sub">{whoLabel(p.user_segment, segments)}{r.applies_to_flow && r.applies_to_flow !== 'send' ? ` · ${r.applies_to_flow === 'receive' ? 'Receive Money' : 'Send & Receive'}` : ''}</span>
                                         </td>
