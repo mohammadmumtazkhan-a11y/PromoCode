@@ -47,8 +47,8 @@ export function validatePromoForm(f, { isNew = true, existingCodes = [], now = n
     if (!f.allCorridors && (!f.corridors || f.corridors.length === 0)) e.corridors = 'Add at least one corridor, or tick All corridors.';
     if (!f.allMethods && (!f.payment_methods || f.payment_methods.length === 0)) e.payment_methods = 'Choose at least one payment method, or tick All payment methods.';
     if (f.audience === 'specific_customers') {
-        const ids = String(f.customer_ids || '').split(/[\s,]+/).filter(Boolean);
-        if (ids.length === 0 || ids.length > 500) e.customer_ids = 'Enter up to 500 customer IDs.';
+        const ids = String(f.customer_ids || '').split(/[\s,;]+/).filter(Boolean);
+        if (ids.length === 0 || ids.length > 500) e.customer_ids = 'Enter up to 500 customer IDs or email addresses.';
     }
     if (f.audience === 'segment' && !f.segment_id) e.segment_id = 'Choose a saved segment.';
     return e;
@@ -58,7 +58,16 @@ export function validatePromoForm(f, { isNew = true, existingCodes = [], now = n
 export function toPayload(f, toUtcIso) {
     let user_segment = { type: 'all' };
     if (f.audience === 'new_customers' || f.audience === 'existing_customers') user_segment = { type: f.audience };
-    if (f.audience === 'specific_customers') user_segment = { type: 'specific_customers', user_ids: String(f.customer_ids || '').split(/[\s,]+/).filter(Boolean) };
+    if (f.audience === 'specific_customers') {
+        user_segment = {
+            type: 'specific_customers',
+            user_ids: String(f.customer_ids || '').split(/[\s,;]+/).filter(Boolean),
+            ...(f.min_transactions ? { min_transactions: Number(f.min_transactions) } : {}),
+            ...(f.min_volume ? { min_volume: Number(f.min_volume) } : {}),
+            ...(f.registered_from ? { registered_from: f.registered_from } : {}),
+            ...(f.registered_to ? { registered_to: f.registered_to } : {}),
+        };
+    }
     if (f.audience === 'segment') user_segment = { type: String(f.segment_id) };
     if (f.audience === 'targeted') user_segment = { type: 'targeted', user_id: f.targeted_user_id };
     return {
@@ -76,7 +85,11 @@ export function toPayload(f, toUtcIso) {
         end_date: toUtcIso(f.end_date),
         all_corridors: !!f.allCorridors,
         all_payment_methods: !!f.allMethods,
-        restrictions: { corridors: f.allCorridors ? [] : f.corridors, payment_methods: f.allMethods ? [] : f.payment_methods },
+        restrictions: {
+            corridors: f.allCorridors ? [] : f.corridors,
+            payment_methods: f.allMethods ? [] : f.payment_methods,
+            applies_to_flow: f.applies_to_flow || 'send',
+        },
         user_segment,
     };
 }

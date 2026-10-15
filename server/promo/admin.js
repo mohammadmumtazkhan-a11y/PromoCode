@@ -185,10 +185,25 @@ function registerAdminRoutes(app, q, { ready, ports }) {
         ], data));
     }));
 
-    // API-A6 history
+    // API-A6 history (includes audit changes and transfer usage events, newest first)
     app.get('/api/promocodes/:id/audit', wrap(async (req, res) => {
         const row = await getCode(req.params.id);
-        res.json({ data: await q.all('SELECT * FROM promo_audit WHERE promo_code_id = ? ORDER BY id DESC', [String(row.id)]) });
+        const [audits, { data: redemptions }] = await Promise.all([
+            q.all('SELECT * FROM promo_audit WHERE promo_code_id = ? ORDER BY id DESC', [String(row.id)]),
+            usageRows(req.params.id),
+        ]);
+        const usageEntries = (redemptions || []).map((r) => ({
+            id: `use_${r.id}`,
+            promo_code_id: String(row.id),
+            field: 'used_on_transfer',
+            old_value: null,
+            new_value: `${r.customer_name || r.user_id || 'Customer'}, transfer ${r.transaction_id}, ${(r.currency || row.currency || 'GBP')} ${Number(r.discount_amount || 0).toFixed(2)}`,
+            admin_name: r.customer_name || r.user_id || 'Customer',
+            created_at: r.created_at,
+            status: r.status,
+        }));
+        const combined = [...audits, ...usageEntries].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        res.json({ data: combined });
     }));
 
     // API-A8 bulk and personal codes (Phase 3)

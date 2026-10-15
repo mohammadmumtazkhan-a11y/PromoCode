@@ -70,6 +70,7 @@ const TransactionDetails = () => {
     // Proof of Payment State
     const [isPopEmailed, setIsPopEmailed] = useState(false);
     const [popAction, setPopAction] = useState('Download');
+    const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState(false);
     
     const transaction = TRANSACTIONS.find(t => t.reference === reference);
 
@@ -103,23 +104,96 @@ const TransactionDetails = () => {
         }
     };
 
+    const hasPromoDiscount = !!(transaction.promoCode && transaction.discountAmount);
+    const paymentDetailsRows = [
+        { label: 'Payment method', value: transaction.collectionMethod || 'BANKACCOUNT' },
+        { label: 'Amount sent', value: transaction.amountSent || transaction.settle },
+        {
+            label: 'Discount applied',
+            value: hasPromoDiscount ? `-${transaction.discountAmount} (${transaction.promoCode})` : '-',
+            isDiscount: hasPromoDiscount
+        },
+        { label: 'Customer paid', value: transaction.customerPaid || transaction.total, bold: true },
+        { label: 'Transaction fee', value: transaction.feeAmount || '0.00' },
+        { label: 'Rate (applied to amount sent)', value: `1 ${transaction.sendCurrency || 'GBP'} = ${transaction.rate} ${transaction.receiveCurrency || ''}`.trim() },
+        { label: 'Beneficiary received', value: transaction.payout, highlight: true },
+        { label: 'Payment status', value: transaction.status }
+    ];
+
     return (
         <div style={{ fontFamily: "'Inter', sans-serif", maxWidth: 1000 }}>
-            {/* Header / Back Link */}
-            <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
-                <button 
-                    onClick={() => navigate(-1)}
+            {/* Header / Back Link + Download Details (PDF) */}
+            <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <button 
+                        onClick={() => navigate(-1)}
+                        style={{
+                            background: 'none', border: 'none', color: '#ea580c',
+                            cursor: 'pointer', fontSize: '1.2rem', padding: 0
+                        }}
+                        title="Go Back"
+                    >
+                        ←
+                    </button>
+                    <h1 style={supportPageTitleStyle}>
+                        Transaction {transaction.reference}
+                    </h1>
+                </div>
+                <button
+                    id="download-details-pdf-btn"
+                    type="button"
+                    onClick={() => setIsPdfPreviewOpen(true)}
                     style={{
-                        background: 'none', border: 'none', color: '#ea580c',
-                        cursor: 'pointer', fontSize: '1.2rem', padding: 0
+                        padding: '10px 16px', borderRadius: 8, border: '1px solid #cbd5e1',
+                        background: 'white', color: '#0f172a', fontWeight: 600, fontSize: '0.85rem',
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                     }}
-                    title="Go Back"
                 >
-                    ←
+                    📄 Download Details (PDF)
                 </button>
-                <h1 style={supportPageTitleStyle}>
-                    Transaction {transaction.reference}
-                </h1>
+            </div>
+
+            {/* Top Summary Card with Permanent Discount Applied Field */}
+            <div
+                id="transaction-summary-card"
+                style={{
+                    background: 'white', borderRadius: 12, padding: '18px 24px', marginBottom: 20,
+                    border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 16
+                }}
+            >
+                <div>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Send amount</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginTop: 4 }}>{transaction.sendAmount || transaction.total}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>Amount sent: {transaction.amountSent || transaction.settle}</div>
+                </div>
+                <div>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Discount applied</div>
+                    <div style={{ marginTop: 6 }} data-testid="summary-discount-applied">
+                        {hasPromoDiscount ? (
+                            <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                background: '#dcfce7', color: '#166534', border: '1px solid #86efac',
+                                padding: '4px 10px', borderRadius: 999, fontSize: '0.82rem', fontWeight: 700
+                            }}>
+                                🏷️ -{transaction.discountAmount} ({transaction.promoCode})
+                            </span>
+                        ) : (
+                            <span style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8' }}>-</span>
+                        )}
+                    </div>
+                </div>
+                <div>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Customer paid</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginTop: 4 }}>{transaction.customerPaid || transaction.total}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>Fee: {transaction.feeAmount || '0.00'}</div>
+                </div>
+                <div>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Beneficiary received</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#059669', marginTop: 4 }}>{transaction.payout}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>Rate: {transaction.rate}</div>
+                </div>
             </div>
 
             {/* Detailed Card with Tabs */}
@@ -177,7 +251,7 @@ const TransactionDetails = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                                 <tbody>
                                     <tr>
-                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0', width: '180px' }}>MTN:</td>
+                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0', width: '210px' }}>MTN:</td>
                                         <td style={{ color: '#1e293b', fontWeight: 600, padding: '6px 0' }}>{transaction.mtn}</td>
                                     </tr>
                                     <tr>
@@ -252,21 +326,26 @@ const TransactionDetails = () => {
                                         <td style={{ fontFamily: 'monospace', padding: '6px 0' }}>{transaction.serviceCode}</td>
                                     </tr>
                                     <tr>
-                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Collection Method:</td>
-                                        <td style={{ padding: '6px 0' }}>{transaction.collectionMethod}</td>
-                                    </tr>
-                                    <tr>
                                         <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Account Number:</td>
                                         <td style={{ fontWeight: 600, padding: '6px 0' }}>{maskPII(transaction.account, 'account')}</td>
                                     </tr>
                                     <tr>
-                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Rate:</td>
-                                        <td style={{ padding: '6px 0' }}>{transaction.rate}</td>
+                                        <td colSpan="2" style={{ padding: '12px 0 6px', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                            Payment Details
+                                        </td>
                                     </tr>
-                                    <tr>
-                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Payout:</td>
-                                        <td style={{ color: '#059669', fontWeight: 700, padding: '6px 0' }}>{transaction.payout}</td>
-                                    </tr>
+                                    {paymentDetailsRows.map((row) => (
+                                        <tr key={row.label}>
+                                            <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>{row.label}:</td>
+                                            <td style={{
+                                                padding: '6px 0',
+                                                fontWeight: row.bold || row.highlight || row.isDiscount ? 700 : 500,
+                                                color: row.isDiscount ? '#166534' : row.highlight ? '#059669' : '#1e293b'
+                                            }}>
+                                                {row.value}
+                                            </td>
+                                        </tr>
+                                    ))}
                                     <tr>
                                         <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Settle Amount:</td>
                                         <td style={{ padding: '6px 0' }}>{transaction.settle}</td>
@@ -804,6 +883,103 @@ const TransactionDetails = () => {
                                     Create Ticket
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Download Details (PDF) Modal */}
+            {isPdfPreviewOpen && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 1000, padding: 20
+                }} onClick={() => setIsPdfPreviewOpen(false)}>
+                    <div
+                        id="pdf-details-modal"
+                        style={{
+                            background: 'white', borderRadius: 16, padding: 32,
+                            width: '100%', maxWidth: 640, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+                            position: 'relative', maxHeight: '90vh', overflowY: 'auto'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            type="button"
+                            aria-label="Close PDF preview"
+                            onClick={() => setIsPdfPreviewOpen(false)}
+                            style={{ position: 'absolute', top: 20, right: 24, background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#64748b' }}
+                        >
+                            ✕
+                        </button>
+                        <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: 14, marginBottom: 20 }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                Mito Admin — Transaction Receipt &amp; Payment Details
+                            </div>
+                            <h2 style={{ margin: '6px 0 0', fontSize: '1.35rem', color: '#0f172a' }}>
+                                Transaction #{transaction.reference}
+                            </h2>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 4 }}>
+                                Date: {transaction.lastUpdated} · Affiliate: {transaction.affiliate}
+                            </div>
+                        </div>
+
+                        <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>
+                            Payment Details
+                        </h3>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', marginBottom: 20 }}>
+                            <tbody>
+                                {paymentDetailsRows.map((row) => (
+                                    <tr key={row.label} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                        <td style={{ padding: '10px 8px', color: '#475569', fontWeight: 500 }}>{row.label}</td>
+                                        <td style={{
+                                            padding: '10px 8px', textAlign: 'right',
+                                            fontWeight: row.bold || row.highlight || row.isDiscount ? 700 : 600,
+                                            color: row.isDiscount ? '#166534' : row.highlight ? '#059669' : '#0f172a'
+                                        }}>
+                                            {row.value}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                            <button
+                                type="button"
+                                onClick={() => setIsPdfPreviewOpen(false)}
+                                style={{ padding: '10px 18px', border: '1px solid #cbd5e1', background: 'white', borderRadius: 8, fontWeight: 600, cursor: 'pointer', color: '#475569' }}
+                            >
+                                Close
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const content = [
+                                        `TRANSACTION DETAILS — #${transaction.reference}`,
+                                        `Date: ${transaction.lastUpdated}`,
+                                        `Affiliate: ${transaction.affiliate}`,
+                                        `Sender: ${transaction.senderFirstName} ${transaction.senderLastName}`,
+                                        `Beneficiary: ${transaction.beneficiaryFirstName} ${transaction.beneficiaryLastName}`,
+                                        '',
+                                        'PAYMENT DETAILS:',
+                                        ...paymentDetailsRows.map((r) => `${r.label}: ${r.value}`)
+                                    ].join('\n');
+                                    const blob = new Blob([content], { type: 'application/pdf' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `Transaction_${transaction.reference}_Details.pdf`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    a.remove();
+                                    URL.revokeObjectURL(url);
+                                }}
+                                style={{ padding: '10px 20px', border: 'none', background: '#ea580c', color: 'white', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                                ⬇️ Download PDF File
+                            </button>
                         </div>
                     </div>
                 </div>

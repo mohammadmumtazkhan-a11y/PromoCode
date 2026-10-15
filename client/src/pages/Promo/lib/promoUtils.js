@@ -94,7 +94,8 @@ export function previewSentence(f) {
     const cur = f.currency || 'GBP';
     const corridors = f.allCorridors || !f.corridors.length ? '' : f.corridors.map((c) => c.replace('-', ' → ')).join(', ');
     const methods = f.allMethods || !f.payment_methods.length ? '' : ` by ${f.payment_methods.join(' or ')}`;
-    const who = { all: 'Customers', new_customers: 'New customers', existing_customers: 'Existing customers', specific_customers: 'Selected customers', segment: 'Customers in the selected segment' }[f.audience] || 'Customers';
+    const who = { all: 'Customers', new_customers: 'New customers', existing_customers: 'Existing customers (1+ completed transfers)', specific_customers: 'Selected customers', segment: 'Customers in the selected segment' }[f.audience] || 'Customers';
+    const flowVerb = f.applies_to_flow === 'receive' ? 'receiving' : f.applies_to_flow === 'both' ? 'sending or receiving' : 'sending';
     let what;
     if (f.type === 'Percentage') what = `${f.value || '…'}% off the fee${f.max_discount ? ` (max ${formatMoney(f.max_discount, cur)})` : ''}`;
     else if (f.type === 'Waiver') what = 'the fee waived';
@@ -102,7 +103,7 @@ export function previewSentence(f) {
     const min = Number(f.min_threshold) > 0 ? ` on transfers of ${formatMoney(f.min_threshold, cur)} or more` : '';
     const times = f.perUserUnlimited ? ', any number of times' : Number(f.usage_limit_per_user) === 1 ? ', once each' : `, up to ${f.usage_limit_per_user || '…'} times each`;
     const until = f.end_date ? `, until ${formatUkDate(new Date(f.end_date), true)}` : '';
-    return `${who} sending ${corridors || cur}${methods} get ${what}${min}${times}${until}.`;
+    return `${who} ${flowVerb} ${corridors || cur}${methods} get ${what}${min}${times}${until}.`;
 }
 
 export const downloadUrl = (url) => {

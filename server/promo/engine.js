@@ -34,6 +34,7 @@ function normalise(body = {}) {
         fee: num(body.fee),
         currency: up(body.currency),
         userId: body.user_id || body.userId || undefined,
+        userEmail: body.user_email || body.userEmail || undefined,
         source: up(body.source_currency || body.sourceCurrency),
         dest: up(body.dest_currency || body.destCurrency),
         paymentMethod: body.payment_method || body.paymentMethod || undefined,
@@ -175,8 +176,19 @@ async function check(q, body) {
     if (seg.type === 'targeted') {
         if (!n.userId || String(seg.user_id) !== String(n.userId)) throw new PromoError(403, 'NOT_YOUR_CODE', 'This code was issued to another customer.');
     } else if (seg.type === 'specific_customers') {
-        const ids = (seg.user_ids || []).map(String);
-        if (!n.userId || !ids.includes(String(n.userId))) throw new PromoError(403, 'NOT_YOUR_CODE', 'This code was issued to another customer.');
+        const ids = (seg.user_ids || []).map((x) => String(x).toLowerCase());
+        let custEmail = n.userEmail ? String(n.userEmail).toLowerCase() : null;
+        if (!custEmail && n.userId) {
+            const cRow = await q.get('SELECT email FROM promo_customers WHERE id = ?', [n.userId]);
+            if (cRow && cRow.email) custEmail = String(cRow.email).toLowerCase();
+        }
+        const matched = (n.userId && ids.includes(String(n.userId).toLowerCase())) || (custEmail && ids.includes(custEmail));
+        if (!matched) throw new PromoError(403, 'NOT_YOUR_CODE', 'This code was issued to another customer.');
+        if (seg.min_transactions || seg.min_volume) {
+            const stats = await customerStats(q, n.userId, { excludeTransferId: n.transactionId });
+            if (seg.min_transactions && stats.count < Number(seg.min_transactions)) throw new PromoError(403, 'SEGMENT', 'This code is not available for your account.');
+            if (seg.min_volume && stats.volume < Number(seg.min_volume)) throw new PromoError(403, 'SEGMENT', 'This code is not available for your account.');
+        }
     } else if (seg.type && seg.type !== 'all') {
         if (!n.userId || !(await segmentMatches(q, String(seg.type), n.userId, { transferId: n.transactionId }))) {
             throw new PromoError(403, 'SEGMENT', 'This code is not available for your account.');

@@ -104,7 +104,7 @@ export default function PromoCodesPage() {
                     <p className="rf-subtitle">Configure and monitor your promo codes and discounts.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
-                    <button type="button" className="btn-secondary" onClick={() => setBulk(true)}>Bulk create</button>
+                    <button type="button" className="btn-secondary" disabled title="Batch code generation is disabled for this release" style={{ opacity: 0.55, cursor: 'not-allowed' }}>Bulk create</button>
                     <button type="button" className="btn-primary" onClick={() => setForm({ promo: null })}>+ Create New</button>
                 </div>
             </div>
@@ -146,6 +146,7 @@ export default function PromoCodesPage() {
                             ) : visible.map((p) => {
                                 const r = p.restrictions || {};
                                 const corridors = r.corridors || [];
+                                const isUsed = used(p);
                                 return (
                                     <tr key={p.id} data-testid={`promo-row-${p.code}`}>
                                         <td>
@@ -158,7 +159,7 @@ export default function PromoCodesPage() {
                                                 <span>{corridors.slice(0, 2).map((c) => <span key={c} className="rf-chip promo-chip-sm">{c.replace('-', ' → ')}</span>)}{corridors.length > 2 && <span className="rf-sub" style={{ display: 'inline' }}> +{corridors.length - 2}</span>}</span>
                                             ) : <span>All corridors</span>}
                                             <span className="rf-sub">{(r.payment_methods || []).length ? r.payment_methods.join(', ') : 'All payment methods'}</span>
-                                            <span className="rf-sub">{whoLabel(p.user_segment, segments)}</span>
+                                            <span className="rf-sub">{whoLabel(p.user_segment, segments)}{r.applies_to_flow && r.applies_to_flow !== 'send' ? ` · ${r.applies_to_flow === 'receive' ? 'Receive Money' : 'Send & Receive'}` : ''}</span>
                                         </td>
                                         <td className="rf-num">{formatMoney(p.total_discount_utilized || 0, p.currency)}{p.budget_limit !== -1 && p.budget_limit != null && <span className="rf-sub"> / {formatMoney(p.budget_limit, p.currency)}</span>}</td>
                                         <td style={{ whiteSpace: 'nowrap' }}>{p.usage_count}/{p.usage_limit_global === -1 ? '∞' : p.usage_limit_global}
@@ -168,7 +169,22 @@ export default function PromoCodesPage() {
                                         <td>
                                             <div className="promo-actions">
                                                 <button type="button" className="rf-btn-sm" onClick={() => openUsage(p)}>Usage</button>
-                                                {(!used(p) || p.is_legacy) && <button type="button" className="rf-btn-sm" title={p.is_legacy ? 'View this legacy code' : 'Only codes that have not been used can be edited'} onClick={() => setForm({ promo: p })}>{p.is_legacy ? 'View' : 'Edit'}</button>}
+                                                {p.is_legacy ? (
+                                                    <button type="button" className="rf-btn-sm" title="View this legacy code" onClick={() => setForm({ promo: p })}>View</button>
+                                                ) : (
+                                                    <span title="Only codes that have not been used can be edited" style={{ display: 'inline-block' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="rf-btn-sm"
+                                                            disabled={isUsed}
+                                                            title="Only codes that have not been used can be edited"
+                                                            style={isUsed ? { opacity: 0.5, cursor: 'not-allowed', width: '100%' } : { width: '100%' }}
+                                                            onClick={() => !isUsed && setForm({ promo: p })}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                    </span>
+                                                )}
                                                 <button type="button" className="rf-btn-sm" onClick={() => openHistory(p)}>History</button>
                                                 <button type="button" className={`rf-btn-sm${p.status === 'Disabled' ? '' : ' rf-warn'}`} onClick={() => toggle(p)}>{p.status === 'Disabled' ? 'Enable' : 'Disable'}</button>
                                             </div>
@@ -189,7 +205,7 @@ export default function PromoCodesPage() {
 
             {usage && (
                 <div className="rf-dialog-backdrop" onClick={() => setUsage(null)}>
-                    <div className="rf-dialog promo-dialog" role="dialog" aria-modal="true" aria-labelledby="usage-title" onClick={(e) => e.stopPropagation()}>
+                    <div className="rf-dialog promo-dialog promo-usage-dialog" role="dialog" aria-modal="true" aria-labelledby="usage-title" onClick={(e) => e.stopPropagation()}>
                         <button type="button" className="rf-dialog-close" aria-label="Close" onClick={() => setUsage(null)}>×</button>
                         <h3 id="usage-title">Where <span className="promo-mono">{usage.promo.code}</span> was used</h3>
                         {usage.loading ? <div className="rf-empty">Loading...</div> : usage.error ? <div className="rf-empty">We couldn&apos;t load the usage. Please try again.</div>
@@ -231,7 +247,11 @@ export default function PromoCodesPage() {
                             <ul className="promo-history">{history.rows.map((a) => (
                                 <li key={a.id}>
                                     <div className="rf-sub">{formatUkDate(a.created_at, true)} · {a.admin_name}</div>
-                                    <div><b>{a.field === 'created' ? 'Created' : a.field.replace(/_/g, ' ')}</b>{a.field !== 'created' && <> : <span className="promo-old">{a.old_value ?? '—'}</span> → {a.new_value ?? '—'}</>}</div>
+                                    {a.field === 'used_on_transfer' ? (
+                                        <div><b>Used on a transfer</b> — {a.new_value}</div>
+                                    ) : (
+                                        <div><b>{a.field === 'created' ? 'Created' : a.field.replace(/_/g, ' ')}</b>{a.field !== 'created' && <> : <span className="promo-old">{a.old_value ?? '—'}</span> → {a.new_value ?? '—'}</>}</div>
+                                    )}
                                 </li>
                             ))}</ul>
                         )}

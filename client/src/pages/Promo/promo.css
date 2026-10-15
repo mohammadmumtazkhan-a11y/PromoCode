@@ -7,7 +7,8 @@
 .promo-where { min-width: 150px; }
 .promo-page .rf-table td { vertical-align: top; }
 .promo-chip-sm { margin-right: 4px; display: inline-block; margin-bottom: 2px; }
-.promo-dialog { max-width: 760px; max-height: 90vh; overflow-y: auto; }
+.promo-dialog { max-width: 780px; max-height: 90vh; overflow-y: auto; }
+.promo-usage-dialog { max-width: 1020px; width: 94vw; }
 .promo-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .promo-fieldset:disabled .rf-input, .promo-fieldset:disabled .rf-select { background: #f9fafb; }
 .promo-banner { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 12px; border-radius: 8px; font-size: 0.86rem; margin-bottom: 14px; }
@@ -15,9 +16,13 @@
 .promo-inline-check { margin-top: 6px; font-size: 0.82rem; }
 .promo-corridor-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 .promo-corridor-row .rf-select { padding: 8px; }
+.promo-typeahead-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; background: #fff; border: 1px solid var(--border-subtle, #e5e7eb); border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.12); max-height: 180px; overflow-y: auto; margin-top: 4px; }
+.promo-typeahead-item { display: flex; justify-content: space-between; width: 100%; text-align: left; padding: 8px 12px; border: none; background: transparent; cursor: pointer; font-size: 0.84rem; }
+.promo-typeahead-item:hover { background: #f3f4f6; }
+.promo-specific-box { background: #f8fafc; border: 1px solid var(--border-subtle, #e5e7eb); border-radius: 8px; padding: 12px; margin-top: 8px; }
 .promo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.promo-chip { display: inline-flex; align-items: center; gap: 6px; }
-.promo-chip button { border: none; background: transparent; cursor: pointer; color: var(--text-muted); font-size: 1rem; line-height: 1; padding: 0; }
+.promo-chip { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid #c7d2fe; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+.promo-chip button { border: none; background: transparent; cursor: pointer; color: #4f46e5; font-size: 1rem; line-height: 1; padding: 0; }
 .promo-methods { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
 .promo-audience { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 12px; }
 .promo-preview { background: #f8fafc; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; font-size: 0.86rem; color: #374151; margin: 16px 0 0; }

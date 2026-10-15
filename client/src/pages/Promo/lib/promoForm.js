@@ -4,7 +4,8 @@ const EMPTY = {
     code: '', description: '', type: 'Fixed', value: '', currency: 'GBP', max_discount: '', min_threshold: '',
     usage_limit_global: '', budget_limit: '', usage_limit_per_user: '1', perUserUnlimited: false,
     start_date: '', end_date: '', allCorridors: true, corridors: [], allMethods: true, payment_methods: [],
-    audience: 'all', customer_ids: '', segment_id: '', targeted_user_id: '',
+    applies_to_flow: 'send', audience: 'all', customer_ids: '', segment_id: '', targeted_user_id: '',
+    min_transactions: '', min_volume: '', registered_from: '', registered_to: '',
 };
 
 // Promo code (or its form state) → form state
@@ -28,8 +29,13 @@ export function formFromPromo(p) {
         start_date: toLocalInput(p.start_date), end_date: toLocalInput(p.end_date),
         allCorridors: !(r.corridors && r.corridors.length), corridors: r.corridors || [],
         allMethods: !(r.payment_methods && r.payment_methods.length), payment_methods: r.payment_methods || [],
+        applies_to_flow: r.applies_to_flow || 'send',
         audience, customer_ids: (seg.user_ids || []).join(', '), segment_id: audience === 'segment' ? String(seg.type) : '',
         targeted_user_id: seg.user_id || '',
+        min_transactions: seg.min_transactions ? String(seg.min_transactions) : '',
+        min_volume: seg.min_volume ? String(seg.min_volume) : '',
+        registered_from: seg.registered_from || '',
+        registered_to: seg.registered_to || '',
     };
 }
 

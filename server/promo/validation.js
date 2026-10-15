@@ -87,13 +87,23 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     }
     const paymentMethods = Array.isArray(r.payment_methods) ? [...new Set(r.payment_methods)] : [];
     if (body.all_payment_methods === false && paymentMethods.length === 0) errors.payment_methods = 'Choose at least one payment method, or tick All payment methods.';
+    const appliesToFlow = ['send', 'receive', 'both'].includes(r.applies_to_flow) ? r.applies_to_flow : 'send';
 
     const seg = parseJson(body.user_segment, null) || parseJson(r.user_segment, null) || { type: 'all' };
     let audience = { type: 'all' };
     if (seg.type === 'specific_customers') {
-        const ids = (Array.isArray(seg.user_ids) ? seg.user_ids : String(seg.user_ids || '').split(/[\s,]+/)).map((x) => String(x).trim()).filter(Boolean);
-        if (ids.length === 0 || ids.length > 500 || ids.some((x) => !/^[A-Za-z0-9_-]{1,64}$/.test(x))) errors.user_segment = 'Enter up to 500 customer IDs.';
-        else audience = { type: 'specific_customers', user_ids: [...new Set(ids)] };
+        const ids = (Array.isArray(seg.user_ids) ? seg.user_ids : String(seg.user_ids || '').split(/[\s,;]+/)).map((x) => String(x).trim()).filter(Boolean);
+        if (ids.length === 0 || ids.length > 500 || ids.some((x) => !/^[A-Za-z0-9_@.+:-]{1,128}$/.test(x))) errors.user_segment = 'Enter up to 500 customer IDs or email addresses.';
+        else {
+            audience = {
+                type: 'specific_customers',
+                user_ids: [...new Set(ids)],
+                ...(seg.min_transactions ? { min_transactions: Number(seg.min_transactions) } : {}),
+                ...(seg.min_volume ? { min_volume: Number(seg.min_volume) } : {}),
+                ...(seg.registered_from ? { registered_from: String(seg.registered_from) } : {}),
+                ...(seg.registered_to ? { registered_to: String(seg.registered_to) } : {}),
+            };
+        }
     } else if (seg.type === 'targeted') {
         if (!seg.user_id) errors.user_segment = 'Enter up to 500 customer IDs.';
         else audience = { type: 'targeted', user_id: String(seg.user_id) };
@@ -106,7 +116,12 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
         usage_limit_global: usageGlobal, usage_limit_per_user: perUser, budget_limit: budget,
         start_date: start && !Number.isNaN(start.getTime()) ? start.toISOString() : null,
         end_date: end && !Number.isNaN(end.getTime()) ? end.toISOString() : null,
-        restrictions: { corridors, payment_methods: paymentMethods, ...(Array.isArray(r.affiliates) && r.affiliates.length ? { affiliates: r.affiliates } : {}) },
+        restrictions: {
+            corridors,
+            payment_methods: paymentMethods,
+            applies_to_flow: appliesToFlow,
+            ...(Array.isArray(r.affiliates) && r.affiliates.length ? { affiliates: r.affiliates } : {}),
+        },
         user_segment: audience,
     };
     return { errors, clean };
