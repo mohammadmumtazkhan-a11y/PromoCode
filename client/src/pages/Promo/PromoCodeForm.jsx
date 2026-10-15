@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    CURRENCIES, PAYMENT_METHODS, TYPE_OPTIONS, TYPE_LABELS,
+    CURRENCIES, PAYMENT_METHODS, TYPE_OPTIONS, RECEIVE_TYPE_OPTIONS, TYPE_LABELS,
     previewSentence, symbolFor, toUtcIso, formatCorridorChip,
 } from './lib/promoUtils';
 import { validatePromoForm, toPayload } from './lib/promoValidation';
@@ -26,6 +26,14 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
     const [saving, setSaving] = useState(false);
     const [corridorQuery, setCorridorQuery] = useState('');
     const set = (patch) => { setF((x) => ({ ...x, ...patch })); setErrors((e) => { const n = { ...e }; Object.keys(patch).forEach((k) => delete n[k]); return n; }); };
+    const switchFlow = (val) => {
+        const patch = { applies_to_flow: val };
+        if (val === 'receive') {
+            Object.assign(patch, { allCorridors: true, corridors: [], allMethods: true, payment_methods: [] });
+            if (!['Fixed', 'Percentage'].includes(f.type)) patch.type = 'Fixed';
+        }
+        set(patch);
+    };
     const others = useMemo(() => existingCodes.filter((c) => !promo || c !== promo.code), [existingCodes, promo]);
 
     useEffect(() => {
@@ -169,10 +177,10 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 <input {...aria('code')} className={`${cls('code')} promo-mono`} value={f.code} maxLength={20} placeholder="e.g. SAVE20"
                                     onChange={(e) => set({ code: e.target.value.toUpperCase() })} />
                             </Field>
-                            <Field id="pf-type" label="Discount Type" required error={errors.type}>
+                            <Field id="pf-type" label={f.applies_to_flow === 'receive' ? 'Bonus Type' : 'Discount Type'} required error={errors.type}>
                                 <select {...aria('type')} className={cls('type', 'rf-select')} value={legacy ? promo.type : f.type} onChange={(e) => set({ type: e.target.value, value: e.target.value === 'Waiver' ? '' : f.value })}>
                                     {legacy && <option value={promo.type}>{TYPE_LABELS[promo.type]}</option>}
-                                    {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    {(f.applies_to_flow === 'receive' ? RECEIVE_TYPE_OPTIONS : TYPE_OPTIONS).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                             </Field>
                             <Field id="pf-description" label="Internal note (optional)" error={errors.description} hint="Only visible to admins.">
@@ -181,11 +189,17 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                             </Field>
                         </div>
 
-                        <div className={`rf-grid ${f.type === 'Percentage' ? 'rf-grid-3' : f.type === 'Fixed' ? 'rf-grid-2' : ''}`}>
+                        <div className={`rf-grid ${f.type === 'Percentage' ? 'rf-grid-3' : (f.type === 'Fixed' || f.type === 'FixedAmount') ? 'rf-grid-2' : ''}`}>
                             {f.type !== 'Waiver' && (
-                                <Field id="pf-value" label={f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${curTag})`} required error={errors.value}>
+                                <Field
+                                    id="pf-value"
+                                    label={f.applies_to_flow === 'receive' ? (f.type === 'Percentage' ? 'Bonus Value (% of requested amount)' : `Bonus Value (${curTag})`) : (f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${curTag})`)}
+                                    required
+                                    error={errors.value}
+                                    hint={f.applies_to_flow === 'receive' ? 'Paid into the requester\'s bank on top of the amount they receive, with the payout.' : (f.type === 'FixedAmount' ? 'Must not exceed send amount. Customer gets this discount while Mito sends the full send amount (incurring loss).' : undefined)}
+                                >
                                     <div className="rf-affix">
-                                        {f.type === 'Fixed' && sym && <span className="rf-prefix">{sym}</span>}
+                                        {(f.type === 'Fixed' || f.type === 'FixedAmount') && sym && <span className="rf-prefix">{sym}</span>}
                                         <input {...aria('value')} className={cls('value')} inputMode="decimal" value={f.value}
                                             placeholder={f.type === 'Percentage' ? 'e.g. 20' : 'e.g. 5.00'}
                                             style={f.type === 'Percentage' ? { paddingLeft: 12, paddingRight: 32 } : !sym ? { paddingLeft: 12 } : undefined}
@@ -195,7 +209,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 </Field>
                             )}
                             {f.type === 'Percentage' && (
-                                <Field id="pf-max_discount" label={`Max discount (${curTag}, optional)`} error={errors.max_discount} hint="Caps the maximum fee discount.">
+                                <Field id="pf-max_discount" label={f.applies_to_flow === 'receive' ? `Max bonus (${curTag}, optional)` : `Max discount (${curTag}, optional)`} error={errors.max_discount} hint={f.applies_to_flow === 'receive' ? 'Caps the bonus the requester can earn.' : 'Caps the maximum fee discount.'}>
                                     <div className="rf-affix">
                                         {sym && <span className="rf-prefix">{sym}</span>}
                                         <input {...aria('max_discount')} className={cls('max_discount')} inputMode="decimal" placeholder="No cap" value={f.max_discount}
@@ -204,7 +218,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     </div>
                                 </Field>
                             )}
-                            <Field id="pf-min_threshold" label={`Minimum send amount (${curTag}, optional)`} error={errors.min_threshold} hint="Customer must send at least this amount.">
+                            <Field id="pf-min_threshold" label={f.applies_to_flow === 'receive' ? `Minimum request amount (${curTag}, optional)` : `Minimum send amount (${curTag}, optional)`} error={errors.min_threshold} hint={f.applies_to_flow === 'receive' ? 'The requested amount must be at least this.' : 'Customer must send at least this amount.'}>
                                 <div className="rf-affix">
                                     {sym && <span className="rf-prefix">{sym}</span>}
                                     <input {...aria('min_threshold')} className={cls('min_threshold')} inputMode="decimal" placeholder="0.00 (no minimum)" value={f.min_threshold}
@@ -221,6 +235,15 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
                         <div className="rf-grid rf-grid-2" style={{ alignItems: 'stretch' }}>
                             {/* Left Subcard: Send Currency & Receive Corridors */}
+                            {f.applies_to_flow === 'receive' ? (
+                                <div className="promo-subcard">
+                                    <Field id="pf-currency" label="Requester's receiving currency" required error={errors.currency} hint="The currency the requester is paid in. The bonus, cap, minimum request and budget use it.">
+                                        <select {...aria('currency')} className={cls('currency', 'rf-select')} value={f.currency} onChange={(e) => set({ currency: e.target.value })}>
+                                            {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name} ({c.symbol.trim()})</option>)}
+                                        </select>
+                                    </Field>
+                                </div>
+                            ) : (
                             <div className="promo-subcard">
                                 <Field id="pf-currency" label="From (Send Currency)" required error={errors.currency} hint="Sets the currency for discounts, minimum send, and budget.">
                                     <select
@@ -331,20 +354,20 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     )}
                                 </div>
                             </div>
+                            )}
 
                             {/* Right Subcard: Transaction Flow & Payment Methods */}
                             <div className="promo-subcard">
-                                <Field id="pf-applies_to_flow" label="Applies to transaction flow" hint="Send Money deducts from what sender pays; Receive Money adds bonus to receiver.">
+                                <Field id="pf-applies_to_flow" label="Applies to transaction flow" error={errors.applies_to_flow} hint="One code is for one side only: Send Money deducts from what the sender pays; Receive Money adds a bonus for the receiver.">
                                     <div className="promo-flow-segmented" role="radiogroup" aria-label="Applies to transaction flow">
                                         {[
                                             ['send', 'Send Money'],
                                             ['receive', 'Receive Money'],
-                                            ['both', 'Both'],
                                         ].map(([val, label]) => {
                                             const active = (f.applies_to_flow || 'send') === val;
                                             return (
                                                 <label key={val} className={active ? 'active' : ''}>
-                                                    <input type="radio" name="pf-applies-flow" value={val} checked={active} onChange={() => set({ applies_to_flow: val })} />
+                                                    <input type="radio" name="pf-applies-flow" value={val} checked={active} onChange={() => switchFlow(val)} />
                                                     {label}
                                                 </label>
                                             );
@@ -352,6 +375,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     </div>
                                 </Field>
 
+                                {f.applies_to_flow !== 'receive' && (
                                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
                                     <label className="rf-check" style={{ marginBottom: f.allMethods ? 0 : 4, fontWeight: 600, fontSize: '0.84rem' }}>
                                         <input type="checkbox" checked={f.allMethods} onChange={(e) => set({ allMethods: e.target.checked, payment_methods: e.target.checked ? [] : f.payment_methods })} /> All payment methods
@@ -370,6 +394,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                         </>
                                     )}
                                 </div>
+                                )}
                             </div>
                         </div>
 

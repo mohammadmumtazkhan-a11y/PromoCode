@@ -78,6 +78,21 @@ export default function PromoCodesPage() {
         });
         return undefined;
     };
+    const deleteCode = (p) => {
+        setConfirm({
+            title: `Delete ${p.code}?`, message: 'This permanently removes the code. It has never been used, so no customer is affected. This cannot be undone.',
+            confirmLabel: 'Delete', tone: 'danger',
+            onConfirm: async () => {
+                setConfirm(null);
+                try {
+                    const res = await fetch(`/api/promocodes/${p.id}`, { method: 'DELETE' });
+                    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || d.message); }
+                    push(`${p.code} deleted.`);
+                    load();
+                } catch (e) { push(e.message || "We couldn't delete this code. Please try again.", 'error'); load(); }
+            },
+        });
+    };
 
     const openUsage = async (p) => {
         setUsage({ promo: p, rows: [], loading: true });
@@ -187,6 +202,17 @@ export default function PromoCodesPage() {
                                                 )}
                                                 <button type="button" className="rf-btn-sm" onClick={() => openHistory(p)}>History</button>
                                                 <button type="button" className={`rf-btn-sm${p.status === 'Disabled' ? '' : ' rf-warn'}`} onClick={() => toggle(p)}>{p.status === 'Disabled' ? 'Enable' : 'Disable'}</button>
+                                                <button
+                                                    type="button"
+                                                    className="rf-btn-sm rf-warn"
+                                                    disabled={isUsed}
+                                                    title={isUsed ? 'Only codes that have not been used can be deleted' : 'Delete this unused code'}
+                                                    style={isUsed ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                                                    onClick={() => !isUsed && deleteCode(p)}
+                                                    data-testid={`promo-delete-${p.code}`}
+                                                >
+                                                    Delete
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>

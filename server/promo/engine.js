@@ -12,7 +12,7 @@ const portsFor = (q) => ports || defaultPorts(q);
 function configure(p) { ports = p; }
 
 const LEGACY_TYPES = ['FX_BOOST', 'BONUS_CREDIT'];
-const ACTIVE_TYPES = ['Fixed', 'Percentage', 'Waiver'];
+const ACTIVE_TYPES = ['Fixed', 'FixedAmount', 'Percentage', 'Waiver'];
 const FAIL_STATUSES = ['CANCELLED', 'FAILED', 'REFUNDED', 'RECALLED', 'CHARGEBACK'];
 
 // One redeem/release at a time: the sqlite connection is shared, so limits and budgets are checked and
@@ -39,6 +39,7 @@ function normalise(body = {}) {
         dest: up(body.dest_currency || body.destCurrency),
         paymentMethod: body.payment_method || body.paymentMethod || undefined,
         transactionId: body.transaction_id || body.transactionId || undefined,
+        flow: String(body.flow || '').toLowerCase() === 'receive' ? 'receive' : 'send',
     };
 }
 
@@ -53,26 +54,41 @@ function audienceOf(promo) {
     return { type: 'all' };
 }
 
-function computeDiscount(promo, { amount, fee }) {
+function computeDiscount(promo, { amount, fee, flow }) {
     const value = Number(promo.value) || 0;
+    if (flow === 'receive') {
+        // Receive Money: a bonus for the requester, worked out on the requested amount (never a fee discount)
+        let b = 0;
+        if (promo.type === 'Percentage') b = ((amount || 0) * value) / 100;
+        else if (promo.type === 'Fixed') b = value;
+        if (promo.max_discount && b > promo.max_discount) b = promo.max_discount;
+        return roundFor(Math.max(0, b), promo.currency);
+    }
     let d = 0;
     switch (promo.type) {
         case 'Percentage': d = ((fee !== undefined ? fee : amount || 0) * value) / 100; break;
         case 'Fixed': d = value; break;
+        case 'FixedAmount': d = value; break;
         case 'Waiver': d = fee !== undefined ? fee : 0; break;
         default: d = 0; // FX_BOOST and BONUS_CREDIT (legacy) give no fee discount
     }
     if (promo.max_discount && d > promo.max_discount) d = promo.max_discount;
-    if (fee !== undefined && d > fee) d = fee; // a fee discount can never exceed the fee
+    if (promo.type === 'FixedAmount') {
+        if (amount !== undefined && d > amount) d = amount; // a FixedAmount discount cannot exceed the send amount
+    } else if (fee !== undefined && d > fee) {
+        d = fee; // a fee discount can never exceed the fee
+    }
     if (d < 0) d = 0;
     return roundFor(d, promo.currency);
 }
 
-function displayText(promo, discount, reqCurrency) {
+function displayText(promo, discount, reqCurrency, flow) {
     const rawCur = promo.currency && String(promo.currency).toUpperCase() !== 'ALL' ? promo.currency : (reqCurrency || '');
+    if (flow === 'receive') return `${rawCur} ${discount.toFixed(2)} bonus paid into your bank with your payout`.trim();
     switch (promo.type) {
         case 'Percentage': return `${promo.value}% off fees (${rawCur} ${discount.toFixed(2)} saved)`.replace('( ', '(');
         case 'Fixed': return `${rawCur} ${discount.toFixed(2)} off`.trim();
+        case 'FixedAmount': return `${rawCur} ${discount.toFixed(2)} off transfer amount (full send amount delivered)`.trim();
         case 'Waiver': return 'Fees waived';
         case 'FX_BOOST': return `+${promo.value} rate boost`;
         case 'BONUS_CREDIT': return `${rawCur} ${promo.value} bonus credit`.trim();
@@ -155,16 +171,28 @@ async function check(q, body) {
     if (promo.budget_limit !== -1 && promo.budget_limit !== null && promo.total_discount_utilized >= promo.budget_limit) {
         throw new PromoError(400, 'BUDGET_SPENT', 'This promo code has reached its limit.');
     }
+    const promoFlow = parseJson(promo.restrictions, {}).applies_to_flow || 'send';
+    if (promoFlow !== 'both' && promoFlow !== n.flow) {
+        throw new PromoError(400, 'FLOW', n.flow === 'receive'
+            ? "This code is for Send Money, so it can't be used on a request."
+            : "This code is for Receive Money requests, so it can't be used on a transfer.");
+    }
+    if (n.flow === 'receive' && !['Fixed', 'Percentage'].includes(promo.type)) {
+        throw new PromoError(400, 'FLOW', "This code can't be used on a request.");
+    }
     const cur = n.currency || n.source;
     const promoCur = promo.currency ? String(promo.currency).toUpperCase() : '';
     if (promoCur && promoCur !== 'ALL' && cur && cur !== promoCur) {
         throw new PromoError(400, 'CURRENCY', `This code only works on ${promo.currency} transfers.`);
     }
     if (n.amount !== undefined && n.amount < Number(promo.min_threshold || 0)) {
-        throw new PromoError(400, 'BELOW_MIN', `Send at least ${formatMoney(promo.min_threshold, (promoCur && promoCur !== 'ALL' ? promoCur : cur) || 'GBP')} to use this code.`);
+        throw new PromoError(400, 'BELOW_MIN', `${n.flow === 'receive' ? 'Request' : 'Send'} at least ${formatMoney(promo.min_threshold, (promoCur && promoCur !== 'ALL' ? promoCur : cur) || 'GBP')} to use this code.`);
+    }
+    if (promo.type === 'FixedAmount' && n.amount !== undefined && n.amount < Number(promo.value || 0)) {
+        throw new PromoError(400, 'BELOW_MIN', `Send at least ${formatMoney(promo.value, (promoCur && promoCur !== 'ALL' ? promoCur : cur) || 'GBP')} to use this code (discount cannot exceed send amount).`);
     }
     const restrictions = parseJson(promo.restrictions, {});
-    if (Array.isArray(restrictions.corridors) && restrictions.corridors.length > 0) {
+    if (n.flow !== 'receive' && Array.isArray(restrictions.corridors) && restrictions.corridors.length > 0) {
         const matchesCorridor = restrictions.corridors.some((c) => {
             const [s, d] = String(c).toUpperCase().split('-');
             const sOk = s === 'ALL' || s === '*' || s === n.source;
@@ -217,8 +245,9 @@ async function validate(q, body) {
     const { promo, discount, n } = await check(q, body);
     const reqCur = n.currency || n.source;
     const effCur = promo.currency && String(promo.currency).toUpperCase() !== 'ALL' ? promo.currency : (reqCur || null);
-    const text = displayText(promo, discount, reqCur);
-    return { valid: true, promo, appliedDiscount: discount, appliesTo: 'fee', displayText: text, display_text: text, currency: effCur };
+    const text = displayText(promo, discount, reqCur, n.flow);
+    const appliesTo = n.flow === 'receive' ? 'bonus' : promo.type === 'FixedAmount' ? 'amount' : 'fee';
+    return { valid: true, promo, appliedDiscount: discount, appliesTo, displayText: text, display_text: text, currency: effCur };
 }
 
 // Called when the transfer is paid. The discount is recomputed here, never trusted from the caller (D4).
@@ -241,10 +270,10 @@ function redeem(q, body) {
         const id = `pr_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
         const effCur = (promo.currency && String(promo.currency).toUpperCase() !== 'ALL' ? promo.currency : null) || n.currency || n.source || null;
         await q.run(`INSERT INTO promo_redemptions (id, promo_code_id, transaction_id, user_id, discount_amount, status, created_at,
-            currency, send_amount, fee, source_currency, dest_currency, payment_method)
-            VALUES (?, ?, ?, ?, ?, 'Redeemed', ?, ?, ?, ?, ?, ?, ?)`,
+            currency, send_amount, fee, source_currency, dest_currency, payment_method, flow)
+            VALUES (?, ?, ?, ?, ?, 'Redeemed', ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, promo.code, n.transactionId, n.userId || null, discount, clock.now().toISOString(),
-            effCur, n.amount ?? null, n.fee ?? null, n.source || null, n.dest || null, n.paymentMethod || null]);
+            effCur, n.amount ?? null, n.fee ?? null, n.source || null, n.dest || null, n.paymentMethod || null, n.flow]);
         await q.run('UPDATE promo_codes SET usage_count = usage_count + 1, total_discount_utilized = total_discount_utilized + ? WHERE id = ?', [discount, promo.id]);
         return { success: true, discount };
     });
@@ -286,6 +315,24 @@ async function handleTransferEvent(q, ev = {}) {
     return { released };
 }
 
+// ---------- Receive Money requests (bonus codes) ----------
+// Reported by Rhemito per request. The bonus is paid into the requester's bank by Rhemito, on top of the amount received
+// (funded by Mito, counted against the code's budget when the use is reserved). Mito therefore credits no wallet here.
+// PAID_OUT confirms the reserved use stands. CANCELLED / EXPIRED / REFUNDED / FAILED release it. Kept apart from transfer
+// events so a request never counts as a customer transfer in audience rules.
+const REQUEST_FAIL_STATUSES = ['CANCELLED', 'EXPIRED', 'REFUNDED', 'FAILED'];
+async function handleRequestEvent(q, ev = {}) {
+    const status = String(ev.status || '').toUpperCase();
+    if (!ev.request_id || !status) throw new PromoError(400, 'VALIDATION', 'request_id and status are required.');
+    if (status !== 'PAID_OUT' && !REQUEST_FAIL_STATUSES.includes(status)) throw new PromoError(400, 'VALIDATION', 'Unknown request status.');
+    if (status === 'PAID_OUT') {
+        const rows = await q.all(`SELECT id FROM promo_redemptions WHERE transaction_id = ? AND flow = 'receive' AND COALESCE(status, 'Redeemed') = 'Redeemed'`, [ev.request_id]);
+        return { confirmed: rows.length };
+    }
+    const released = (await release(q, { transaction_id: ev.request_id, reason: status })).released;
+    return { released };
+}
+
 async function upsertCustomer(q, c = {}) {
     if (!c.id || !/^[A-Za-z0-9_-]{1,64}$/.test(String(c.id))) throw new PromoError(400, 'VALIDATION', 'Customer id is required.');
     const now = clock.now().toISOString();
@@ -313,7 +360,7 @@ async function listRedemptions(q, { userId, codeId, from, to, status } = {}) {
     if (status) { cond.push(`COALESCE(pr.status, 'Redeemed') = ?`); params.push(status); }
     return q.all(`SELECT pr.id, pr.promo_code_id, pr.transaction_id, pr.user_id, pr.discount_amount, COALESCE(pr.status, 'Redeemed') AS status, pr.created_at,
             COALESCE(pr.currency, pc.currency) AS currency, pc.code AS code, pc.id AS code_id,
-            pr.send_amount, pr.fee, pr.source_currency, pr.dest_currency, pr.payment_method, pr.released_at, pr.release_reason,
+            pr.send_amount, pr.fee, pr.source_currency, pr.dest_currency, pr.payment_method, pr.released_at, pr.release_reason, pr.flow,
             NULLIF(TRIM(COALESCE(cu.first_name, '') || ' ' || COALESCE(cu.last_name, '')), '') AS customer_name
         FROM promo_redemptions pr
         LEFT JOIN promo_codes pc ON (pr.promo_code_id = pc.code OR pr.promo_code_id = CAST(pc.id AS TEXT))
@@ -336,6 +383,6 @@ async function savingsFor(q, userId) {
 }
 
 module.exports = {
-    configure, clock, normalise, computeDiscount, displayText, check, validate, redeem, release, handleTransferEvent, upsertCustomer,
+    configure, clock, normalise, computeDiscount, displayText, check, validate, redeem, release, handleTransferEvent, handleRequestEvent, upsertCustomer,
     listRedemptions, savingsFor, segmentMatches, customerStats, audienceOf, paymentMethodKey, LEGACY_TYPES, ACTIVE_TYPES, FAIL_STATUSES,
 };

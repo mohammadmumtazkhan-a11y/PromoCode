@@ -78,7 +78,7 @@ async function extend(q) {
         await addColumnIfMissing(q, 'promo_codes', col, ddl);
     }
     for (const [col, ddl] of [['currency', 'TEXT'], ['send_amount', 'REAL'], ['fee', 'REAL'], ['source_currency', 'TEXT'], ['dest_currency', 'TEXT'],
-        ['payment_method', 'TEXT'], ['released_at', 'TEXT'], ['release_reason', 'TEXT']]) {
+        ['payment_method', 'TEXT'], ['released_at', 'TEXT'], ['release_reason', 'TEXT'], ['flow', 'TEXT']]) {
         await addColumnIfMissing(q, 'promo_redemptions', col, ddl);
     }
     // A transfer can redeem a code only once, so a retried "redeem" call cannot double count
