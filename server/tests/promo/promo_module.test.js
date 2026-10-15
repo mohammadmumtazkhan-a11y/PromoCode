@@ -311,6 +311,8 @@ describe('Receive Money bonus codes', () => {
         const { code } = await receive({ value: 4, usage_limit_per_user: -1 });
         expect((await redeem(code, 'REQ-1', { flow: 'receive', userId: 'RQ1', amount: 100 })).body.discount).toBe(4);
         expect((await redeem(code, 'REQ-2', { flow: 'receive', userId: 'RQ2', amount: 100 })).body.discount).toBe(4);
+        const rows = (await request(app).get(`/api/promocodes/${(await codeRow(code)).id}/redemptions`)).body.data;
+        expect(rows.map((r) => r.flow)).toEqual(['receive', 'receive']);
         expect((await reqEvent('REQ-1', 'PAID_OUT')).body.confirmed).toBe(1); // only rows stored with flow 'receive' are confirmed
         expect((await reqEvent('REQ-2', 'cancelled')).body.released).toBe(1);
         expect((await reqEvent('REQ-2', 'CANCELLED')).body.released).toBe(0); // repeat is a no-op
