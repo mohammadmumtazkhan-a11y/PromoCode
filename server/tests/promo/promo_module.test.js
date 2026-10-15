@@ -45,7 +45,7 @@ describe('PR-40 admin validation (§5.2)', () => {
         expect(r.status).toBe(400);
         expect(r.body.code).toBe('VALIDATION');
         expect(r.body.fields).toMatchObject({
-            code: 'Use 3–20 letters, numbers or hyphens.', value: 'Enter an amount greater than 0.', currency: 'Choose a currency.',
+            code: 'Use 3–20 letters, numbers or hyphens.', value: 'Enter an amount greater than 0.', currency: 'Choose a send currency.',
             end_date: 'End date must be after the start date.',
         });
     });
@@ -56,7 +56,7 @@ describe('PR-40 admin validation (§5.2)', () => {
         });
         expect(r.body.fields).toMatchObject({
             value: 'Enter a percentage between 0.01 and 100.', usage_limit_per_user: 'Enter a whole number from 1 to 1,000.',
-            corridors: 'Add at least one corridor, or tick All corridors.', payment_methods: 'Choose at least one payment method, or tick All payment methods.',
+            corridors: 'Add at least one receive currency, or tick All receive currencies.', payment_methods: 'Choose at least one payment method, or tick All payment methods.',
         });
     });
     it('refuses duplicates case-insensitively and legacy types (D6)', async () => {
@@ -217,5 +217,109 @@ describe('Admin extras', () => {
         let last;
         for (let i = 0; i < 31; i++) last = await validate('NOPE', { userId: 'RATE' });
         expect(last.status).toBe(429);
+    });
+});
+
+describe('FixedAmount codes (off the send amount)', () => {
+    it('takes the value off the send amount, not the fee, and says so', async () => {
+        const { res, code } = await create({ type: 'FixedAmount', value: 10, min_threshold: 50 });
+        expect(res.status).toBe(200);
+        const v = (await validate(code, { amount: 100, fee: 3 })).body;
+        expect(v).toMatchObject({ valid: true, appliedDiscount: 10, appliesTo: 'amount' });
+        expect(v.displayText).toBe('GBP 10.00 off transfer amount (full send amount delivered)');
+        expect((await redeem(code, 'FA-1', { userId: 'FA1', amount: 100, fee: 3 })).body.discount).toBe(10);
+    });
+    it('refuses a send amount below the discount, and a discount above the minimum send', async () => {
+        const { code } = await create({ type: 'FixedAmount', value: 20 });
+        const low = (await validate(code, { amount: 15 })).body;
+        expect(low.code).toBe('BELOW_MIN');
+        expect(low.error).toMatch(/discount cannot exceed send amount/);
+        const bad = await create({ type: 'FixedAmount', value: 60, min_threshold: 50 });
+        expect(bad.res.status).toBe(400);
+        expect(bad.res.body.fields.value).toBe('Fixed amount discount cannot be greater than the minimum send amount.');
+    });
+    it('caps the discount at the send amount in the engine', () => {
+        const engine = require('../../promo/engine');
+        expect(engine.computeDiscount({ type: 'FixedAmount', value: 30, currency: 'GBP' }, { amount: 25, fee: 3 })).toBe(25);
+        expect(engine.computeDiscount({ type: 'Fixed', value: 30, currency: 'GBP' }, { amount: 25, fee: 3 })).toBe(3);
+    });
+});
+
+describe('Deleting codes (Mito Admin)', () => {
+    it('deletes a code that was never used', async () => {
+        const { res, code } = await create();
+        const id = res.body.id;
+        expect((await request(app).delete(`/api/promocodes/${id}`)).body.success).toBe(true);
+        expect(await codeRow(code)).toBeUndefined();
+        expect((await request(app).get(`/api/promocodes/${id}/audit`)).status).toBe(404);
+    });
+    it('keeps a code with any usage, even one that was released', async () => {
+        const { res, code } = await create();
+        await redeem(code, 'DEL-1', { userId: 'D1' });
+        await event('DEL-1', 'D1', 'FAILED');
+        expect((await codeRow(code)).usage_count).toBe(0);
+        const del = await request(app).delete(`/api/promocodes/${res.body.id}`);
+        expect(del.status).toBe(409);
+        expect(del.body.error).toBe('This code has been used, so it cannot be deleted. Disable it instead.');
+        expect(await codeRow(code)).toBeDefined();
+    });
+});
+
+describe('Receive Money bonus codes', () => {
+    const receive = (over = {}) => create({ restrictions: { applies_to_flow: 'receive' }, ...over });
+    const reqEvent = (id, status) => request(app).post('/api/promocodes/request-events').send({ request_id: id, status });
+
+    it('refuses a code set to both flows', async () => {
+        const { res } = await create({ restrictions: { applies_to_flow: 'both' } });
+        expect(res.status).toBe(400);
+        expect(res.body.fields.applies_to_flow).toBe('Choose Send Money or Receive Money. One code cannot cover both.');
+    });
+    it('only allows Fixed or Percentage bonuses, and ignores send corridors', async () => {
+        const w = await receive({ type: 'Waiver' });
+        expect(w.res.status).toBe(400);
+        expect(w.res.body.fields.type).toBe('Choose Fixed bonus or Percentage bonus.');
+        const ok = await receive({ all_corridors: false, restrictions: { applies_to_flow: 'receive', corridors: ['GBP-NGN'] } });
+        expect(ok.res.status).toBe(200);
+        expect((await codeRow(ok.code)).restrictions.corridors).toEqual([]);
+    });
+    it('works out a fixed bonus and a capped percentage bonus on the requested amount', async () => {
+        const fixed = await receive({ value: 5 });
+        const f = (await validate(fixed.code, { flow: 'receive', amount: 200 })).body;
+        expect(f).toMatchObject({ valid: true, appliedDiscount: 5, appliesTo: 'bonus' });
+        expect(f.displayText).toBe('GBP 5.00 bonus paid into your bank with your payout');
+        const pct = await receive({ type: 'Percentage', value: 10, max_discount: 15 });
+        expect((await validate(pct.code, { flow: 'receive', amount: 100 })).body.appliedDiscount).toBe(10);
+        expect((await validate(pct.code, { flow: 'receive', amount: 500 })).body.appliedDiscount).toBe(15);
+    });
+    it('uses request wording for the minimum', async () => {
+        const { code } = await receive({ min_threshold: 50 });
+        const r = (await validate(code, { flow: 'receive', amount: 20 })).body;
+        expect(r.code).toBe('BELOW_MIN');
+        expect(r.error).toBe('Request at least £50.00 to use this code.');
+    });
+    it('enforces the flow both ways', async () => {
+        const recv = await receive();
+        const onSend = (await validate(recv.code)).body;
+        expect(onSend.code).toBe('FLOW');
+        expect(onSend.error).toBe("This code is for Receive Money requests, so it can't be used on a transfer.");
+        const send = await create();
+        const onReq = (await validate(send.code, { flow: 'receive' })).body;
+        expect(onReq.code).toBe('FLOW');
+        expect(onReq.error).toBe("This code is for Send Money, so it can't be used on a request.");
+    });
+    it('records the flow on redemption; PAID_OUT confirms it and CANCELLED releases it', async () => {
+        const { code } = await receive({ value: 4, usage_limit_per_user: -1 });
+        expect((await redeem(code, 'REQ-1', { flow: 'receive', userId: 'RQ1', amount: 100 })).body.discount).toBe(4);
+        expect((await redeem(code, 'REQ-2', { flow: 'receive', userId: 'RQ2', amount: 100 })).body.discount).toBe(4);
+        expect((await reqEvent('REQ-1', 'PAID_OUT')).body.confirmed).toBe(1); // only rows stored with flow 'receive' are confirmed
+        expect((await reqEvent('REQ-2', 'cancelled')).body.released).toBe(1);
+        expect((await reqEvent('REQ-2', 'CANCELLED')).body.released).toBe(0); // repeat is a no-op
+        const row = await codeRow(code);
+        expect(row.usage_count).toBe(1);
+        expect(row.total_discount_utilized).toBe(4);
+    });
+    it('rejects request events without an id or with an unknown status', async () => {
+        expect((await request(app).post('/api/promocodes/request-events').send({ status: 'PAID_OUT' })).status).toBe(400);
+        expect((await reqEvent('REQ-X', 'DELIVERED')).status).toBe(400);
     });
 });

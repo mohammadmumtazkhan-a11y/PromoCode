@@ -160,6 +160,19 @@ function registerAdminRoutes(app, q, { ready, ports }) {
         res.json({ success: true });
     }));
 
+    // Delete (Mito Admin only: this admin API is not part of what Rhemito calls). Only a code that was never used can go;
+    // any usage record at all (even a released one) keeps the code so history stays whole. The audit trail keeps a 'deleted' entry.
+    app.delete('/api/promocodes/:id', wrap(async (req, res) => {
+        const row = await getCode(req.params.id);
+        const used = await q.get(`SELECT COUNT(*) AS n FROM promo_redemptions WHERE promo_code_id = ? OR promo_code_id = ?`, [String(row.id), row.code]);
+        if ((row.usage_count || 0) > 0 || (used && used.n > 0)) {
+            throw new PromoError(409, 'IN_USE', 'This code has been used, so it cannot be deleted. Disable it instead.');
+        }
+        await q.run('DELETE FROM promo_codes WHERE id = ?', [row.id]);
+        await audit(row.id, 'deleted', row.code, null, who(req));
+        res.json({ success: true });
+    }));
+
     // API-A5 usage (existing path, richer rows)
     const usageRows = async (id) => {
         const row = await getCode(id);
@@ -171,7 +184,7 @@ function registerAdminRoutes(app, q, { ready, ports }) {
                 id: r.id, transaction_id: r.transaction_id, user_id: r.user_id, customer_name: r.customer_name || names[r.user_id] || null,
                 discount_amount: r.discount_amount, status: r.status, created_at: r.created_at, currency: r.currency || row.currency,
                 send_amount: r.send_amount, source_currency: r.source_currency, dest_currency: r.dest_currency, payment_method: r.payment_method,
-                released_at: r.released_at, release_reason: r.release_reason,
+                released_at: r.released_at, release_reason: r.release_reason, flow: r.flow || 'send',
             })),
         };
     };

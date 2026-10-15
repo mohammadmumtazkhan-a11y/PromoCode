@@ -15,12 +15,17 @@ export function validatePromoForm(f, { isNew = true, existingCodes = [], now = n
     else if (existingCodes.some((c) => String(c).toUpperCase() === code)) e.code = 'This promo code already exists.';
 
     if (f.description && String(f.description).trim().length > 200) e.description = 'Keep the note under 200 characters.';
-    if (!['Fixed', 'Percentage', 'Waiver'].includes(f.type)) e.type = 'Choose a type.';
-    if (!CURRENCY_CODES.includes(f.currency)) e.currency = 'Choose a send currency.';
+    const recv = f.applies_to_flow === 'receive';
+    if (!(recv ? ['Fixed', 'Percentage'] : ['Fixed', 'FixedAmount', 'Percentage', 'Waiver']).includes(f.type)) e.type = recv ? 'Choose Fixed bonus or Percentage bonus.' : 'Choose a type.';
+    if (!CURRENCY_CODES.includes(f.currency)) e.currency = recv ? "Choose the requester's receiving currency." : 'Choose a send currency.';
 
-    if (f.type === 'Fixed') {
+    if (f.type === 'Fixed' || f.type === 'FixedAmount') {
         const v = Number(f.value);
-        if (blank(f.value) || Number.isNaN(v) || v <= 0 || v > 1000000 || !dpOk(f.value, f.currency)) e.value = 'Enter an amount greater than 0.';
+        if (blank(f.value) || Number.isNaN(v) || v <= 0 || v > 1000000 || !dpOk(f.value, f.currency)) {
+            e.value = 'Enter an amount greater than 0.';
+        } else if (f.type === 'FixedAmount' && !blank(f.min_threshold) && Number(f.min_threshold) > 0 && v > Number(f.min_threshold)) {
+            e.value = 'Fixed amount discount cannot be greater than the minimum send amount.';
+        }
     } else if (f.type === 'Percentage') {
         const v = Number(f.value);
         if (blank(f.value) || Number.isNaN(v) || v < 0.01 || v > 100 || !dpOk(f.value, 'GBP')) e.value = 'Enter a percentage between 0.01 and 100.';
@@ -44,12 +49,15 @@ export function validatePromoForm(f, { isNew = true, existingCodes = [], now = n
         else if (isNew && end <= now) e.end_date = 'End date must be in the future.';
     }
 
-    if (!f.allCorridors && (!f.corridors || f.corridors.length === 0)) {
+    if (recv) {
+        // Receive codes have no send corridor: they only need the requester's receiving currency (checked above)
+    } else if (!f.allCorridors && (!f.corridors || f.corridors.length === 0)) {
         e.corridors = 'Add at least one receive currency, or tick All receive currencies.';
     } else if (!f.allCorridors && f.corridors.some((c) => { const [s, d] = String(c).split('-'); return !CURRENCY_CODES.includes(s) || !CURRENCY_CODES.includes(d) || s === d || s !== f.currency; })) {
         e.corridors = `Each corridor must start from ${f.currency} to a valid receive currency.`;
     }
     if (!f.allMethods && (!f.payment_methods || f.payment_methods.length === 0)) e.payment_methods = 'Choose at least one payment method, or tick All payment methods.';
+    if (f.applies_to_flow === 'both') e.applies_to_flow = 'Choose Send Money or Receive Money. One code cannot cover both.';
     if (f.audience === 'specific_customers') {
         const ids = String(f.customer_ids || '').split(/[\s,;]+/).filter(Boolean);
         if (ids.length === 0 || ids.length > 500) e.customer_ids = 'Enter up to 500 customer IDs or email addresses.';
@@ -87,10 +95,10 @@ export function toPayload(f, toUtcIso) {
         usage_limit_per_user: f.perUserUnlimited ? -1 : f.usage_limit_per_user,
         start_date: toUtcIso(f.start_date),
         end_date: toUtcIso(f.end_date),
-        all_corridors: !!f.allCorridors,
+        all_corridors: !!f.allCorridors || f.applies_to_flow === 'receive',
         all_payment_methods: !!f.allMethods,
         restrictions: {
-            corridors: f.allCorridors ? [] : f.corridors,
+            corridors: f.allCorridors || f.applies_to_flow === 'receive' ? [] : f.corridors,
             payment_methods: f.allMethods ? [] : f.payment_methods,
             applies_to_flow: f.applies_to_flow || 'send',
         },

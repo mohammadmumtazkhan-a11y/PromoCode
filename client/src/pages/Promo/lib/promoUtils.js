@@ -18,10 +18,16 @@ export const CURRENCY_CODES = CURRENCIES.map((c) => c.code);
 export const PAYMENT_METHODS = ['Bank Transfer', 'Card', 'Mobile Money', 'USSD'];
 
 export const TYPE_LABELS = {
-    Fixed: 'Fixed', Percentage: 'Percentage', Waiver: 'Fee waiver', FX_BOOST: 'FX Boost (legacy)', BONUS_CREDIT: 'Bonus Credit (legacy)',
+    Fixed: 'Fixed (Fee)', FixedAmount: 'Fixed amount', Percentage: 'Percentage', Waiver: 'Fee waiver', FX_BOOST: 'FX Boost (legacy)', BONUS_CREDIT: 'Bonus Credit (legacy)',
 };
+// Receive Money codes pay a bonus to the requester, so they only offer a fixed or percentage bonus (no fee waiver / send-amount types)
+export const RECEIVE_TYPE_OPTIONS = [
+    { value: 'Fixed', label: 'Fixed bonus amount' },
+    { value: 'Percentage', label: 'Percentage bonus of the requested amount' },
+];
 export const TYPE_OPTIONS = [
     { value: 'Fixed', label: 'Fixed amount off the fee' },
+    { value: 'FixedAmount', label: 'Fixed amount (off send amount)' },
     { value: 'Percentage', label: 'Percentage of the fee' },
     { value: 'Waiver', label: 'Fee waiver' },
 ];
@@ -78,8 +84,12 @@ export function toLocalInput(d) {
 export const toUtcIso = (local) => (local ? new Date(local).toISOString() : '');
 
 export function valueLabel(p) {
+    if ((p.restrictions || {}).applies_to_flow === 'receive') {
+        return p.type === 'Percentage' ? `${p.value}% bonus${p.max_discount ? ` (max ${formatMoney(p.max_discount, p.currency)})` : ''}` : `${formatMoney(p.value, p.currency)} bonus`;
+    }
     if (p.type === 'Percentage') return `${p.value}%${p.max_discount ? ` (max ${formatMoney(p.max_discount, p.currency)})` : ''}`;
     if (p.type === 'Fixed') return formatMoney(p.value, p.currency);
+    if (p.type === 'FixedAmount') return `${formatMoney(p.value, p.currency)} (send amount)`;
     if (p.type === 'Waiver') return 'Whole fee';
     if (p.type === 'FX_BOOST') return `+${p.value}`;
     if (p.type === 'BONUS_CREDIT') return formatMoney(p.value, p.currency);
@@ -109,10 +119,18 @@ export function previewSentence(f) {
     let what;
     if (f.type === 'Percentage') what = `${f.value || '…'}% off the fee${f.max_discount ? ` (max ${formatMoney(f.max_discount, cur)})` : ''}`;
     else if (f.type === 'Waiver') what = 'the fee waived';
+    else if (f.type === 'FixedAmount') what = `${f.value ? formatMoney(f.value, cur) : '…'} off the send amount (Mito sends full amount)`;
     else what = `${f.value ? formatMoney(f.value, cur) : '…'} off the fee`;
     const min = Number(f.min_threshold) > 0 ? ` on transfers of ${formatMoney(f.min_threshold, cur)} or more` : '';
     const times = f.perUserUnlimited ? ', any number of times' : Number(f.usage_limit_per_user) === 1 ? ', once each' : `, up to ${f.usage_limit_per_user || '…'} times each`;
     const until = f.end_date ? `, until ${formatUkDate(new Date(f.end_date), true)}` : '';
+    if (f.applies_to_flow === 'receive') {
+        const bonus = f.type === 'Percentage'
+            ? `${f.value || '…'}% of the requested amount${f.max_discount ? ` (max ${formatMoney(f.max_discount, cur)})` : ''}`
+            : (f.value ? formatMoney(f.value, cur) : '…');
+        const minReq = Number(f.min_threshold) > 0 ? ` on requests of ${formatMoney(f.min_threshold, cur)} or more` : '';
+        return `${who} requesting money in ${cur} earn a bonus of ${bonus}, paid into their bank on top once the request is paid out${minReq}${times}${until}.`;
+    }
     return `${who} ${flowVerb} ${corridors}${methods} get ${what}${min}${times}${until}.`;
 }
 

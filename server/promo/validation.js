@@ -16,7 +16,9 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     const code = String(body.code || '').trim().toUpperCase();
     const type = String(body.type || '');
     const r = parseJson(body.restrictions, {});
-    const corridors = Array.isArray(r.corridors) ? [...new Set(r.corridors.map((c) => String(c).toUpperCase()))] : [];
+    // Receive Money codes pay a bonus to the requester: no send corridor, only the requester's receiving currency
+    const isReceive = r.applies_to_flow === 'receive';
+    const corridors = !isReceive && Array.isArray(r.corridors) ? [...new Set(r.corridors.map((c) => String(c).toUpperCase()))] : [];
     const validCorridorEndpoint = (c) => c === 'ALL' || SUPPORTED_CURRENCIES.includes(c);
 
     let currency = String(body.currency || '').toUpperCase();
@@ -31,14 +33,24 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
     const description = body.description === undefined || body.description === null ? null : String(body.description).trim();
     if (description && description.length > 200) errors.description = 'Keep the note under 200 characters.';
 
-    if (!['Fixed', 'Percentage', 'Waiver'].includes(type)) errors.type = 'Choose a type.';
-    if (!SUPPORTED_CURRENCIES.includes(currency)) errors.currency = 'Choose a send currency.';
+    if (isReceive) {
+        if (!['Fixed', 'Percentage'].includes(type)) errors.type = 'Choose Fixed bonus or Percentage bonus.';
+        if (!SUPPORTED_CURRENCIES.includes(currency)) errors.currency = "Choose the requester's receiving currency.";
+    } else {
+        if (!['Fixed', 'FixedAmount', 'Percentage', 'Waiver'].includes(type)) errors.type = 'Choose a type.';
+        if (!SUPPORTED_CURRENCIES.includes(currency)) errors.currency = 'Choose a send currency.';
+    }
 
     let value = 0;
-    if (type === 'Fixed') {
+    if (type === 'Fixed' || type === 'FixedAmount') {
         if (blank(body.value) || Number.isNaN(num(body.value)) || num(body.value) <= 0 || num(body.value) > 1000000 || !decimalsOk(body.value, currency || 'GBP')) {
             errors.value = 'Enter an amount greater than 0.';
-        } else value = num(body.value);
+        } else {
+            value = num(body.value);
+            if (type === 'FixedAmount' && !blank(body.min_threshold) && !Number.isNaN(num(body.min_threshold)) && num(body.min_threshold) > 0 && value > num(body.min_threshold)) {
+                errors.value = 'Fixed amount discount cannot be greater than the minimum send amount.';
+            }
+        }
     } else if (type === 'Percentage') {
         const v = num(body.value);
         if (blank(body.value) || Number.isNaN(v) || v < 0.01 || v > 100 || !decimalsOk(body.value, 'GBP')) errors.value = 'Enter a percentage between 0.01 and 100.';
@@ -87,13 +99,14 @@ function validatePromo(body = {}, { isNew = true, now = new Date() } = {}) {
         else if (isNew && end <= now) errors.end_date = 'End date must be in the future.';
     }
 
-    if (body.all_corridors === false && corridors.length === 0) errors.corridors = 'Add at least one receive currency, or tick All receive currencies.';
+    if (!isReceive && body.all_corridors === false && corridors.length === 0) errors.corridors = 'Add at least one receive currency, or tick All receive currencies.';
     if (corridors.some((c) => { const [s, d] = c.split('-'); return !validCorridorEndpoint(s) || !validCorridorEndpoint(d) || s === d; })) {
         errors.corridors = 'Each corridor needs valid send and receive currencies.';
     }
     const paymentMethods = Array.isArray(r.payment_methods) ? [...new Set(r.payment_methods)] : [];
     if (body.all_payment_methods === false && paymentMethods.length === 0) errors.payment_methods = 'Choose at least one payment method, or tick All payment methods.';
     const appliesToFlow = ['send', 'receive', 'both'].includes(r.applies_to_flow) ? r.applies_to_flow : 'send';
+    if (appliesToFlow === 'both') errors.applies_to_flow = 'Choose Send Money or Receive Money. One code cannot cover both.';
 
     const seg = parseJson(body.user_segment, null) || parseJson(r.user_segment, null) || { type: 'all' };
     let audience = { type: 'all' };

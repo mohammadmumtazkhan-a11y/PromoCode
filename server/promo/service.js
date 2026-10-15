@@ -34,6 +34,8 @@ function registerServiceRoutes(app, q, { ready, db }) {
     app.post('/api/promocodes/release', wrap(async (req, res) => res.json(await engine.release(q, req.body || {}))));
     // API-S4 transfer status changes
     app.post('/api/promocodes/transfer-events', wrap(async (req, res) => res.json(await engine.handleTransferEvent(q, req.body || {}))));
+    // API-S4b Receive Money request status (bonus codes): PAID_OUT credits the bonus, CANCELLED/EXPIRED/REFUNDED/FAILED releases it
+    app.post('/api/promocodes/request-events', wrap(async (req, res) => res.json(await engine.handleRequestEvent(q, req.body || {}))));
     // API-S5 customer sync
     app.post('/api/promocodes/customers', wrap(async (req, res) => res.json(await engine.upsertCustomer(q, req.body || {}))));
     // API-S6 what a customer saved with promo codes

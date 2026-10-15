@@ -29,7 +29,7 @@ test.describe('Promo Codes admin', () => {
         await page.locator('#pf-max_discount').fill('5');
         await page.locator('#pf-start_date').fill(inDays(-1).slice(0, 16));
         await page.locator('#pf-end_date').fill(inDays(10).slice(0, 16));
-        await expect(page.getByText(/Customers sending GBP get 20% off the fee \(max £5.00\)/)).toBeVisible();
+        await expect(page.getByText(/Customers sending GBP → All receive currencies get 20% off the fee \(max £5\.00\)/)).toBeVisible();
         await page.getByRole('button', { name: 'Create Promo Code' }).click();
         await expect(page.getByText(`Promo code ${code} created.`)).toBeVisible();
         const row = page.getByTestId(`promo-row-${code}`);
@@ -42,7 +42,7 @@ test.describe('Promo Codes admin', () => {
         await request.post(`${API}/api/promocodes/redeem`, { data: { code, transactionId: `T-${code}`, userId: 'E2E-U1', amount: 100, fee: 3, currency: 'GBP', sourceCurrency: 'GBP', destCurrency: 'NGN' } });
         await page.goto(`/financials/promocodes?q=${code}`);
         const row = page.getByTestId(`promo-row-${code}`);
-        await expect(row.getByRole('button', { name: 'Edit' })).toHaveCount(0); // used codes cannot be edited
+        await expect(row.getByRole('button', { name: 'Edit' })).toBeDisabled(); // used codes keep Edit visible but disabled with tooltip
         await row.getByRole('button', { name: 'Usage' }).click();
         await expect(page.getByText(`T-${code}`)).toBeVisible();
         await expect(page.getByText('Redeemed: 1 · Discount given: £2.00')).toBeVisible();
