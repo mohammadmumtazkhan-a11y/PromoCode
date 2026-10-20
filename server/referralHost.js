@@ -30,6 +30,21 @@ async function finishSetup(db) {
     await q.run(`UPDATE referrals SET referee_credit_id = (SELECT id FROM credit_ledger c WHERE c.type = 'EARNED' AND c.user_id = referrals.referee_id AND c.reference_id = referrals.id || ':referee')
         WHERE referee_credit_id IS NULL AND referee_credited > 0`);
     await seedFix(q);
+    await ensureDemoSeparatePills(q);
+}
+
+async function ensureDemoSeparatePills(q) {
+    try {
+        const gbpRule = await q.get(`SELECT id FROM referral_rules WHERE base_currency = 'GBP' AND COALESCE(is_archived,0) = 0 ORDER BY is_enabled DESC, id LIMIT 1`);
+        const gbpScheme = await q.get(`SELECT id FROM bonus_schemes WHERE currency = 'GBP' AND status = 'ACTIVE' AND min_transaction_threshold > 0 ORDER BY id DESC LIMIT 1`);
+        await q.run(`UPDATE credit_ledger SET credit_source = 'SCHEME', credit_source_detail = 'LOYALTY_CREDIT', scheme_id = COALESCE(scheme_id, ?) WHERE id = 'cl_1' AND user_id = 'user_123'`, [gbpScheme ? gbpScheme.id : null]);
+        const hasRef = await q.get(`SELECT id FROM credit_ledger WHERE user_id = 'user_123' AND credit_source = 'REFERRAL' AND type = 'EARNED'`);
+        if (!hasRef) {
+            await q.run(`INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, type, scheme_id, reference_id, reason_code, notes, admin_user, created_at, currency, referral_rule_id, credit_source, credit_source_detail)
+                VALUES ('cl_ref_123', 'user_123', 15.00, 'EARNED', NULL, 'ref_demo_123', 'REFERRAL_REWARD', 'Referrer reward – referred Sarah S.', 'System', '2025-01-10 10:00:00', 'GBP', ?, 'REFERRAL', 'REFERRER')`,
+                [gbpRule ? gbpRule.id : null]);
+        }
+    } catch { /* ignore in isolated test dbs */ }
 }
 
 // One-off data corrections for the seeded prototype data (US-1.9)

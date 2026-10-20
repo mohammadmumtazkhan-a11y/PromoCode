@@ -60,7 +60,7 @@ const adminSourceLabel = (source, detail) => (source ? `${GROUP_LABELS[source] |
 async function creditsWithRemaining(q, userId, currency, { today = ukToday() } = {}) {
     const params = [userId];
     if (currency) params.push(cur(currency));
-    const credits = await q.all(`SELECT cl.*, bs.name AS scheme_name FROM credit_ledger cl LEFT JOIN bonus_schemes bs ON bs.id = cl.scheme_id
+    const credits = await q.all(`SELECT cl.*, bs.name AS scheme_name, bs.min_transaction_threshold AS scheme_floor FROM credit_ledger cl LEFT JOIN bonus_schemes bs ON bs.id = cl.scheme_id
         WHERE cl.user_id = ? AND cl.type = 'EARNED' AND cl.amount > 0 ${currency ? 'AND cl.currency = ?' : ''}
         ORDER BY COALESCE(cl.expires_at, '9999-12-31'), cl.created_at, cl.rowid`, params);
     if (!credits.length) return [];
@@ -79,6 +79,30 @@ async function creditsWithRemaining(q, userId, currency, { today = ukToday() } =
         else c.status = 'UNUSED';
         c.usable = c.remaining > 0 && !['EXPIRED', 'REVERSED'].includes(c.status) && (!c.expires_at || c.expires_at >= today);
         c.source_label = sourceLabel(c);
+    }
+    const refFloorsById = new Map(), refFloorsByCur = new Map(), schemeFloorsByCur = new Map();
+    try {
+        const refRules = await q.all(`SELECT id, base_currency, min_transaction_threshold, is_enabled FROM referral_rules WHERE COALESCE(is_archived,0) = 0`);
+        for (const r of refRules) {
+            refFloorsById.set(Number(r.id), Number(r.min_transaction_threshold) || 0);
+            if (r.is_enabled && (Number(r.min_transaction_threshold) || 0) > (refFloorsByCur.get(cur(r.base_currency)) || 0)) {
+                refFloorsByCur.set(cur(r.base_currency), Number(r.min_transaction_threshold) || 0);
+            }
+        }
+    } catch { /* referral_rules absent in isolated tests */ }
+    try {
+        const activeSchemes = await q.all(`SELECT currency, min_transaction_threshold FROM bonus_schemes WHERE status = 'ACTIVE' AND min_transaction_threshold > 0 ORDER BY id DESC`);
+        for (const s of activeSchemes) {
+            const k = cur(s.currency);
+            if (!schemeFloorsByCur.has(k)) schemeFloorsByCur.set(k, Number(s.min_transaction_threshold) || 0);
+        }
+    } catch { /* ignore */ }
+    for (const c of credits) {
+        if (c.credit_source === 'REFERRAL') {
+            c.floor = round2((c.referral_rule_id && refFloorsById.get(Number(c.referral_rule_id))) || refFloorsByCur.get(cur(c.currency)) || 0);
+        } else {
+            c.floor = round2(Number(c.scheme_floor) || schemeFloorsByCur.get(cur(c.currency)) || 0);
+        }
     }
     return credits;
 }
@@ -341,7 +365,7 @@ async function expiringReminders(q, { today = ukToday() } = {}) {
 }
 
 // ---------- the wallet view for Rhemito (API-S3) ----------
-const emptyGroup = () => ({ earned: 0, used: 0, expired: 0, removed: 0, available: 0 });
+const emptyGroup = () => ({ earned: 0, used: 0, expired: 0, removed: 0, available: 0, floor: 0 });
 
 async function walletView(q, id, { currency, creditSource, promoRedemptions, blocked } = {}) {
     const currencyFilter = currency ? cur(currency) : null;
@@ -377,7 +401,7 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
     for (const c of credits) {
         if (!c.usable) continue;
         const b = bucket(c.currency || 'GBP');
-        b.available += c.remaining; group(b, c.credit_source).available += c.remaining;
+        b.available += c.remaining; const grp = group(b, c.credit_source); grp.available += c.remaining; if ((c.floor || 0) > (grp.floor || 0)) grp.floor = round2(c.floor);
     }
     const debts = await q.all(`SELECT currency, -SUM(amount) AS d FROM credit_ledger WHERE user_id = ? AND type IN ('CLAWBACK', 'CLAWBACK_SETTLED') GROUP BY currency`, [id]);
     for (const d of debts) if (d.d > 0 && (!currencyFilter || d.currency === currencyFilter)) bucket(d.currency || 'GBP');
@@ -390,7 +414,7 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
         by_source: SOURCES.filter((s) => b.groups[s]).map((s) => ({
             credit_source: s, label: GROUP_LABELS[s],
             earned: round2(b.groups[s].earned), used: round2(b.groups[s].used), expired: round2(b.groups[s].expired),
-            removed: round2(b.groups[s].removed), available: round2(b.groups[s].available),
+            removed: round2(b.groups[s].removed), available: round2(b.groups[s].available), floor: round2(b.groups[s].floor || 0),
         })),
     }));
 
@@ -417,11 +441,11 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
         bonus_blocked: !!blocked,
         unused: credits.filter((c) => c.remaining > 0 && ['UNUSED', 'PARTLY_USED'].includes(c.status)).filter(keep).map((c) => ({
             id: c.id, source: c.notes, reason_code: c.reason_code, amount: c.amount, remaining: c.remaining, currency: c.currency,
-            earned_on: c.created_at, expires_on: c.expires_at, status: c.status, ...srcFields(c),
+            earned_on: c.created_at, expires_on: c.expires_at, status: c.status, floor: round2(c.floor || 0), ...srcFields(c),
         })),
         credits: credits.filter(keep).map((c) => ({
             id: c.id, amount: c.amount, remaining: c.remaining, currency: c.currency, status: c.status, expires_on: c.expires_at,
-            notes: c.notes, reason_code: c.reason_code, created_at: c.created_at, ...srcFields(c),
+            notes: c.notes, reason_code: c.reason_code, created_at: c.created_at, floor: round2(c.floor || 0), ...srcFields(c),
         })),
         history: historyRows.filter((h) => !sourceFilter || h.credit_source === sourceFilter),
         promo_redemptions: promos.map((p) => ({ id: p.id, code: p.code, amount: -p.discount_amount, currency: p.currency, transfer_id: p.transaction_id, created_at: p.created_at })),

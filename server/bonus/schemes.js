@@ -258,7 +258,7 @@ function registerSchemeRoutes(app, q, { wrap, ports }) {
             currency ? [...TYPES, currency] : TYPES);
         res.json({
             data: rows.filter((s) => displayStatus(s) === 'Active').map((s) => ({
-                id: s.id, name: s.name, type: s.bonus_type, currency: cur(s.currency), summary: offerSentence(s), end_date: s.end_date, end_date_display: fmtUk(s.end_date),
+                id: s.id, name: s.name, type: s.bonus_type, currency: cur(s.currency), summary: offerSentence(s), end_date: s.end_date, end_date_display: fmtUk(s.end_date), min_transaction_threshold: Number(s.min_transaction_threshold) || 0, floor: Number(s.min_transaction_threshold) || 0,
             })),
         });
     }));
