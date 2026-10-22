@@ -224,9 +224,16 @@ async function applyBonus(q, customerId, { amount, currency, transfer_id, send_a
     if (!transfer_id || !(amount > 0)) throw Object.assign(new Error('transfer_id and a positive amount are required'), { status: 400 });
     const already = await q.get(`SELECT id FROM credit_ledger WHERE user_id = ? AND transfer_id = ? AND type = 'APPLIED'`, [customerId, transfer_id]);
     if (already) throw Object.assign(new Error('Bonus has already been applied to this transfer.'), { status: 409, code: 'ALREADY_APPLIED' });
-    // No minimum send amount to use bonus (D9); it can never exceed the send amount
+    // Bonus can never exceed the send amount, and referral credits require the transfer to meet the rule's Floor
     if (send_amount !== undefined && send_amount !== null && amount > Number(send_amount)) throw Object.assign(new Error('Bonus cannot be more than the send amount.'), { status: 400 });
-    const credits = (await creditsWithRemaining(q, customerId, currency)).filter((c) => c.usable);
+    const allUsable = (await creditsWithRemaining(q, customerId, currency)).filter((c) => c.usable);
+    const credits = (send_amount !== undefined && send_amount !== null)
+        ? allUsable.filter((c) => !(c.credit_source === 'REFERRAL' && c.floor > 0 && Number(send_amount) < Number(c.floor)))
+        : allUsable;
+    if (allUsable.length > 0 && credits.length === 0 && send_amount !== undefined && send_amount !== null) {
+        const minFloor = Math.min(...allUsable.filter((c) => c.floor > 0).map((c) => Number(c.floor)));
+        throw Object.assign(new Error(`Transfer amount must be at least ${formatMoney(minFloor, currency)} to redeem this referral bonus.`), { status: 400, code: 'BELOW_FLOOR' });
+    }
     const avail = round2(credits.reduce((s, c) => s + c.remaining, 0));
     if (avail < amount) throw Object.assign(new Error('Your bonus balance has changed. Please review your transfer.'), { status: 409, code: 'BALANCE_CHANGED', available: avail });
     let left = amount;

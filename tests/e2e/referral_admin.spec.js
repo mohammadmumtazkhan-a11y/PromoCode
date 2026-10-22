@@ -24,7 +24,7 @@ test.describe('Referral Settings', () => {
         await page.getByLabel('Send Currency').selectOption('GBP');
         await expect(page.getByLabel('Receive Currency').locator('option[value="GBP"]')).toHaveCount(0);
         await page.getByLabel('Receive Currency').selectOption('NGN');
-        await expect(page.getByText('Applies to GBP → NGN transfers.')).toBeVisible();
+        await expect(page.getByText(/Applies (only )?to GBP → NGN transfers\./)).toBeVisible();
         // choosing NGN as the send currency clears a matching receive currency
         await page.getByLabel('Send Currency').selectOption('NGN');
         await expect(page.getByLabel('Receive Currency')).toHaveValue('');

@@ -120,10 +120,8 @@ const isLive = (rule) => !!rule && ruleStatus(rule) === 'ACTIVE';
 // Deadlines counted from the referee's registration day.
 // The referrer is only rewarded inside the Qualification Window. The referee's bonus can still be earned, on a transfer
 // of at least the Floor, until Bonus Validity ends. `qualification_deadline` is the later of the two (when the referee is rewarded).
-const referrerDeadlineFor = (rule, day) => addDays(day, rule.qualification_window_days || 30);
-const overallDeadlineFor = (rule, day) => addDays(day, rule.reward_type === 'REFERRER'
-    ? (rule.qualification_window_days || 30)
-    : Math.max(rule.qualification_window_days || 30, rule.bonus_validity_days || 90));
+const referrerDeadlineFor = (rule, day) => addDays(day, rule.bonus_validity_days || 90);
+const overallDeadlineFor = (rule, day) => addDays(day, rule.bonus_validity_days || 90);
 
 const NAME_RE = /^[A-Za-z0-9 &-]{3,50}$/;
 function decimalsOk(v, currency) {
@@ -162,10 +160,10 @@ function validateRule(body, { isNew }) {
     if (blank(floor) || isNaN(Number(floor)) || Number(floor) <= 0 || Number(floor) > 10000000 || !decimalsOk(floor, currency)) {
         errors.min_transaction_threshold = 'Enter a minimum transaction amount greater than 0.';
     }
-    const qw = blank(body.qualification_window_days) ? 30 : body.qualification_window_days;
-    if (!isIntIn(qw, 1, 365)) errors.qualification_window_days = 'Enter a whole number of days from 1 to 365.';
     const bv = blank(body.bonus_validity_days) ? 90 : body.bonus_validity_days;
     if (!isIntIn(bv, 1, 730)) errors.bonus_validity_days = 'Enter a whole number of days from 1 to 730.';
+    const qw = blank(body.qualification_window_days) ? (isIntIn(bv, 1, 730) ? Number(bv) : 90) : body.qualification_window_days;
+    if (!blank(body.qualification_window_days) && !isIntIn(qw, 1, 365)) errors.qualification_window_days = 'Enter a whole number of days from 1 to 365.';
     if (!blank(body.max_referrals_per_referrer) && !isIntIn(body.max_referrals_per_referrer, 1, 10000)) {
         errors.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
     }
@@ -201,13 +199,11 @@ const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'rece
 function offerText(rule) {
     const c = rule.base_currency;
     const r = money(rule.referrer_reward, c), e = money(rule.referee_reward, c), f = money(rule.min_transaction_threshold, c);
-    const days = rule.qualification_window_days || 30;
+    const days = rule.bonus_validity_days || 90;
     const to = rule.receive_currency ? ` to ${rule.receive_currency}` : '';
     if (rule.reward_type === 'REFERRER') return `Invite friends with your link and get ${r} bonus credit when they send ${f} or more${to} within ${days} days of joining.`;
     if (rule.reward_type === 'REFEREE') return `Give your friends ${e} bonus credit when they join with your link and send ${f} or more${to} within ${days} days.`;
-    const validity = rule.bonus_validity_days || 90;
-    const friendLonger = validity > days ? ` Your friend can still earn theirs for up to ${validity} days.` : '';
-    return `Invite friends with your link. You get ${r} and your friend gets ${e} in bonus credit when they send ${f} or more${to} within ${days} days of joining.${friendLonger}`;
+    return `Invite friends with your link. You get ${r} and your friend gets ${e} in bonus credit when they send ${f} or more${to} within ${days} days of joining.`;
 }
 
 function publicOffer(rule) {
@@ -242,6 +238,16 @@ async function offerRulesFor(q, currency, receiveCurrency) {
         return rule ? [rule] : [];
     }
     return liveRulesForSend(q, currency);
+}
+
+// True when a rule for the send currency / corridor has passed its end_date (Link Expired)
+async function hasEndedRuleFor(q, currency, receiveCurrency) {
+    const rows = await q.all(`SELECT * FROM referral_rules WHERE base_currency = ? AND COALESCE(is_archived,0) = 0`, [currency]);
+    const receive = String(receiveCurrency || '').toUpperCase();
+    const matching = receive
+        ? (rows.some((r) => r.receive_currency === receive) ? rows.filter((r) => r.receive_currency === receive) : rows.filter((r) => !r.receive_currency))
+        : rows;
+    return matching.length > 0 && matching.some((r) => ruleStatus(r) === 'ENDED');
 }
 
 // Rule an existing referral should be judged against (admin approval of a not-eligible referral)
@@ -387,6 +393,9 @@ async function createReferral(q, { code, referee }) {
     if (receive) rule = await liveRuleFor(q, currency, receive);
     else if (liveForSend.length === 1) rule = liveForSend[0];
     else if (liveForSend.length > 1) deferred = true;
+    if (!rule && !deferred && (await hasEndedRuleFor(q, currency, receive))) {
+        throw Object.assign(new Error('Link Expired'), { status: 400, code: 'LINK_EXPIRED' });
+    }
     const registeredAt = nowIso();
     const regDay = ukToday();
     const id = `REF-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
@@ -398,13 +407,28 @@ async function createReferral(q, { code, referee }) {
 
     const latest = deferred ? liveForSend.map((x) => overallDeadlineFor(x, regDay)).sort().pop() : null;
     const referrerBy = deferred ? liveForSend.map((x) => referrerDeadlineFor(x, regDay)).sort().pop() : null;
+    let refereeCredited = 0, refereeCreditId = null;
+    const isBlocked = async (cid) => !!((await ports.eligibilityGuard.isEarningBlocked(cid)) || {}).blocked;
+    if (status === 'REGISTERED' && rule && rule.reward_type !== 'REFERRER' && Number(rule.referee_reward) > 0 && refereeRow.kyc_status === 'PASSED' && !(await isBlocked(referee.id))) {
+        try {
+            refereeCreditId = await addCredit({
+                userId: referee.id, amount: rule.referee_reward, currency,
+                referenceId: `${id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}`,
+                referralId: id, ruleId: rule.id, validityDays: rule.bonus_validity_days,
+            });
+            refereeCredited = rule.referee_reward;
+        } catch (err) {
+            console.error('[referral] referee welcome reward could not be issued at registration', id, err.message);
+        }
+    }
     await q.run(`INSERT INTO referrals (id, referrer_id, referee_id, code, rule_id, currency, receive_currency, reward_type, referrer_reward, referee_reward, floor,
-        qualification_window_days, bonus_validity_days, qualification_deadline, referrer_deadline, status, status_reason, registered_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        qualification_window_days, bonus_validity_days, qualification_deadline, referrer_deadline, referee_credited, referee_credit_id, status, status_reason, registered_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, referrer.id, referee.id, look.code, rule ? rule.id : null, currency, rule ? rule.receive_currency : receive,
         rule ? rule.reward_type : null, rule ? rule.referrer_reward : 0, rule ? rule.referee_reward : 0, rule ? rule.min_transaction_threshold : null,
         rule ? rule.qualification_window_days : null, rule ? rule.bonus_validity_days : null,
-        rule ? overallDeadlineFor(rule, regDay) : latest, rule ? referrerDeadlineFor(rule, regDay) : referrerBy, status, reason, registeredAt, registeredAt]);
+        rule ? overallDeadlineFor(rule, regDay) : latest, rule ? referrerDeadlineFor(rule, regDay) : referrerBy,
+        refereeCredited, refereeCreditId, status, reason, registeredAt, registeredAt]);
     return q.get(`SELECT * FROM referrals WHERE id = ?`, [id]);
 }
 
@@ -421,7 +445,7 @@ async function tryAward(q, referral) {
     if (!transfer || transfer.status !== 'COMPLETED') return r;
     const referrer = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referrer_id]);
     const referee = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referee_id]);
-    // The referee can earn their bonus until Bonus Validity ends; the referrer only inside the Qualification Window
+    // Both the referee's bonus validity and the referrer's qualification window are governed by Bonus Validity (Days)
     const referrerLate = ukDate(transfer.created_at) > (r.referrer_deadline || r.qualification_deadline);
     const referrerEntitled = r.reward_type !== 'REFEREE' && r.referrer_reward > 0;
     const rewardsReferrer = referrerEntitled && !referrerLate;
@@ -443,7 +467,13 @@ async function tryAward(q, referral) {
     if (rewardsReferrer && (await isBlocked(r.referrer_id))) blockedParties.push(`referrer ${r.referrer_id}`);
     if (rewardsReferee && (await isBlocked(r.referee_id))) blockedParties.push(`referee ${r.referee_id}`);
     if (blockedParties.length) {
-        await q.run(`UPDATE referrals SET status = 'NOT_ELIGIBLE', status_reason = ?, updated_at = ? WHERE id = ?`,
+        if (r.referee_credit_id) {
+            await ports.rewardWallet.voidCredit(r.referee_credit_id, {
+                reason: 'NOT_ELIGIBLE', notes: 'Customer blocked from earning bonus before qualification',
+                eventId: r.id, clawback: false,
+            });
+        }
+        await q.run(`UPDATE referrals SET status = 'NOT_ELIGIBLE', status_reason = ?, referee_credited = 0, referee_credit_id = NULL, updated_at = ? WHERE id = ?`,
             [`Bonus blocked for ${blockedParties.join(' and ')} (repeated cancelled or refunded bonus-earning transfers). See Growth > Blocked Customers.`, nowIso(), r.id]);
         return q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
     }
@@ -451,7 +481,8 @@ async function tryAward(q, referral) {
     const rule = await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [r.rule_id]);
     const notes = [];
     if (referrerEntitled && referrerLate) notes.push('Referrer qualification window ended');
-    let referrerCredited = 0, refereeCredited = 0, referrerCreditId = null, refereeCreditId = null;
+    let referrerCredited = Number(r.referrer_credited || 0), refereeCredited = Number(r.referee_credited || 0);
+    let referrerCreditId = r.referrer_credit_id || null, refereeCreditId = r.referee_credit_id || null;
     try {
         if (rewardsReferrer) {
             const cap = rule && rule.max_referrals_per_referrer;
@@ -466,7 +497,7 @@ async function tryAward(q, referral) {
                 referrerCredited = r.referrer_reward;
             }
         }
-        if (rewardsReferee) {
+        if (rewardsReferee && !refereeCreditId) {
             refereeCreditId = await addCredit({
                 userId: r.referee_id, amount: r.referee_reward, currency: r.currency,
                 referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}`,
@@ -853,7 +884,11 @@ function registerReferralRoutes(app, db, hooks = {}) {
     app.get('/api/referral/codes/:code', wrap(async (req, res) => {
         const look = await lookupCode(q, req.params.code);
         if (!look.valid) return res.status(look.reason === 'INVALID_FORMAT' ? 400 : 404).json({ valid: false, error: look.reason, message: look.message });
-        const rules = await offerRulesFor(q, String(req.query.currency || look.referrer.send_currency || 'GBP').toUpperCase(), req.query.receive_currency);
+        const currency = String(req.query.currency || look.referrer.send_currency || 'GBP').toUpperCase();
+        const rules = await offerRulesFor(q, currency, req.query.receive_currency);
+        if (!rules.length && (await hasEndedRuleFor(q, currency, req.query.receive_currency))) {
+            return res.status(400).json({ valid: false, error: 'LINK_EXPIRED', message: 'Link Expired' });
+        }
         res.json({ valid: true, code: look.code, referrer_first_name: look.referrer.first_name, offer: rules.length === 1 ? publicOffer(rules[0]) : null, offers: rules.map(publicOffer) });
     }));
 

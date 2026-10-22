@@ -97,6 +97,7 @@ const ReferralSettings = () => {
     const payload = () => ({
         ...form,
         name: form.name.trim(),
+        qualification_window_days: form.bonus_validity_days,
         referrer_reward: form.reward_type === 'REFEREE' ? 0 : form.referrer_reward,
         referee_reward: form.reward_type === 'REFERRER' ? 0 : form.referee_reward,
     });
@@ -310,16 +311,11 @@ const ReferralSettings = () => {
                     </div>
 
                     <div className="rf-section-label">Limits &amp; timing</div>
-                    <div className="rf-grid rf-grid-3">
-                        <Field id="rf-qualification_window_days" label="Qualification Window (days)" required error={err('qualification_window_days')}
-                            hint="Days after joining the referrer can be rewarded for the friend's qualifying transfer.">
-                            <input {...aria('qualification_window_days')} className={inputCls('qualification_window_days')} inputMode="numeric"
-                                value={form.qualification_window_days} onChange={(e) => set({ qualification_window_days: e.target.value })} />
-                        </Field>
+                    <div className="rf-grid rf-grid-2">
                         <Field id="rf-bonus_validity_days" label="Bonus Validity (days)" required error={err('bonus_validity_days')}
-                            hint="Days the bonus can be used. The friend can earn their bonus up to this long after joining.">
+                            hint="Days the referee's bonus stays valid after joining, and the window in which their first qualifying transfer rewards the referrer.">
                             <input {...aria('bonus_validity_days')} className={inputCls('bonus_validity_days')} inputMode="numeric"
-                                value={form.bonus_validity_days} onChange={(e) => set({ bonus_validity_days: e.target.value })} />
+                                value={form.bonus_validity_days} onChange={(e) => set({ bonus_validity_days: e.target.value, qualification_window_days: e.target.value })} />
                         </Field>
                         <Field id="rf-max_referrals_per_referrer" label="Max Rewarded Referrals per Referrer" error={err('max_referrals_per_referrer')} hint="Leave blank for unlimited.">
                             <input {...aria('max_referrals_per_referrer')} className={inputCls('max_referrals_per_referrer')} inputMode="numeric" placeholder="Unlimited"
@@ -405,7 +401,7 @@ const ReferralSettings = () => {
                                         </td>
                                         <td className="rf-num">{formatMoney(rule.min_transaction_threshold, c)}</td>
                                         <td style={{ whiteSpace: 'nowrap' }}>
-                                            <div>{rule.qualification_window_days ?? 30}d window · {rule.bonus_validity_days ?? 90}d valid</div>
+                                            <div>{rule.bonus_validity_days ?? 90}d valid</div>
                                             <span className="rf-sub">{dates}</span>
                                         </td>
                                         <td>

@@ -30,7 +30,7 @@ export function validateForm(f, { isNew, rules, editingId }) {
     if (f.reward_type !== 'REFERRER') amt('referee_reward', 1000000);
     const fl = f.min_transaction_threshold;
     if (blank(fl) || Number.isNaN(Number(fl)) || Number(fl) <= 0 || Number(fl) > 10000000 || !dpOk(fl, cur)) e.min_transaction_threshold = 'Enter a minimum transaction amount greater than 0.';
-    if (!intIn(f.qualification_window_days, 1, 365)) e.qualification_window_days = 'Enter a whole number of days from 1 to 365.';
+    if (!blank(f.qualification_window_days) && !intIn(f.qualification_window_days, 1, 730)) e.qualification_window_days = 'Enter a whole number of days from 1 to 730.';
     if (!intIn(f.bonus_validity_days, 1, 730)) e.bonus_validity_days = 'Enter a whole number of days from 1 to 730.';
     if (!blank(f.max_referrals_per_referrer) && !intIn(f.max_referrals_per_referrer, 1, 10000)) e.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
     const today = ukTodayIso();
