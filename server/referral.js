@@ -467,7 +467,13 @@ async function tryAward(q, referral) {
     if (rewardsReferrer && (await isBlocked(r.referrer_id))) blockedParties.push(`referrer ${r.referrer_id}`);
     if (rewardsReferee && (await isBlocked(r.referee_id))) blockedParties.push(`referee ${r.referee_id}`);
     if (blockedParties.length) {
-        await q.run(`UPDATE referrals SET status = 'NOT_ELIGIBLE', status_reason = ?, updated_at = ? WHERE id = ?`,
+        if (r.referee_credit_id) {
+            await ports.rewardWallet.voidCredit(r.referee_credit_id, {
+                reason: 'NOT_ELIGIBLE', notes: 'Customer blocked from earning bonus before qualification',
+                eventId: r.id, clawback: false,
+            });
+        }
+        await q.run(`UPDATE referrals SET status = 'NOT_ELIGIBLE', status_reason = ?, referee_credited = 0, referee_credit_id = NULL, updated_at = ? WHERE id = ?`,
             [`Bonus blocked for ${blockedParties.join(' and ')} (repeated cancelled or refunded bonus-earning transfers). See Growth > Blocked Customers.`, nowIso(), r.id]);
         return q.get(`SELECT * FROM referrals WHERE id = ?`, [r.id]);
     }

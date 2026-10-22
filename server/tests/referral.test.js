@@ -59,7 +59,7 @@ describe('Referral rules (US-1.1 – US-1.5)', () => {
         const res = await request(app).post('/api/referral-rules').send(GBP_RULE);
         expect(res.status).toBe(201);
         expect(res.body.data.status).toBe('ACTIVE');
-        expect(res.body.data.qualification_window_days).toBe(30);
+        expect(res.body.data.qualification_window_days).toBe(90);
         expect(res.body.data.bonus_validity_days).toBe(90);
         expect(res.body.notification.kind).toBe('LIVE');
     });
@@ -157,7 +157,7 @@ describe('Referral lifecycle (US-3.1 – US-4.4)', () => {
         await request(app).post('/api/referral-rules').send(GBP_RULE);
         await request(app).post('/api/referral/customers').send({ id: 'A', first_name: 'Olayinka', send_currency: 'GBP' });
         const res = await request(app).get('/api/referral/offer?customer_id=A');
-        expect(res.body.offer.text).toBe('Invite friends with your link. You get £5.00 and your friend gets £10.00 in bonus credit when they send £50.00 or more to NGN within 30 days of joining. Your friend can still earn theirs for up to 90 days.');
+        expect(res.body.offer.text).toBe('Invite friends with your link. You get £5.00 and your friend gets £10.00 in bonus credit when they send £50.00 or more to NGN within 90 days of joining.');
         expect(res.body.offer.referral_link).toMatch(/^https:\/\/rhemito\.com\/ref\/OLAYINKA\d{4}$/);
     });
 
@@ -167,10 +167,20 @@ describe('Referral lifecycle (US-3.1 – US-4.4)', () => {
         expect(res.body.offer).toBeNull();
     });
 
-    it('validates codes (AC-3.2.3, AC-3.2.4)', async () => {
+    it('validates codes (AC-3.2.3, AC-3.2.4) and returns Link Expired after End Date', async () => {
         const app = makeApp();
         expect((await request(app).get('/api/referral/codes/AB-12')).body.message).toBe('Referral codes are 6–12 letters and numbers.');
         expect((await request(app).get('/api/referral/codes/ABCDEF99')).status).toBe(404);
+        await request(app).post('/api/referral-rules').send({ ...GBP_RULE, start_date: '2026-10-01', end_date: '2026-10-05' }).expect(201);
+        const a = await request(app).post('/api/referral/customers').send({ id: 'A', first_name: 'Olayinka', send_currency: 'GBP', kyc_status: 'PASSED' });
+        const code = a.body.data.referral_code;
+        setNow('2026-10-06T10:00:00Z');
+        const check = await request(app).get(`/api/referral/codes/${code}`);
+        expect(check.status).toBe(400);
+        expect(check.body).toMatchObject({ error: 'LINK_EXPIRED', message: 'Link Expired' });
+        const reg = await request(app).post('/api/referral/referrals').send({ code, referee: { id: 'B', first_name: 'Sarah', send_currency: 'GBP', receive_currency: 'NGN', kyc_status: 'PASSED' } });
+        expect(reg.status).toBe(400);
+        expect(reg.body).toMatchObject({ error: 'LINK_EXPIRED', message: 'Link Expired' });
     });
 
     it('counts repeat link visits once per 24 hours (AC-3.1.10)', async () => {
@@ -186,8 +196,9 @@ describe('Referral lifecycle (US-3.1 – US-4.4)', () => {
         const app = makeApp();
         const { referral } = await seedReferral(app);
         expect(referral.status).toBe('REGISTERED');
-        expect(referral.qualification_deadline).toBe('2026-12-30'); // the referee can earn their bonus until Bonus Validity ends
-        expect(referral.referrer_deadline).toBe('2026-10-31'); // the referrer inside the Qualification Window
+        expect(referral.referee_credited).toBe(10); // referee gets bonus in wallet on registration
+        expect(referral.qualification_deadline).toBe('2026-12-30'); // valid for Bonus Validity (Days)
+        expect(referral.referrer_deadline).toBe('2026-12-30'); // referrer window is Bonus Validity (Days)
         const rules = await request(app).get('/api/referral-rules');
         await request(app).put(`/api/referral-rules/${rules.body.data[0].id}`).send({ ...GBP_RULE, referee_reward: 15 });
 
@@ -338,42 +349,49 @@ describe('Referral lifecycle (US-3.1 – US-4.4)', () => {
 describe('Referee bonus timing', () => {
     beforeEach(() => setNow('2026-10-01T10:00:00Z'));
 
-    it('pays both on a first transfer that meets the Floor', async () => {
+    it('credits referee on registration and pays referrer on a first transfer that meets the Floor', async () => {
         const app = makeApp();
         await seedReferral(app);
+        const bBefore = await request(app).get('/api/wallet/B?currency=GBP');
+        expect(bBefore.body.balances[0].available).toBe(10);
         await transfer(app, 'PAID');
         const done = await transfer(app, 'COMPLETED');
         expect(done.body.referral).toMatchObject({ status: 'REWARDED', referee_credited: 10, referrer_credited: 5 });
     });
 
-    it('waits for a later transfer that meets the Floor, before the bonus expires', async () => {
+    it('waits for a later transfer that meets the Floor, before the bonus expires, and rewards the referrer', async () => {
         const app = makeApp();
         await seedReferral(app);
-        // first transfer is below the Floor: nothing is paid, the referral stays open
+        // first transfer is below the Floor: referral stays REGISTERED, referrer is not paid
         await transfer(app, 'PAID', { transfer_id: 'T0', amount: 20 });
         expect((await transfer(app, 'COMPLETED', { transfer_id: 'T0', amount: 20 })).body.referral.status).toBe('REGISTERED');
-        // 45 days in: past the 30-day Qualification Window, inside the 90-day Bonus Validity
+        // 45 days in: inside the 90-day Bonus Validity
         setNow('2026-11-15T10:00:00Z');
         await transfer(app, 'PAID', { transfer_id: 'T1', amount: 60 });
         const done = await transfer(app, 'COMPLETED', { transfer_id: 'T1', amount: 60 });
         expect(done.body.referral.status).toBe('REWARDED');
         expect(done.body.referral.referee_credited).toBe(10);
-        expect(done.body.referral.referrer_credited).toBe(0); // the referrer's window had ended
-        expect(done.body.referral.status_reason).toBe('Referrer qualification window ended');
-        const b = await request(app).get('/api/wallet/B?currency=GBP');
-        expect(b.body.balances[0].available).toBe(10);
+        expect(done.body.referral.referrer_credited).toBe(5);
+        const a = await request(app).get('/api/wallet/A?currency=GBP');
+        expect(a.body.balances[0].available).toBe(5);
+        expect(a.body.unused[0].expires_on).toBe('2027-02-13'); // 90 days from 2026-11-15
     });
 
-    it('pays no one once Bonus Validity has passed', async () => {
+    it('does not earn bonus for referrer and referee cannot redeem bonus once Bonus Validity has passed', async () => {
         const app = makeApp();
         await seedReferral(app);
-        setNow('2026-12-31T10:00:00Z'); // 91 days after joining
+        setNow('2026-12-31T10:00:00Z'); // 91 days after joining (past 2026-12-30)
         expect((await transfer(app, 'PAID', { amount: 500 })).body.referral.status).toBe('REGISTERED');
+        expect((await transfer(app, 'COMPLETED', { amount: 500 })).body.referral.status).toBe('REGISTERED');
+        const a = await request(app).get('/api/wallet/A?currency=GBP');
+        expect(a.body.balances).toEqual([]);
+        const redeem = await request(app).post('/api/wallet/B/apply').send({ amount: 10, currency: 'GBP', transfer_id: 'T-EXP', send_amount: 500 });
+        expect(redeem.status).toBe(409);
     });
 
-    it('keeps the Qualification Window for a Referrer Only rule', async () => {
+    it('uses Bonus Validity for a Referrer Only rule', async () => {
         const app = makeApp();
-        const { referral } = await seedReferral(app, { rule: { ...GBP_RULE, reward_type: 'REFERRER', referee_reward: 0 } });
+        const { referral } = await seedReferral(app, { rule: { ...GBP_RULE, reward_type: 'REFERRER', referee_reward: 0, bonus_validity_days: 30 } });
         expect(referral.qualification_deadline).toBe('2026-10-31');
         setNow('2026-11-15T10:00:00Z');
         expect((await transfer(app, 'PAID', { amount: 500 })).body.referral.status).toBe('REGISTERED');
@@ -404,13 +422,14 @@ describe('Bonus wallet (US-5.1 – US-5.4)', () => {
         expect(b.body.balances[0]).toMatchObject({ available: 10, used: 0 });
     });
 
-    it('has no minimum send amount to use a bonus (the Floor is the only minimum)', async () => {
+    it('enforces the Floor as the minimum send amount to redeem a referral bonus', async () => {
         const app = makeApp();
-        await seedReferral(app, { rule: { ...GBP_RULE, min_redeem_amount: 20 } }); // old field is ignored
-        await transfer(app, 'PAID');
-        await transfer(app, 'COMPLETED');
-        const res = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', transfer_id: 'T6', send_amount: 19.99 });
-        expect(res.status).toBe(200);
+        await seedReferral(app, { rule: { ...GBP_RULE, min_redeem_amount: 20 } });
+        const belowFloor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', transfer_id: 'T6-low', send_amount: 49.99 });
+        expect(belowFloor.status).toBe(400);
+        expect(belowFloor.body.error).toBe('BELOW_FLOOR');
+        const atFloor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', transfer_id: 'T6', send_amount: 50 });
+        expect(atFloor.status).toBe(200);
     });
 
     it('expires unused credit after its validity (AC-5.4.1)', async () => {
@@ -563,7 +582,7 @@ describe('Corridor rules (send currency → receive currency)', () => {
         expect(body.data.receive_currency).toBe('INR');
         expect(body.data.floor).toBe(100);
         expect(body.data.qualification_deadline).toBe('2026-12-30'); // the INR rule's 90-day Bonus Validity
-        expect(body.data.referrer_deadline).toBe('2026-10-15'); // its 14-day Qualification Window
+        expect(body.data.referrer_deadline).toBe('2026-12-30'); // uses 90-day Bonus Validity
         // a big transfer on a different corridor does not qualify
         expect((await transfer(app, 'PAID', { amount: 500 })).body.referral.status).toBe('REGISTERED');
         // a transfer with no destination does not qualify either
@@ -599,7 +618,7 @@ describe('Corridor rules (send currency → receive currency)', () => {
         expect(r.body.referral.receive_currency).toBe('NGN');
         expect(r.body.referral.floor).toBe(50);
         expect(r.body.referral.qualification_deadline).toBe('2026-12-30');
-        expect(r.body.referral.referrer_deadline).toBe('2026-10-31');
+        expect(r.body.referral.referrer_deadline).toBe('2026-12-30');
         r = await transfer(app, 'COMPLETED', { transfer_id: 'T2', amount: 60, receive_currency: 'NGN' });
         expect(r.body.referral.status).toBe('REWARDED');
         expect(r.body.referral.referee_credited).toBe(10);

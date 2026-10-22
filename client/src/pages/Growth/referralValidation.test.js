@@ -57,8 +57,8 @@ describe('validateForm (US-1.1)', () => {
     });
 
     it('checks day ranges and optional limits', () => {
-        expect(validateForm({ ...base, qualification_window_days: '0' }, ctx).qualification_window_days).toBeTruthy();
-        expect(validateForm({ ...base, qualification_window_days: '365' }, ctx).qualification_window_days).toBeUndefined();
+        expect(validateForm({ ...base, bonus_validity_days: '0' }, ctx).bonus_validity_days).toBeTruthy();
+        expect(validateForm({ ...base, bonus_validity_days: '730' }, ctx).bonus_validity_days).toBeUndefined();
         expect(validateForm({ ...base, bonus_validity_days: '731' }, ctx).bonus_validity_days).toBeTruthy();
         expect(validateForm({ ...base, max_referrals_per_referrer: '0' }, ctx).max_referrals_per_referrer).toBeTruthy();
     });

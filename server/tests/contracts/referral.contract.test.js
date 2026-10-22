@@ -239,14 +239,14 @@ describe('Registration, qualification and reward', () => {
         where: [FILE],
     })(async () => {
         const both = await world({ qualification_window_days: 10, bonus_validity_days: 60 });
-        expect(both.referral.referrer_deadline).toBe('2030-01-11');
+        expect(both.referral.referrer_deadline).toBe('2030-03-02');
         expect(both.referral.qualification_deadline).toBe('2030-03-02');
-        setNow('2030-01-21T10:00:00Z'); // day 20: past the referrer's window, inside the referee's validity
-        const late = await qualifyAndComplete(both);
-        expect(late).toMatchObject({ status: 'REWARDED', referrer_credited: 0, referee_credited: 10, status_reason: 'Referrer qualification window ended' });
+        setNow('2030-01-21T10:00:00Z'); // day 20: inside the 60-day Bonus Validity window
+        const within = await qualifyAndComplete(both);
+        expect(within).toMatchObject({ status: 'REWARDED', referrer_credited: 5, referee_credited: 10 });
 
         setNow('2030-01-01T10:00:00Z');
-        const only = await world({ reward_type: 'REFERRER', referee_reward: 0, qualification_window_days: 10 });
+        const only = await world({ reward_type: 'REFERRER', referee_reward: 0, bonus_validity_days: 10 });
         expect(only.referral.qualification_deadline).toBe('2030-01-11');
         setNow('2030-01-21T10:00:00Z');
         expect((await send(only, 'PAID')).body.referral.status).toBe('REGISTERED'); // too late
@@ -271,7 +271,7 @@ describe('Registration, qualification and reward', () => {
         const paid = await send(w, 'PAID', { transfer_id: id });
         expect(paid.body.referral.status).toBe('PENDING');
         expect(await available(w.referrer.id, w.rule.send)).toBe(0);
-        expect(await available(w.refereeId, w.rule.send)).toBe(0);
+        expect(await available(w.refereeId, w.rule.send)).toBe(10); // referee credited at registration
         const done = (await send(w, 'COMPLETED', { transfer_id: id })).body.referral;
         expect(done).toMatchObject({ status: 'REWARDED', qualifying_transfer_id: id });
         expect(done.referrer_credit_id).toBeTruthy();
@@ -430,7 +430,7 @@ describe('Idempotent issue, retry and reversal', () => {
         const real = bonus.issueCredit;
         let failing = true;
         jest.spyOn(bonus, 'issueCredit').mockImplementation((input) => {
-            if (failing && input.customerId === w.refereeId) return Promise.reject(new Error('wallet down'));
+            if (failing && input.customerId === w.referrer.id) return Promise.reject(new Error('wallet down'));
             return real(input);
         });
         const first = await qualifyAndComplete(w);

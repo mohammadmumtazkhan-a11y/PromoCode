@@ -79,9 +79,9 @@ describe('issuing (BR-36, BR-50)', () => {
         expect(done.body.referral.status).toBe('REWARDED');
         const { issue, issued } = app.locals.calls;
         expect(issue).toHaveLength(2);
-        expect(issue[0]).toMatchObject({ customerId: 'A', amount: 5, currency: 'GBP', creditSource: 'REFERRAL', creditSourceDetail: 'REFERRER', referralId: ref.id, referenceId: `${ref.id}:referrer`, validityDays: 90 });
-        expect(issue[1]).toMatchObject({ customerId: 'B', amount: 10, creditSource: 'REFERRAL', creditSourceDetail: 'REFEREE', referenceId: `${ref.id}:referee` });
-        expect(issue[0].notes).toBe('Referrer reward – referred Sarah S.');
+        expect(issue[0]).toMatchObject({ customerId: 'B', amount: 10, creditSource: 'REFERRAL', creditSourceDetail: 'REFEREE', referenceId: `${ref.id}:referee`, validityDays: 90 });
+        expect(issue[1]).toMatchObject({ customerId: 'A', amount: 5, currency: 'GBP', creditSource: 'REFERRAL', creditSourceDetail: 'REFERRER', referralId: ref.id, referenceId: `${ref.id}:referrer`, validityDays: 90 });
+        expect(issue[1].notes).toBe('Referrer reward – referred Sarah S.');
         expect(done.body.referral.referrer_credit_id).toBeTruthy();
         expect(done.body.referral.referee_credit_id).toBeTruthy();
         expect(issued).toHaveLength(1);
