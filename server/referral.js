@@ -163,7 +163,8 @@ function validateRule(body, { isNew }) {
     const bv = blank(body.bonus_validity_days) ? 90 : body.bonus_validity_days;
     if (!isIntIn(bv, 1, 730)) errors.bonus_validity_days = 'Enter a whole number of days from 1 to 730.';
     const qw = blank(body.qualification_window_days) ? (isIntIn(bv, 1, 730) ? Number(bv) : 90) : body.qualification_window_days;
-    if (!blank(body.qualification_window_days) && !isIntIn(qw, 1, 365)) errors.qualification_window_days = 'Enter a whole number of days from 1 to 365.';
+    // Same range as Bonus Validity: the admin form sends the qualification window equal to Bonus Validity (one window, up to 730 days)
+    if (!blank(body.qualification_window_days) && !isIntIn(qw, 1, 730)) errors.qualification_window_days = 'Enter a whole number of days from 1 to 730.';
     if (!blank(body.max_referrals_per_referrer) && !isIntIn(body.max_referrals_per_referrer, 1, 10000)) {
         errors.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
     }
