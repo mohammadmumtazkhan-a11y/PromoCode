@@ -356,9 +356,15 @@ app.get(/.*/, (req, res) => {
 });
 
 if (require.main === module) {
+    process.on('uncaughtException', (err) => console.error('[server] uncaughtException:', err));
+    process.on('unhandledRejection', (err) => console.error('[server] unhandledRejection:', err));
     app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
     });
+    const externalUrl = process.env.RENDER_EXTERNAL_URL;
+    if (externalUrl) {
+        setInterval(() => fetch(`${externalUrl}/api/referral-rules?limit=1`).catch(() => {}), 10 * 60 * 1000).unref();
+    }
     // Daily bonus jobs (credit expiry for every source, expiring reminders) — hourly, acting once per UK day
     bonus.startJobs();
     // Daily referral jobs (expiry of referrals, "offer ending" notices) — checked hourly
