@@ -892,11 +892,12 @@ function registerReferralRoutes(app, db, hooks = {}) {
             customer = await q.get(`SELECT * FROM customers WHERE id = ?`, [req.query.customer_id]);
             if (customer && !currency) currency = customer.send_currency;
         }
-        if (customer && customer.account_status !== 'ACTIVE') return res.json({ offer: null, offers: [], reason: 'ACCOUNT_NOT_ACTIVE' });
-        const rules = await offerRulesFor(q, currency || 'GBP', receive);
-        if (!rules.length) return res.json({ offer: null, offers: [], reason: 'NO_ACTIVE_RULE' });
-        const offers = [];
-        for (const rule of rules) {
+        if (customer && customer.account_status !== 'ACTIVE') return res.json({ offer: null, offers: [], currency_offers: [], reason: 'ACCOUNT_NOT_ACTIVE' });
+        const primaryCurrency = currency || 'GBP';
+        const sendCurrencies = customer
+            ? sendCurrenciesForCountry(customer.country, primaryCurrency)
+            : [primaryCurrency];
+        const decorateOffer = async (rule) => {
             const offer = publicOffer(rule);
             if (customer) {
                 offer.referral_code = await ensureReferralCode(q, customer.id);
@@ -904,9 +905,26 @@ function registerReferralRoutes(app, db, hooks = {}) {
                 const rewarded = await rewardedCountForReferrer(q, customer.id, rule.id);
                 offer.cap_reached = !!(rule.max_referrals_per_referrer && rewarded >= rule.max_referrals_per_referrer && rule.reward_type !== 'REFEREE');
             }
-            offers.push(offer);
+            return offer;
+        };
+        const rules = await offerRulesFor(q, primaryCurrency, receive);
+        const offers = [];
+        for (const rule of rules) offers.push(await decorateOffer(rule));
+        const currencyOffers = [];
+        for (const cur of sendCurrencies) {
+            const curRules = cur === primaryCurrency ? rules : await offerRulesFor(q, cur, receive);
+            for (const rule of curRules) currencyOffers.push(await decorateOffer(rule));
         }
-        res.json({ offer: offers.length === 1 ? offers[0] : null, offers, ...(offers.length > 1 ? { reason: 'MULTIPLE_CORRIDORS' } : {}) });
+        if (!rules.length) {
+            return res.json({ offer: null, offers: [], send_currencies: sendCurrencies, currency_offers: currencyOffers, reason: 'NO_ACTIVE_RULE' });
+        }
+        res.json({
+            offer: offers.length === 1 ? offers[0] : null,
+            offers,
+            send_currencies: sendCurrencies,
+            currency_offers: currencyOffers,
+            ...(offers.length > 1 ? { reason: 'MULTIPLE_CORRIDORS' } : {}),
+        });
     }));
 
     // Validate a referral code / link (US-3.1, US-3.2)
@@ -918,7 +936,21 @@ function registerReferralRoutes(app, db, hooks = {}) {
         if (!rules.length && (await hasEndedRuleFor(q, currency, req.query.receive_currency))) {
             return res.status(400).json({ valid: false, error: 'LINK_EXPIRED', message: 'Link Expired' });
         }
-        res.json({ valid: true, code: look.code, referrer_first_name: look.referrer.first_name, offer: rules.length === 1 ? publicOffer(rules[0]) : null, offers: rules.map(publicOffer) });
+        const sendCurrencies = sendCurrenciesForCountry(look.referrer.country, currency);
+        const currencyOffers = [];
+        for (const cur of sendCurrencies) {
+            const curRules = cur === currency ? rules : await offerRulesFor(q, cur, req.query.receive_currency);
+            for (const r of curRules) currencyOffers.push(publicOffer(r));
+        }
+        res.json({
+            valid: true,
+            code: look.code,
+            referrer_first_name: look.referrer.first_name,
+            offer: rules.length === 1 ? publicOffer(rules[0]) : (currencyOffers[0] || null),
+            offers: rules.map(publicOffer),
+            send_currencies: sendCurrencies,
+            currency_offers: currencyOffers,
+        });
     }));
 
     // Record a link visit (AC-3.1.10) — repeat visits within 24h count once
@@ -995,7 +1027,10 @@ function registerReferralRoutes(app, db, hooks = {}) {
 
     app.get('/api/referral/offer-notifications', wrap(async (req, res) => {
         const cond = [], params = [];
-        if (req.query.currency) { cond.push('currency = ?'); params.push(String(req.query.currency).toUpperCase()); }
+        if (req.query.currencies) {
+            const list = String(req.query.currencies).split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+            if (list.length) { cond.push(`currency IN (${list.map(() => '?').join(',')})`); params.push(...list); }
+        } else if (req.query.currency) { cond.push('currency = ?'); params.push(String(req.query.currency).toUpperCase()); }
         if (req.query.receive_currency) { cond.push('(receive_currency IS NULL OR receive_currency = ?)'); params.push(String(req.query.receive_currency).toUpperCase()); }
         if (req.query.since) { cond.push('created_at > ?'); params.push(req.query.since); }
         res.json({ data: await q.all(`SELECT * FROM referral_offer_notifications ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ORDER BY id DESC LIMIT 50`, params) });
