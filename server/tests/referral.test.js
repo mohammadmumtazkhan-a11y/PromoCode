@@ -422,13 +422,16 @@ describe('Bonus wallet (US-5.1 – US-5.4)', () => {
         expect(b.body.balances[0]).toMatchObject({ available: 10, used: 0 });
     });
 
-    it('enforces the Floor as the minimum send amount to redeem a referral bonus', async () => {
+    it('enforces the Floor and corridor as the requirements to redeem a referral bonus', async () => {
         const app = makeApp();
         await seedReferral(app, { rule: { ...GBP_RULE, min_redeem_amount: 20 } });
-        const belowFloor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', transfer_id: 'T6-low', send_amount: 49.99 });
+        const belowFloor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', receive_currency: 'NGN', transfer_id: 'T6-low', send_amount: 49.99 });
         expect(belowFloor.status).toBe(400);
         expect(belowFloor.body.error).toBe('BELOW_FLOOR');
-        const atFloor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', transfer_id: 'T6', send_amount: 50 });
+        const wrongCorridor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', receive_currency: 'INR', transfer_id: 'T6-corridor', send_amount: 60 });
+        expect(wrongCorridor.status).toBe(400);
+        expect(wrongCorridor.body.error).toBe('WRONG_CORRIDOR');
+        const atFloor = await request(app).post('/api/wallet/B/apply').send({ amount: 5, currency: 'GBP', receive_currency: 'NGN', transfer_id: 'T6', send_amount: 50 });
         expect(atFloor.status).toBe(200);
     });
 

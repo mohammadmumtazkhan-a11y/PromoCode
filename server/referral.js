@@ -410,9 +410,20 @@ async function createReferral(q, { code, referee }) {
 
     // The rule is chosen by corridor. When the referee has not chosen a destination yet and there is more than one
     // live corridor for their send currency, the rule is bound later, by the corridor of their qualifying transfer.
-    const currency = (refereeRow.send_currency || 'GBP').toUpperCase();
+    let currency = (refereeRow.send_currency || 'GBP').toUpperCase();
     const receive = String(referee.receive_currency || '').toUpperCase() || null;
-    const liveForSend = await liveRulesForSend(q, currency);
+    let liveForSend = await liveRulesForSend(q, currency);
+    if (!liveForSend.length && refereeRow.country) {
+        for (const fallbackCur of sendCurrenciesForCountry(refereeRow.country, currency)) {
+            if (fallbackCur === currency) continue;
+            const altLive = await liveRulesForSend(q, fallbackCur);
+            if (altLive.length) {
+                currency = fallbackCur;
+                liveForSend = altLive;
+                break;
+            }
+        }
+    }
     let rule = null, deferred = false;
     if (receive) rule = await liveRuleFor(q, currency, receive);
     else if (liveForSend.length === 1) rule = liveForSend[0];
