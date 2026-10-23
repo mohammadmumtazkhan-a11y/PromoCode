@@ -25,6 +25,29 @@ const newId = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 const SUPPORTED_CURRENCIES = ['GBP', 'USD', 'EUR', 'NGN', 'CAD', 'AUD', 'JPY', 'CNY', 'INR', 'ZAR', 'KES', 'GHS', 'AED'];
+const COUNTRY_SEND_CURRENCIES = {
+    GB: ['GBP', 'USD', 'EUR'],
+    UK: ['GBP', 'USD', 'EUR'],
+    DE: ['EUR', 'GBP', 'USD'],
+    FR: ['EUR', 'GBP', 'USD'],
+    US: ['USD', 'GBP', 'EUR'],
+    CA: ['CAD', 'USD', 'GBP'],
+    NG: ['NGN', 'GBP', 'USD'],
+    GH: ['GHS', 'GBP', 'USD'],
+    KE: ['KES', 'GBP', 'USD'],
+    ZA: ['ZAR', 'GBP', 'USD'],
+    IN: ['INR', 'GBP', 'USD'],
+    CN: ['CNY', 'USD', 'GBP'],
+    AE: ['AED', 'USD', 'GBP'],
+    AU: ['AUD', 'USD', 'GBP'],
+    JP: ['JPY', 'USD', 'GBP'],
+};
+function sendCurrenciesForCountry(country, fallbackCurrency = 'GBP') {
+    const c = String(country || '').toUpperCase();
+    const primary = String(fallbackCurrency || 'GBP').toUpperCase();
+    const list = COUNTRY_SEND_CURRENCIES[c] || [primary, 'GBP', 'USD', 'EUR'];
+    return [primary, ...list.filter((x) => x !== primary)];
+}
 const ZERO_DECIMAL = ['JPY'];
 const SYMBOLS = { GBP: '£', USD: '$', EUR: '€', NGN: '₦', CAD: 'C$', AUD: 'A$', JPY: '¥', CNY: '¥', INR: '₹', ZAR: 'R', KES: 'KSh', GHS: 'GH₵', AED: 'AED ' };
 const money = (amount, currency) => {
