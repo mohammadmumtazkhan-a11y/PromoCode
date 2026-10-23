@@ -812,6 +812,34 @@ function registerReferralRoutes(app, db, hooks = {}) {
             }
         }
         const rule = await q.get(`SELECT * FROM referral_rules WHERE id = ?`, [id]);
+        if (isLive(rule) && old.reward_type === 'REFERRER' && rule.reward_type !== 'REFERRER' && Number(rule.referee_reward) > 0) {
+            const pendingRefs = await q.all(`SELECT * FROM referrals WHERE rule_id = ? AND status = 'REGISTERED' AND COALESCE(referee_credited, 0) = 0`, [id]);
+            const isBlocked = async (cid) => !!((await ports.eligibilityGuard.isEarningBlocked(cid)) || {}).blocked;
+            for (const r of pendingRefs) {
+                const referrer = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referrer_id]);
+                const referee = await q.get(`SELECT * FROM customers WHERE id = ?`, [r.referee_id]);
+                let refereeCredited = 0, refereeCreditId = null;
+                if (referee && referee.kyc_status === 'PASSED' && !(await isBlocked(r.referee_id))) {
+                    try {
+                        refereeCreditId = await addCredit({
+                            userId: r.referee_id, amount: rule.referee_reward, currency: r.currency,
+                            referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer && referrer.first_name, referrer && referrer.last_name)}`,
+                            referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days,
+                        });
+                        refereeCredited = rule.referee_reward;
+                    } catch (err) {
+                        console.error('[referral] backfill referee welcome reward failed', r.id, err.message);
+                    }
+                }
+                const regDay = ukDate(r.registered_at);
+                await q.run(`UPDATE referrals SET reward_type = ?, referrer_reward = ?, referee_reward = ?, floor = ?,
+                    qualification_window_days = ?, bonus_validity_days = ?, qualification_deadline = ?, referrer_deadline = ?,
+                    referee_credited = ?, referee_credit_id = ?, updated_at = ? WHERE id = ?`,
+                    [rule.reward_type, rule.referrer_reward, rule.referee_reward, rule.min_transaction_threshold,
+                        rule.qualification_window_days, rule.bonus_validity_days, overallDeadlineFor(rule, regDay), referrerDeadlineFor(rule, regDay),
+                        refereeCredited, refereeCreditId, nowIso(), r.id]);
+            }
+        }
         let notification = null;
         if (req.body.notify !== false) {
             if (isLive(rule) && !isLive(old)) notification = await notifyOffer(q, rule, 'LIVE');
