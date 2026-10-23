@@ -79,12 +79,12 @@ describe('Referral rules (US-1.1 – US-1.5)', () => {
 
     it('rejects invalid fields with British English messages', async () => {
         const app = makeApp();
-        const res = await request(app).post('/api/referral-rules').send({ ...GBP_RULE, name: 'ab', referrer_reward: 1.234, min_transaction_threshold: 0, qualification_window_days: 366, bonus_validity_days: 0 });
+        const res = await request(app).post('/api/referral-rules').send({ ...GBP_RULE, name: 'ab', referrer_reward: 1.234, min_transaction_threshold: 0, qualification_window_days: 731, bonus_validity_days: 0 });
         expect(res.status).toBe(400);
         expect(res.body.fields.name).toMatch(/3–50 characters/);
         expect(res.body.fields.referrer_reward).toMatch(/up to 2 decimal places/);
         expect(res.body.fields.min_transaction_threshold).toMatch(/greater than 0/);
-        expect(res.body.fields.qualification_window_days).toMatch(/1 to 365/);
+        expect(res.body.fields.qualification_window_days).toMatch(/1 to 730/);
         expect(res.body.fields.bonus_validity_days).toMatch(/1 to 730/);
     });
 
