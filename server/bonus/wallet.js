@@ -80,14 +80,30 @@ async function creditsWithRemaining(q, userId, currency, { today = ukToday() } =
         c.usable = c.remaining > 0 && !['EXPIRED', 'REVERSED'].includes(c.status) && (!c.expires_at || c.expires_at >= today);
         c.source_label = sourceLabel(c);
     }
-    const refFloorsById = new Map(), refFloorsByCur = new Map(), schemeFloorsByCur = new Map();
+    const refRulesById = new Map(), refRulesByCur = new Map(), refReferralsById = new Map(), schemeFloorsByCur = new Map();
     try {
-        const refRules = await q.all(`SELECT id, base_currency, min_transaction_threshold, is_enabled FROM referral_rules WHERE COALESCE(is_archived,0) = 0`);
+        const refRules = await q.all(`SELECT id, base_currency, receive_currency, min_transaction_threshold, is_enabled FROM referral_rules WHERE COALESCE(is_archived,0) = 0`);
         for (const r of refRules) {
-            refFloorsById.set(Number(r.id), Number(r.min_transaction_threshold) || 0);
-            if (r.is_enabled && (Number(r.min_transaction_threshold) || 0) > (refFloorsByCur.get(cur(r.base_currency)) || 0)) {
-                refFloorsByCur.set(cur(r.base_currency), Number(r.min_transaction_threshold) || 0);
+            const info = {
+                floor: Number(r.min_transaction_threshold) || 0,
+                receive_currency: r.receive_currency ? cur(r.receive_currency) : null,
+                base_currency: cur(r.base_currency),
+                is_enabled: !!r.is_enabled,
+            };
+            refRulesById.set(Number(r.id), info);
+            const existing = refRulesByCur.get(info.base_currency);
+            if (info.is_enabled && (!existing || info.floor > existing.floor || (!existing.receive_currency && info.receive_currency))) {
+                refRulesByCur.set(info.base_currency, info);
             }
+        }
+        const refRows = await q.all(`SELECT id, rule_id, currency, receive_currency, floor FROM referrals WHERE referee_id = ? OR referrer_id = ?`, [userId, userId]);
+        for (const ref of refRows) {
+            refReferralsById.set(String(ref.id), {
+                rule_id: ref.rule_id ? Number(ref.rule_id) : null,
+                floor: Number(ref.floor) || 0,
+                receive_currency: ref.receive_currency ? cur(ref.receive_currency) : null,
+                currency: ref.currency ? cur(ref.currency) : null,
+            });
         }
     } catch { /* referral_rules absent in isolated tests */ }
     try {
@@ -99,9 +115,15 @@ async function creditsWithRemaining(q, userId, currency, { today = ukToday() } =
     } catch { /* ignore */ }
     for (const c of credits) {
         if (c.credit_source === 'REFERRAL') {
-            c.floor = round2((c.referral_rule_id && refFloorsById.get(Number(c.referral_rule_id))) || refFloorsByCur.get(cur(c.currency)) || 0);
+            const refInfo = c.referral_id ? refReferralsById.get(String(c.referral_id)) : null;
+            const ruleInfo = (c.referral_rule_id && refRulesById.get(Number(c.referral_rule_id))) ||
+                (refInfo && refInfo.rule_id && refRulesById.get(Number(refInfo.rule_id))) ||
+                refRulesByCur.get(cur(c.currency)) || null;
+            c.floor = round2((ruleInfo && ruleInfo.floor) || (refInfo && refInfo.floor) || 0);
+            c.receive_currency = (ruleInfo ? ruleInfo.receive_currency : (refInfo && refInfo.receive_currency)) || null;
         } else {
             c.floor = round2(Number(c.scheme_floor) || schemeFloorsByCur.get(cur(c.currency)) || 0);
+            c.receive_currency = null;
         }
     }
     return credits;
@@ -218,21 +240,31 @@ async function creditSummary(q, { referralIds, schemeIds } = {}) {
 }
 
 // ---------- spending (BS-62) ----------
-async function applyBonus(q, customerId, { amount, currency, transfer_id, send_amount } = {}) {
+async function applyBonus(q, customerId, { amount, currency, receive_currency, transfer_id, send_amount } = {}) {
     currency = cur(currency);
+    const receiveCur = receive_currency ? cur(receive_currency) : null;
     amount = roundFor(amount, currency);
     if (!transfer_id || !(amount > 0)) throw Object.assign(new Error('transfer_id and a positive amount are required'), { status: 400 });
     const already = await q.get(`SELECT id FROM credit_ledger WHERE user_id = ? AND transfer_id = ? AND type = 'APPLIED'`, [customerId, transfer_id]);
     if (already) throw Object.assign(new Error('Bonus has already been applied to this transfer.'), { status: 409, code: 'ALREADY_APPLIED' });
-    // Bonus can never exceed the send amount, and referral credits require the transfer to meet the rule's Floor
+    // Bonus can never exceed the send amount, and referral credits require the transfer to meet the rule's corridor and Floor
     if (send_amount !== undefined && send_amount !== null && amount > Number(send_amount)) throw Object.assign(new Error('Bonus cannot be more than the send amount.'), { status: 400 });
     const allUsable = (await creditsWithRemaining(q, customerId, currency)).filter((c) => c.usable);
-    const credits = (send_amount !== undefined && send_amount !== null)
-        ? allUsable.filter((c) => !(c.credit_source === 'REFERRAL' && c.floor > 0 && Number(send_amount) < Number(c.floor)))
-        : allUsable;
-    if (allUsable.length > 0 && credits.length === 0 && send_amount !== undefined && send_amount !== null) {
-        const minFloor = Math.min(...allUsable.filter((c) => c.floor > 0).map((c) => Number(c.floor)));
-        throw Object.assign(new Error(`Transfer amount must be at least ${formatMoney(minFloor, currency)} to redeem this referral bonus.`), { status: 400, code: 'BELOW_FLOOR' });
+    const corridorMatches = (c) => !(c.credit_source === 'REFERRAL' && c.receive_currency && receiveCur && cur(c.receive_currency) !== receiveCur);
+    const floorMatches = (c) => !(send_amount !== undefined && send_amount !== null && c.credit_source === 'REFERRAL' && c.floor > 0 && Number(send_amount) < Number(c.floor));
+    const credits = allUsable.filter((c) => corridorMatches(c) && floorMatches(c));
+    if (allUsable.length > 0 && credits.length === 0) {
+        const wrongCorridor = allUsable.find((c) => !corridorMatches(c));
+        if (wrongCorridor) {
+            throw Object.assign(
+                new Error(`Transfer must be on the ${currency} → ${wrongCorridor.receive_currency} corridor to redeem this referral bonus.`),
+                { status: 400, code: 'WRONG_CORRIDOR' },
+            );
+        }
+        if (send_amount !== undefined && send_amount !== null) {
+            const minFloor = Math.min(...allUsable.filter((c) => c.floor > 0).map((c) => Number(c.floor)));
+            throw Object.assign(new Error(`Transfer amount must be at least ${formatMoney(minFloor, currency)} to redeem this referral bonus.`), { status: 400, code: 'BELOW_FLOOR' });
+        }
     }
     const avail = round2(credits.reduce((s, c) => s + c.remaining, 0));
     if (avail < amount) throw Object.assign(new Error('Your bonus balance has changed. Please review your transfer.'), { status: 409, code: 'BALANCE_CHANGED', available: avail });
@@ -372,7 +404,7 @@ async function expiringReminders(q, { today = ukToday() } = {}) {
 }
 
 // ---------- the wallet view for Rhemito (API-S3) ----------
-const emptyGroup = () => ({ earned: 0, used: 0, expired: 0, removed: 0, available: 0, floor: 0 });
+const emptyGroup = () => ({ earned: 0, used: 0, expired: 0, removed: 0, available: 0, floor: 0, receive_currency: null });
 
 async function walletView(q, id, { currency, creditSource, promoRedemptions, blocked } = {}) {
     const currencyFilter = currency ? cur(currency) : null;
@@ -408,7 +440,9 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
     for (const c of credits) {
         if (!c.usable) continue;
         const b = bucket(c.currency || 'GBP');
-        b.available += c.remaining; const grp = group(b, c.credit_source); grp.available += c.remaining; if ((c.floor || 0) > (grp.floor || 0)) grp.floor = round2(c.floor);
+        b.available += c.remaining; const grp = group(b, c.credit_source); grp.available += c.remaining;
+        if ((c.floor || 0) > (grp.floor || 0)) grp.floor = round2(c.floor);
+        if (c.receive_currency && !grp.receive_currency) grp.receive_currency = c.receive_currency;
     }
     const debts = await q.all(`SELECT currency, -SUM(amount) AS d FROM credit_ledger WHERE user_id = ? AND type IN ('CLAWBACK', 'CLAWBACK_SETTLED') GROUP BY currency`, [id]);
     for (const d of debts) if (d.d > 0 && (!currencyFilter || d.currency === currencyFilter)) bucket(d.currency || 'GBP');
@@ -422,6 +456,7 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
             credit_source: s, label: GROUP_LABELS[s],
             earned: round2(b.groups[s].earned), used: round2(b.groups[s].used), expired: round2(b.groups[s].expired),
             removed: round2(b.groups[s].removed), available: round2(b.groups[s].available), floor: round2(b.groups[s].floor || 0),
+            receive_currency: b.groups[s].receive_currency || null,
         })),
     }));
 
@@ -448,11 +483,11 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
         bonus_blocked: !!blocked,
         unused: credits.filter((c) => c.remaining > 0 && ['UNUSED', 'PARTLY_USED'].includes(c.status)).filter(keep).map((c) => ({
             id: c.id, source: c.notes, reason_code: c.reason_code, amount: c.amount, remaining: c.remaining, currency: c.currency,
-            earned_on: c.created_at, expires_on: c.expires_at, status: c.status, floor: round2(c.floor || 0), ...srcFields(c),
+            earned_on: c.created_at, expires_on: c.expires_at, status: c.status, floor: round2(c.floor || 0), receive_currency: c.receive_currency || null, ...srcFields(c),
         })),
         credits: credits.filter(keep).map((c) => ({
             id: c.id, amount: c.amount, remaining: c.remaining, currency: c.currency, status: c.status, expires_on: c.expires_at,
-            notes: c.notes, reason_code: c.reason_code, created_at: c.created_at, floor: round2(c.floor || 0), ...srcFields(c),
+            notes: c.notes, reason_code: c.reason_code, created_at: c.created_at, floor: round2(c.floor || 0), receive_currency: c.receive_currency || null, ...srcFields(c),
         })),
         history: historyRows.filter((h) => !sourceFilter || h.credit_source === sourceFilter),
         promo_redemptions: promos.map((p) => ({ id: p.id, code: p.code, amount: -p.discount_amount, currency: p.currency, transfer_id: p.transaction_id, created_at: p.created_at })),
