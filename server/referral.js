@@ -393,7 +393,7 @@ async function lookupCode(q, code) {
     return { valid: true, code: clean, referrer };
 }
 
-async function createReferral(q, { code, referee }) {
+async function createReferral(q, { code, rule_id, referee }) {
     const look = await lookupCode(q, code);
     if (!look.valid) throw Object.assign(new Error(look.message), { status: 400, code: look.reason });
     const referrer = look.referrer;
@@ -408,12 +408,26 @@ async function createReferral(q, { code, referee }) {
         [referee.id, referee.email || '', referee.phone || '']);
     const refereeRow = await upsertCustomer(q, { ...(before || {}), ...referee });
 
-    // The rule is chosen by corridor. When the referee has not chosen a destination yet and there is more than one
-    // live corridor for their send currency, the rule is bound later, by the corridor of their qualifying transfer.
+    // When the referrer shares a rule-specific link (?rule=<id>), bind the referral directly to that live rule.
+    // Otherwise, the rule is chosen by corridor or deferred until the qualifying transfer.
     let currency = (refereeRow.send_currency || 'GBP').toUpperCase();
-    const receive = String(referee.receive_currency || '').toUpperCase() || null;
+    let receive = String(referee.receive_currency || '').toUpperCase() || null;
+    const requestedRuleId = Number(rule_id || (referee && referee.rule_id) || 0) || null;
+    let chosenRule = null;
+    if (requestedRuleId) {
+        chosenRule = await q.get(`SELECT * FROM referral_rules WHERE id = ? AND COALESCE(is_archived,0) = 0`, [requestedRuleId]);
+        if (chosenRule && ruleStatus(chosenRule) === 'ENDED') {
+            throw Object.assign(new Error('Link Expired'), { status: 400, code: 'LINK_EXPIRED' });
+        }
+        if (chosenRule && isLive(chosenRule)) {
+            currency = String(chosenRule.base_currency || currency).toUpperCase();
+            receive = chosenRule.receive_currency ? String(chosenRule.receive_currency).toUpperCase() : receive;
+        } else {
+            chosenRule = null;
+        }
+    }
     let liveForSend = await liveRulesForSend(q, currency);
-    if (!liveForSend.length && refereeRow.country) {
+    if (!chosenRule && !liveForSend.length && refereeRow.country) {
         for (const fallbackCur of sendCurrenciesForCountry(refereeRow.country, currency)) {
             if (fallbackCur === currency) continue;
             const altLive = await liveRulesForSend(q, fallbackCur);
@@ -425,7 +439,8 @@ async function createReferral(q, { code, referee }) {
         }
     }
     let rule = null, deferred = false;
-    if (receive) rule = await liveRuleFor(q, currency, receive);
+    if (chosenRule) rule = chosenRule;
+    else if (receive) rule = await liveRuleFor(q, currency, receive);
     else if (liveForSend.length === 1) rule = liveForSend[0];
     else if (liveForSend.length > 1) deferred = true;
     if (!rule && !deferred && (await hasEndedRuleFor(q, currency, receive))) {
@@ -965,6 +980,26 @@ function registerReferralRoutes(app, db, hooks = {}) {
     app.get('/api/referral/codes/:code', wrap(async (req, res) => {
         const look = await lookupCode(q, req.params.code);
         if (!look.valid) return res.status(look.reason === 'INVALID_FORMAT' ? 400 : 404).json({ valid: false, error: look.reason, message: look.message });
+        const requestedRuleId = Number(req.query.rule_id || 0) || null;
+        if (requestedRuleId) {
+            const chosen = await q.get(`SELECT * FROM referral_rules WHERE id = ? AND COALESCE(is_archived,0) = 0`, [requestedRuleId]);
+            if (chosen && ruleStatus(chosen) === 'ENDED') {
+                return res.status(400).json({ valid: false, error: 'LINK_EXPIRED', message: 'Link Expired' });
+            }
+            if (chosen && isLive(chosen)) {
+                const lockedOffer = publicOffer(chosen);
+                return res.json({
+                    valid: true,
+                    code: look.code,
+                    referrer_first_name: look.referrer.first_name,
+                    rule_id: chosen.id,
+                    offer: lockedOffer,
+                    offers: [lockedOffer],
+                    send_currencies: [chosen.base_currency],
+                    currency_offers: [lockedOffer],
+                });
+            }
+        }
         const currency = String(req.query.currency || look.referrer.send_currency || 'GBP').toUpperCase();
         const rules = await offerRulesFor(q, currency, req.query.receive_currency);
         if (!rules.length && (await hasEndedRuleFor(q, currency, req.query.receive_currency))) {
@@ -995,8 +1030,17 @@ function registerReferralRoutes(app, db, hooks = {}) {
         const since = new Date(clock.now().getTime() - 86400000).toISOString();
         const dup = await q.get(`SELECT id FROM referral_link_visits WHERE code = ? AND visitor_id = ? AND created_at >= ?`, [look.code, visitor, since]);
         if (!dup) {
+            let visitCurrency = look.referrer.send_currency;
+            let visitReceive = String(req.body.receive_currency || '').toUpperCase() || null;
+            if (req.body.rule_id) {
+                const chosen = await q.get(`SELECT base_currency, receive_currency FROM referral_rules WHERE id = ?`, [Number(req.body.rule_id)]);
+                if (chosen) {
+                    visitCurrency = chosen.base_currency || visitCurrency;
+                    visitReceive = chosen.receive_currency || visitReceive;
+                }
+            }
             await q.run(`INSERT INTO referral_link_visits (code, referrer_id, currency, receive_currency, visitor_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-                [look.code, look.referrer.id, look.referrer.send_currency, String(req.body.receive_currency || '').toUpperCase() || null, visitor, nowIso()]);
+                [look.code, look.referrer.id, visitCurrency, visitReceive, visitor, nowIso()]);
         }
         res.json({ success: true, counted: !dup });
     }));

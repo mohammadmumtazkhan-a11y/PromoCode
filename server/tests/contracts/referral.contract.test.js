@@ -522,4 +522,35 @@ describe('Tracking, offers and performance endpoints', () => {
         const csv = await request(app).get('/api/referral/performance.csv');
         expect(csv.headers['content-type']).toMatch(/text\/csv/);
     });
+
+    rule('REFERRAL-24', 'A rule-specific link (?rule_id=<id>) locks the referral and referee welcome bonus to the rule chosen by the referrer', {
+        why: 'When multiple rules exist, the referrer selects which rule to share; the referee must receive that exact rule\'s welcome bonus.',
+        fix: 'GET /api/referral/codes/:code?rule_id=<id> returns only that live rule\'s offer; createReferral() binds directly to rule_id and issues the referee credit in that rule\'s currency.',
+        where: [FILE],
+    })(async () => {
+        const [s1, r1] = corridor();
+        const [s2, r2] = corridor();
+        const [s3, r3] = corridor();
+        const rule1 = await mkRule({ corridor: [s1, r1], referrer_reward: 5, referee_reward: 10 });
+        const rule2 = await mkRule({ corridor: [s2, r2], referrer_reward: 12, referee_reward: 25 });
+        const rule3 = await mkRule({ corridor: [s3, r3], referrer_reward: 8, referee_reward: 15 });
+        const referrer = await mkCustomer(s1);
+
+        const codeLookup = await request(app).get(`/api/referral/codes/${referrer.referral_code}?rule_id=${rule2.id}`);
+        expect(codeLookup.status).toBe(200);
+        expect(codeLookup.body.offer).toMatchObject({ rule_id: rule2.id, currency: s2, receive_currency: r2, referee_reward: 25 });
+        expect(codeLookup.body.offers).toHaveLength(1);
+
+        const refereeId = `RB-LOCK-${Date.now().toString(36)}-${n()}`;
+        const reg = await request(app).post('/api/referral/referrals').send({
+            code: referrer.referral_code,
+            rule_id: rule2.id,
+            referee: { id: refereeId, first_name: 'Amir', last_name: 'Khan', email: `${refereeId}@example.com`, phone: `+44779${String(1000000 + seq)}`, send_currency: s1, kyc_status: 'PASSED', device_id: `dev-${refereeId}` },
+        });
+        expect(reg.status).toBe(201);
+        expect(reg.body.data).toMatchObject({ status: 'REGISTERED', rule_id: rule2.id, currency: s2, receive_currency: r2, referee_credited: 25 });
+        expect(await available(refereeId, s2)).toBe(25);
+        expect(rule1.id).not.toBe(rule2.id);
+        expect(rule3.id).not.toBe(rule2.id);
+    });
 });
