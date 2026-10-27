@@ -491,13 +491,42 @@ async function upsertCustomer(q, c) {
     return q.get(`SELECT * FROM customers WHERE id = ?`, [merged.id]);
 }
 
+function currencyReferralCode(baseCode, currency) {
+    const cleanBase = String(baseCode || '').trim().toUpperCase();
+    const cur = String(currency || '').trim().toUpperCase();
+    if (!cleanBase || !cur) return cleanBase;
+    for (const c of SUPPORTED_CURRENCIES) {
+        if (cleanBase.length >= 6 + c.length && cleanBase.endsWith(c)) {
+            return `${cleanBase.slice(0, -c.length)}${cur}`;
+        }
+    }
+    return `${cleanBase}${cur}`;
+}
+
+function parseCurrencyCodeSuffix(cleanCode) {
+    for (const cur of SUPPORTED_CURRENCIES) {
+        if (cleanCode.length >= 6 + cur.length && cleanCode.endsWith(cur)) {
+            return { baseCode: cleanCode.slice(0, -cur.length), currency: cur };
+        }
+    }
+    return { baseCode: cleanCode, currency: null };
+}
+
 async function lookupCode(q, code) {
     const clean = String(code || '').trim().toUpperCase();
-    if (!/^[A-Z0-9]{6,12}$/.test(clean)) return { valid: false, reason: 'INVALID_FORMAT', message: 'Referral codes are 6–12 letters and numbers.' };
-    const referrer = await q.get(`SELECT * FROM customers WHERE referral_code = ?`, [clean]);
+    if (!/^[A-Z0-9]{6,16}$/.test(clean)) return { valid: false, reason: 'INVALID_FORMAT', message: 'Referral codes are 6–12 letters and numbers.' };
+    let referrer = await q.get(`SELECT * FROM customers WHERE referral_code = ?`, [clean]);
+    let codeCurrency = null;
+    if (!referrer) {
+        const parsed = parseCurrencyCodeSuffix(clean);
+        if (parsed.currency) {
+            referrer = await q.get(`SELECT * FROM customers WHERE referral_code = ?`, [parsed.baseCode]);
+            if (referrer) codeCurrency = parsed.currency;
+        }
+    }
     if (!referrer) return { valid: false, reason: 'NOT_FOUND', message: "We couldn't find this referral code. Check it or leave the field blank." };
     if (referrer.account_status !== 'ACTIVE') return { valid: false, reason: 'REFERRER_INACTIVE', message: 'This referral link is no longer active. You can still sign up.' };
-    return { valid: true, code: clean, referrer };
+    return { valid: true, code: clean, baseCode: referrer.referral_code, currency: codeCurrency, referrer };
 }
 
 async function recordClick(q, payload = {}, userAgent = '') {
@@ -510,14 +539,20 @@ async function recordClick(q, payload = {}, userAgent = '') {
     const storeTarget = payload.store_target || payload.storeTarget ? String(payload.store_target || payload.storeTarget).toUpperCase() : null;
     const initialStatus = storeTarget === 'GOOGLE_PLAY' || storeTarget === 'APPLE_APP_STORE' ? 'STORE_REDIRECT' : 'CLICKED';
 
-    let visitCurrency = look.referrer.send_currency || 'GBP';
+    let visitCurrency = look.currency || look.referrer.send_currency || 'GBP';
     let visitReceive = String(payload.receive_currency || payload.receiveCurrency || '').toUpperCase() || null;
-    const requestedRuleId = payload.rule_id || payload.ruleId ? Number(payload.rule_id || payload.ruleId) : null;
+    let requestedRuleId = payload.rule_id || payload.ruleId ? Number(payload.rule_id || payload.ruleId) : null;
     if (requestedRuleId) {
         const chosen = await q.get(`SELECT base_currency, receive_currency FROM referral_rules WHERE id = ?`, [requestedRuleId]);
         if (chosen) {
             visitCurrency = chosen.base_currency || visitCurrency;
             visitReceive = chosen.receive_currency || visitReceive;
+        }
+    } else if (look.currency) {
+        const curRules = await offerRulesFor(q, look.currency, visitReceive);
+        if (curRules.length === 1) {
+            requestedRuleId = curRules[0].id;
+            visitReceive = curRules[0].receive_currency || visitReceive;
         }
     }
 
@@ -680,11 +715,15 @@ async function createReferral(q, payload = {}) {
         [referee.id, referee.email || '', referee.phone || '']);
     const refereeRow = await upsertCustomer(q, { ...(before || {}), ...referee });
 
-    // When the referrer shares a rule-specific link (?rule=<id>), bind the referral directly to that live rule.
-    // Otherwise, the rule is chosen by corridor or deferred until the qualifying transfer.
-    let currency = (refereeRow.send_currency || 'GBP').toUpperCase();
+    if (!clickRow && !trackingId) {
+        const recentWindow = new Date(clock.now().getTime() - 7 * 86400000).toISOString();
+        clickRow = await q.get(`SELECT * FROM referral_link_visits WHERE code = ? AND linked_referral_id IS NULL AND created_at >= ? ORDER BY id DESC LIMIT 1`, [look.code, recentWindow]);
+    }
+    // When the referrer shares a currency-specific code (e.g. JOHN5054USD) or rule-specific link (?rule=<id>), bind directly to that currency/rule.
+    const explicitCodeCurrency = look.currency ? String(look.currency).toUpperCase() : null;
+    let currency = (explicitCodeCurrency || refereeRow.send_currency || 'GBP').toUpperCase();
     let receive = String(referee.receive_currency || '').toUpperCase() || null;
-    const requestedRuleId = Number(rule_id || (referee && referee.rule_id) || 0) || null;
+    const requestedRuleId = Number(rule_id || (referee && referee.rule_id) || (explicitCodeCurrency && clickRow && clickRow.rule_id) || 0) || null;
     let chosenRule = null;
     if (requestedRuleId) {
         chosenRule = await q.get(`SELECT * FROM referral_rules WHERE id = ? AND COALESCE(is_archived,0) = 0`, [requestedRuleId]);
@@ -699,7 +738,7 @@ async function createReferral(q, payload = {}) {
         }
     }
     let liveForSend = await liveRulesForSend(q, currency);
-    if (!chosenRule && !liveForSend.length && refereeRow.country) {
+    if (!chosenRule && !explicitCodeCurrency && !liveForSend.length && refereeRow.country) {
         for (const fallbackCur of sendCurrenciesForCountry(refereeRow.country, currency)) {
             if (fallbackCur === currency) continue;
             const altLive = await liveRulesForSend(q, fallbackCur);
@@ -1355,6 +1394,17 @@ function registerReferralRoutes(app, db, hooks = {}) {
             const curRules = cur === primaryCurrency ? rules : await offerRulesFor(q, cur, receive);
             for (const rule of curRules) currencyOffers.push(await decorateOffer(rule));
         }
+        if (customer && currencyOffers.length > 1) {
+            const baseCode = await ensureReferralCode(q, customer.id);
+            for (const o of currencyOffers) {
+                o.referral_code = currencyReferralCode(baseCode, o.currency);
+                o.referral_link = `https://rhemito.com/ref/${o.referral_code}`;
+            }
+            for (const o of offers) {
+                o.referral_code = currencyReferralCode(baseCode, o.currency);
+                o.referral_link = `https://rhemito.com/ref/${o.referral_code}`;
+            }
+        }
         if (!rules.length) {
             return res.json({ offer: null, offers: [], send_currencies: sendCurrencies, currency_offers: currencyOffers, reason: 'NO_ACTIVE_RULE' });
         }
@@ -1391,10 +1441,24 @@ function registerReferralRoutes(app, db, hooks = {}) {
                 });
             }
         }
-        const currency = String(req.query.currency || look.referrer.send_currency || 'GBP').toUpperCase();
+        const currency = String(req.query.currency || look.currency || look.referrer.send_currency || 'GBP').toUpperCase();
         const rules = await offerRulesFor(q, currency, req.query.receive_currency);
         if (!rules.length && (await hasEndedRuleFor(q, currency, req.query.receive_currency))) {
             return res.status(400).json({ valid: false, error: 'LINK_EXPIRED', message: 'Link Expired' });
+        }
+        if (look.currency && rules.length > 0) {
+            const lockedOffers = rules.map(publicOffer);
+            return res.json({
+                valid: true,
+                code: look.code,
+                currency,
+                rule_id: rules.length === 1 ? rules[0].id : undefined,
+                referrer_first_name: look.referrer.first_name,
+                offer: lockedOffers[0],
+                offers: lockedOffers,
+                send_currencies: [currency],
+                currency_offers: lockedOffers,
+            });
         }
         const sendCurrencies = sendCurrenciesForCountry(look.referrer.country, currency);
         const currencyOffers = [];
@@ -1445,7 +1509,7 @@ function registerReferralRoutes(app, db, hooks = {}) {
         const rawCode = (req.body || {}).referralCode || (req.body || {}).code;
         const look = await lookupCode(q, rawCode);
         if (!look.valid) return res.status(look.reason === 'INVALID_FORMAT' ? 400 : 404).json({ valid: false, error: look.reason, message: look.message });
-        const currency = String((req.body || {}).currency || look.referrer.send_currency || 'GBP').toUpperCase();
+        const currency = String((req.body || {}).currency || look.currency || look.referrer.send_currency || 'GBP').toUpperCase();
         const rules = await offerRulesFor(q, currency, (req.body || {}).receive_currency);
         const sendCurrencies = sendCurrenciesForCountry(look.referrer.country, currency);
         const currencyOffers = [];

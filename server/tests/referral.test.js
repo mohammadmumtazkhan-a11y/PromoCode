@@ -767,4 +767,67 @@ describe('Corridor rules (send currency → receive currency)', () => {
         expect(trackedAndroid.body.data[0].tracking_id).toBe(trackingId);
     });
 
+    it('issues currency-specific referral codes when multiple currency rules exist and credits referee and referrer in that rule currency', async () => {
+        const app = makeApp();
+        await request(app).post('/api/referral-rules').send(GBP_RULE).expect(201);
+        await request(app).post('/api/referral-rules').send({
+            ...GBP_RULE,
+            name: 'US High Value',
+            base_currency: 'USD',
+            receive_currency: null,
+            referrer_reward: 10,
+            referee_reward: 20,
+            min_transaction_threshold: 100,
+        }).expect(201);
+
+        const referrer = await request(app).post('/api/referral/customers').send({
+            id: 'MULTI_REF_1', first_name: 'John', last_name: 'Doe', email: 'jmulti@x.com', phone: '+44900', country: 'GB', send_currency: 'GBP', kyc_status: 'PASSED', device_id: 'dev-jm',
+        });
+        const baseCode = referrer.body.data.referral_code;
+        const usdCode = `${baseCode}USD`;
+        const gbpCode = `${baseCode}GBP`;
+
+        const offerRes = await request(app).get('/api/referral/offer?customer_id=MULTI_REF_1');
+        expect(offerRes.status).toBe(200);
+        const gbpOffer = offerRes.body.currency_offers.find((o) => o.currency === 'GBP');
+        const usdOffer = offerRes.body.currency_offers.find((o) => o.currency === 'USD');
+        expect(gbpOffer.referral_code).toBe(gbpCode);
+        expect(usdOffer.referral_code).toBe(usdCode);
+
+        // Lookup USD code resolves strictly to USD offer
+        const checkUsd = await request(app).get(`/api/referral/codes/${usdCode}`);
+        expect(checkUsd.status).toBe(200);
+        expect(checkUsd.body.currency).toBe('USD');
+        expect(checkUsd.body.offer.currency).toBe('USD');
+        expect(checkUsd.body.offer.referee_reward).toBe(20);
+        expect(checkUsd.body.offer.referrer_reward).toBe(10);
+        expect(checkUsd.body.offer.floor).toBe(100);
+
+        // Referee registers with USD referral code even if registered from GB -> bound to USD rule & gets $20 USD credit
+        const reg = await request(app).post('/api/referral/referrals').send({
+            code: usdCode,
+            referee: { id: 'MULTI_REFEREE_1', first_name: 'David', last_name: 'Smith', email: 'dsmith@x.com', phone: '+44901', country: 'GB', send_currency: 'GBP', kyc_status: 'PASSED', device_id: 'dev-ds' },
+        });
+        expect(reg.status).toBe(201);
+        expect(reg.body.data.currency).toBe('USD');
+        expect(reg.body.data.referee_credited).toBe(20);
+        expect(reg.body.data.floor).toBe(100);
+
+        const refereeUsdWallet = await request(app).get('/api/wallet/MULTI_REFEREE_1?currency=USD');
+        expect(refereeUsdWallet.body.balances.find((b) => b.currency === 'USD').available).toBe(20);
+
+        // Referee completes qualifying $120 USD transfer -> Referrer gets $10 USD
+        await request(app).post('/api/referral/transfer-events').send({
+            transfer_id: 'TX-USD-100', customer_id: 'MULTI_REFEREE_1', amount: 120, currency: 'USD', receive_currency: 'NGN', status: 'PAID',
+        }).expect(200);
+        const done = await request(app).post('/api/referral/transfer-events').send({
+            transfer_id: 'TX-USD-100', customer_id: 'MULTI_REFEREE_1', amount: 120, currency: 'USD', receive_currency: 'NGN', status: 'COMPLETED',
+        }).expect(200);
+        expect(done.body.referral.status).toBe('REWARDED');
+        expect(done.body.referral.referrer_credited).toBe(10);
+
+        const referrerUsdWallet = await request(app).get('/api/wallet/MULTI_REF_1?currency=USD');
+        expect(referrerUsdWallet.body.balances.find((b) => b.currency === 'USD').available).toBe(10);
+    });
+
 });

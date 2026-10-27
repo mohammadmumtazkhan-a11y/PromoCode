@@ -252,7 +252,7 @@ async function creditSummary(q, { referralIds, schemeIds } = {}) {
 }
 
 // ---------- spending (BS-62) ----------
-async function applyBonus(q, customerId, { amount, currency, receive_currency, transfer_id, send_amount } = {}) {
+async function applyBonus(q, customerId, { amount, currency, receive_currency, transfer_id, send_amount, credit_source } = {}) {
     currency = cur(currency);
     const receiveCur = receive_currency ? cur(receive_currency) : null;
     amount = roundFor(amount, currency);
@@ -261,10 +261,16 @@ async function applyBonus(q, customerId, { amount, currency, receive_currency, t
     if (already) throw Object.assign(new Error('Bonus has already been applied to this transfer.'), { status: 409, code: 'ALREADY_APPLIED' });
     // Bonus can never exceed the send amount, and referral credits require the transfer to meet the rule's corridor and Floor
     if (send_amount !== undefined && send_amount !== null && amount > Number(send_amount)) throw Object.assign(new Error('Bonus cannot be more than the send amount.'), { status: 400 });
-    const allUsable = (await creditsWithRemaining(q, customerId, currency)).filter((c) => c.usable);
+    const requestedSource = credit_source ? String(credit_source).toUpperCase() : null;
+    const allUsable = (await creditsWithRemaining(q, customerId, currency)).filter((c) => {
+        if (!c.usable) return false;
+        if (requestedSource === 'REFERRAL') return c.credit_source === 'REFERRAL';
+        if (requestedSource === 'SCHEME' || requestedSource === 'BONUS') return c.credit_source !== 'REFERRAL';
+        return true;
+    });
     const corridorMatches = (c) => !(c.credit_source === 'REFERRAL' && c.receive_currency && receiveCur && cur(c.receive_currency) !== receiveCur);
-    const floorMatches = (c) => !(send_amount !== undefined && send_amount !== null && c.credit_source === 'REFERRAL' && c.floor > 0 && Number(send_amount) < Number(c.floor));
-    const credits = allUsable.filter((c) => corridorMatches(c) && floorMatches(c));
+    const floorMatches = (c) => !(send_amount !== undefined && send_amount !== null && c.floor > 0 && Number(send_amount) < Number(c.floor));
+    let credits = allUsable.filter((c) => corridorMatches(c) && floorMatches(c));
     if (allUsable.length > 0 && credits.length === 0) {
         const wrongCorridor = allUsable.find((c) => !corridorMatches(c));
         if (wrongCorridor) {
@@ -276,6 +282,22 @@ async function applyBonus(q, customerId, { amount, currency, receive_currency, t
         if (send_amount !== undefined && send_amount !== null) {
             const minFloor = Math.min(...allUsable.filter((c) => c.floor > 0).map((c) => Number(c.floor)));
             throw Object.assign(new Error(`Transfer amount must be at least ${formatMoney(minFloor, currency)} to redeem this referral bonus.`), { status: 400, code: 'BELOW_FLOOR' });
+        }
+    }
+    // Enforce single reward category per transaction: never combine REFERRAL and SCHEME credits together in one transaction
+    if (!requestedSource && credits.length > 1) {
+        const refCredits = credits.filter((c) => c.credit_source === 'REFERRAL');
+        const bonusCredits = credits.filter((c) => c.credit_source !== 'REFERRAL');
+        if (refCredits.length > 0 && bonusCredits.length > 0) {
+            const refAvail = round2(refCredits.reduce((s, c) => s + c.remaining, 0));
+            const bonusAvail = round2(bonusCredits.reduce((s, c) => s + c.remaining, 0));
+            if (amount === refAvail && amount !== bonusAvail) {
+                credits = refCredits;
+            } else if (amount === bonusAvail && amount !== refAvail) {
+                credits = bonusCredits;
+            } else if (amount > Math.max(refAvail, bonusAvail)) {
+                throw Object.assign(new Error('Referral and bonus credits cannot be combined in a single transaction.'), { status: 400, code: 'MULTIPLE_REWARDS_NOT_ALLOWED' });
+            }
         }
     }
     const avail = round2(credits.reduce((s, c) => s + c.remaining, 0));
