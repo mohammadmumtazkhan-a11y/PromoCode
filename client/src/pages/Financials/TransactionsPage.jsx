@@ -4,10 +4,10 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 // Exact Financials sub-navigation tabs from module 97917 in staging_chunk2089.js
 const FINANCIAL_TABS = [
     { label: 'Transactions', href: '/financials/transactions' },
-    { label: 'MTO Submissions', href: '/financials/mto' },
-    { label: 'Retail Submissions', href: '/financials/retail' },
-    { label: 'Biller Submissions', href: '/financials/billers' },
-    { label: 'Receive Money', href: '/financials/receive' },
+    { label: 'MTO Submissions', href: '/financials/mto-submissions' },
+    { label: 'Retail Submissions', href: '/financials/retail-transactions' },
+    { label: 'Biller Submissions', href: '/financials/biller-transactions' },
+    { label: 'Receive Money', href: '/financials/receive-money' },
 ];
 
 // Exact filter dropdown options from staging_chunk2089.js
@@ -27,8 +27,35 @@ const TYPE_OPTIONS = [
     { label: 'Wallet Funding', value: 'Wallet Funding' },
 ];
 
+// Retail Transaction Type filter options from M in module 62089
+const RETAIL_TYPE_OPTIONS = [
+    { label: 'All types', value: '' },
+    { label: 'Money Transfer', value: 'MONEYTRANSFER' },
+    { label: 'Mobile Top Up', value: 'MOBILETOPUP' },
+    { label: 'Bill Payment', value: 'BILLPAYMENT' },
+];
+
+const CURRENCY_OPTIONS = [
+    { label: 'GBP', value: 'GBP' },
+    { label: 'EUR', value: 'EUR' },
+    { label: 'USD', value: 'USD' },
+    { label: 'NGN', value: 'NGN' },
+    { label: 'GHS', value: 'GHS' },
+    { label: 'KES', value: 'KES' },
+];
+
+const COUNTRY_OPTIONS = [
+    { label: 'United Kingdom', value: 'United Kingdom' },
+    { label: 'Nigeria', value: 'Nigeria' },
+    { label: 'Ghana', value: 'Ghana' },
+    { label: 'Kenya', value: 'Kenya' },
+    { label: 'Germany', value: 'Germany' },
+    { label: 'Canada', value: 'Canada' },
+];
+
 const STATUS_OPTIONS = [
     { label: 'All Statuses', value: '' },
+    { label: 'Under Review', value: 'Under Review' },
     { label: 'Processed', value: 'Processed' },
     { label: 'Pending', value: 'Pending' },
     { label: 'PaymentReceived', value: 'PaymentReceived' },
@@ -55,6 +82,7 @@ const PAYER_OPTIONS = [
 
 const PROVIDER_OPTIONS = [
     { label: 'All Providers', value: '' },
+    { label: 'FunTech', value: 'FunTech' },
     { label: 'Flutterwave', value: 'Flutterwave' },
     { label: 'Paystack', value: 'Paystack' },
     { label: 'Interswitch', value: 'Interswitch' },
@@ -65,6 +93,7 @@ const PROVIDER_OPTIONS = [
 
 const AFFILIATE_OPTIONS = [
     { label: 'All Affiliates', value: '' },
+    { label: 'MITOADMIN', value: 'MITOADMIN' },
     { label: 'Mito Direct UK', value: 'Mito Direct UK' },
     { label: 'Rhemito Europe', value: 'Rhemito Europe' },
     { label: 'Mito Canada Corridor', value: 'Mito Canada Corridor' },
@@ -81,6 +110,7 @@ const PAYMENT_STATUS_OPTIONS = [
 
 const PAYMENT_METHOD_OPTIONS = [
     { label: 'All Payment Methods', value: '' },
+    { label: 'Account Wallet', value: 'Account Wallet' },
     { label: 'Debit Card', value: 'Debit Card' },
     { label: 'Bank Transfer', value: 'Bank Transfer' },
     { label: 'Open Banking (Truelayer)', value: 'Open Banking (Truelayer)' },
@@ -89,6 +119,7 @@ const PAYMENT_METHOD_OPTIONS = [
 
 const APPLICATION_OPTIONS = [
     { label: 'All Applications', value: '' },
+    { label: 'MITOADMIN', value: 'MITOADMIN' },
     { label: 'Mito Web Portal', value: 'Mito Web Portal' },
     { label: 'Mito iOS App', value: 'Mito iOS App' },
     { label: 'Mito Android App', value: 'Mito Android App' },
@@ -103,6 +134,7 @@ const SPLIT_OPTIONS = [
 
 const INITIATION_ROUTE_OPTIONS = [
     { label: 'All Initiation Routes', value: '' },
+    { label: 'FunTech', value: 'FunTech' },
     { label: 'Direct Customer', value: 'Direct Customer' },
     { label: 'Agent Assisted', value: 'Agent Assisted' },
     { label: 'Recurring Standing Order', value: 'Recurring Standing Order' },
@@ -163,7 +195,10 @@ export const SEED_TRANSACTIONS = [
         createdDisplay: 'Created: 27 Oct 2026 at 07:40',
         isoDate: '2026-10-27',
         type: 'Send Money',
+        collectionMode: 'MONEYTRANSFER',
         summaryText: 'Initiate Payout for User',
+        sendCountry: 'United Kingdom',
+        receiveCountry: 'United Kingdom',
         currency: 'GBP',
         amount: 1.00,
         sendCurrency: 'GBP',
@@ -173,6 +208,7 @@ export const SEED_TRANSACTIONS = [
         rate: 1,
         rateDisplay: '1',
         commission: 0.00,
+        agentFee: 0.25,
         discount: null,
         discountDisplay: '—',
         promoCode: null,
@@ -230,6 +266,9 @@ export const SEED_TRANSACTIONS = [
         time: '13:48:04',
         isoDate: '2026-10-27',
         type: 'Send Money',
+        collectionMode: 'MONEYTRANSFER',
+        sendCountry: 'United Kingdom',
+        receiveCountry: 'Nigeria',
         currency: 'GBP',
         amount: 1200.00,
         sendCurrency: 'GBP',
@@ -238,6 +277,7 @@ export const SEED_TRANSACTIONS = [
         receiveAmount: 2429250.00,
         rate: 2050.0,
         commission: 20.00,
+        agentFee: 6.50,
         discount: 5.00,
         promoCode: 'VIP100',
         details: 'Ngozi Okonkwo · Zenith Bank PLC (2099481723) · Property Investment',
@@ -294,6 +334,9 @@ export const SEED_TRANSACTIONS = [
         time: '12:15:52',
         isoDate: '2026-10-27',
         type: 'Send Money',
+        collectionMode: 'MONEYTRANSFER',
+        sendCountry: 'Germany',
+        receiveCountry: 'Kenya',
         currency: 'EUR',
         amount: 310.00,
         sendCurrency: 'EUR',
@@ -302,6 +345,7 @@ export const SEED_TRANSACTIONS = [
         receiveAmount: 42150.00,
         rate: 140.5,
         commission: 10.00,
+        agentFee: 3.00,
         discount: 0.00,
         promoCode: null,
         details: 'Kamau Wanjiru · MPESA Kenya (+254712345678) · Medical Expenses',
@@ -326,7 +370,7 @@ export const SEED_TRANSACTIONS = [
         initiationRoute: 'Direct Customer',
         splitTag: null,
         accountBalance: 'EUR 19,420.00',
-        createdBy: 'DavidMwangi',
+        createdBy: 'David Mwangi',
         createdByEmail: 'david.mwangi@example.com',
         senderPhone: '+49 1512 3456789',
         senderAddress: 'Friedrichstraße 114A, 10117 Berlin',
@@ -358,6 +402,9 @@ export const SEED_TRANSACTIONS = [
         time: '18:04:11',
         isoDate: '2026-10-26',
         type: 'Send Money',
+        collectionMode: 'MONEYTRANSFER',
+        sendCountry: 'United Kingdom',
+        receiveCountry: 'Ghana',
         currency: 'GBP',
         amount: 225.00,
         sendCurrency: 'GBP',
@@ -366,6 +413,7 @@ export const SEED_TRANSACTIONS = [
         receiveAmount: 4356.00,
         rate: 19.8,
         commission: 8.00,
+        agentFee: 2.20,
         discount: 3.00,
         promoCode: 'GHANA3',
         details: 'Kwame Mensah · MTN Mobile Money Ghana (0244881920) · Education Fees',
@@ -422,6 +470,9 @@ export const SEED_TRANSACTIONS = [
         time: '15:39:29',
         isoDate: '2026-10-26',
         type: 'Biller',
+        collectionMode: 'BILLPAYMENT',
+        sendCountry: 'United Kingdom',
+        receiveCountry: 'Nigeria',
         currency: 'GBP',
         amount: 95.00,
         sendCurrency: 'GBP',
@@ -430,6 +481,7 @@ export const SEED_TRANSACTIONS = [
         receiveAmount: 188600.00,
         rate: 2050.0,
         commission: 3.00,
+        agentFee: 1.50,
         discount: 0.00,
         promoCode: null,
         details: 'IKEDC Prepaid Meter · GTBank PLC (0129384756) · Utility Bill Payment',
@@ -486,6 +538,9 @@ export const SEED_TRANSACTIONS = [
         time: '09:12:45',
         isoDate: '2026-10-25',
         type: 'AirTime',
+        collectionMode: 'MOBILETOPUP',
+        sendCountry: 'Canada',
+        receiveCountry: 'Kenya',
         currency: 'GBP',
         amount: 50.00,
         sendCurrency: 'GBP',
@@ -494,6 +549,7 @@ export const SEED_TRANSACTIONS = [
         receiveAmount: 7025.00,
         rate: 140.5,
         commission: 0.00,
+        agentFee: 0.75,
         discount: 0.00,
         promoCode: null,
         details: 'Safaricom Topup · MPESA Kenya (+254722998877) · Mobile Airtime',
@@ -557,6 +613,10 @@ const INITIAL_FILTERS = {
     Application: '',
     Split: '',
     InitiationRoute: '',
+    TunNumber: '',
+    FromCurrency: '',
+    CollectionMode: '',
+    FromCountry: '',
     StartDate: '20/10/2026',
     EndDate: '27/10/2026',
 };
@@ -574,16 +634,22 @@ const inputStyle = {
     fontFamily: 'inherit',
 };
 
-export default function TransactionsPage() {
+export default function TransactionsPage({ type: propType }) {
     const navigate = useNavigate();
     const location = useLocation();
+
+    // Detect "retail" mode from prop or route (/financials/retail-transactions)
+    const isRetail =
+        propType === 'retail' || location.pathname.startsWith('/financials/retail');
+
     const [transactions, setTransactions] = useState(SEED_TRANSACTIONS);
     const [showFilter, setShowFilter] = useState(false);
     const [draftFilters, setDraftFilters] = useState(INITIAL_FILTERS);
     const [appliedFilters, setAppliedFilters] = useState(INITIAL_FILTERS);
     const [selectedIds, setSelectedIds] = useState([]);
-    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
     const [currentPage, setCurrentPage] = useState(1);
+    const [summaryOpen, setSummaryOpen] = useState(false);
     const [toastMessage, setToastMessage] = useState(null);
     const [switchModalOpen, setSwitchModalOpen] = useState(false);
     const [switchProcessorTarget, setSwitchProcessorTarget] = useState('Flutterwave');
@@ -613,9 +679,40 @@ export default function TransactionsPage() {
             if (appliedFilters.Application && tx.application !== appliedFilters.Application) return false;
             if (appliedFilters.Split && tx.splitTag !== appliedFilters.Split) return false;
             if (appliedFilters.InitiationRoute && tx.initiationRoute !== appliedFilters.InitiationRoute) return false;
+            if (appliedFilters.TunNumber && !String(tx.tun || '').toLowerCase().includes(appliedFilters.TunNumber.toLowerCase())) return false;
+            if (appliedFilters.FromCurrency && tx.sendCurrency !== appliedFilters.FromCurrency) return false;
+            if (appliedFilters.CollectionMode && tx.collectionMode !== appliedFilters.CollectionMode) return false;
+            if (appliedFilters.FromCountry && tx.sendCountry !== appliedFilters.FromCountry) return false;
             return true;
         });
     }, [transactions, appliedFilters]);
+
+    // Retail Summary grouped by (Send currency, Receive currency) matching K.l (module 94922)
+    const retailSummaryRows = useMemo(() => {
+        const groups = {};
+        filteredTransactions.forEach((tx) => {
+            const key = `${tx.sendCurrency}__${tx.receiveCurrency}`;
+            if (!groups[key]) {
+                groups[key] = {
+                    sendingCurrency: tx.sendCurrency,
+                    receivingCurrency: tx.receiveCurrency,
+                    count: 0,
+                    rateSum: 0,
+                    amount: 0,
+                };
+            }
+            groups[key].count += 1;
+            groups[key].rateSum += Number(tx.rate || 0);
+            groups[key].amount += Number(tx.sendAmount || tx.amount || 0);
+        });
+        return Object.values(groups).map((g) => ({
+            sendingCurrency: g.sendingCurrency,
+            receivingCurrency: g.receivingCurrency,
+            count: g.count,
+            avgRate: (g.rateSum / Math.max(1, g.count)).toFixed(4),
+            amount: Number(g.amount.toFixed(2)),
+        }));
+    }, [filteredTransactions]);
 
     const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / rowsPerPage));
     const paginatedTransactions = useMemo(() => {
@@ -675,6 +772,8 @@ export default function TransactionsPage() {
     };
 
     const hasSelect = selectedIds.length > 0;
+    const detailBasePath = isRetail ? '/financials/retail-transactions' : '/financials/transactions';
+    const breadcrumbLeaf = isRetail ? 'Retail-transactions' : 'Transactions';
 
     const bulkBtnStyle = (variant = 'default') => {
         const base = {
@@ -778,18 +877,21 @@ export default function TransactionsPage() {
                                 </Link>
                             </li>
                             <li>/ <span style={{ textTransform: 'capitalize' }}>Financials</span></li>
-                            <li>/ <span style={{ textTransform: 'capitalize' }}>Transactions</span></li>
+                            <li>/ <span style={{ textTransform: 'capitalize' }}>{breadcrumbLeaf}</span></li>
                         </ol>
                     </div>
                 </div>
             </div>
 
-            {/* First Panel: Financials Switcher Tabs + Transactions Title + Filter Button + Collapsible Filter Grid */}
+            {/* First Panel: Financials Switcher Tabs + Title + Filter Button + Collapsible Filter Grid */}
             <div className="staging-tx-panel-top">
                 {/* Module 97917 (W.A): Financials Switcher Pills */}
                 <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {FINANCIAL_TABS.map((tab) => {
-                        const isActive = location.pathname.startsWith(tab.href);
+                        const isActive =
+                            location.pathname === tab.href ||
+                            location.pathname.startsWith(`${tab.href}/`) ||
+                            (tab.href === '/financials/retail-transactions' && isRetail);
                         return (
                             <Link
                                 key={tab.href}
@@ -820,7 +922,7 @@ export default function TransactionsPage() {
                 {/* Title & Filter Toggle Row */}
                 <div className="staging-tx-title-row">
                     <h5 style={{ fontSize: 24, lineHeight: '32px', fontWeight: 700, margin: 0, color: '#0e1726' }}>
-                        Transactions
+                        {isRetail ? 'Retail Submissions' : 'Transactions'}
                     </h5>
                     <div>
                         <button
@@ -828,7 +930,7 @@ export default function TransactionsPage() {
                             className="staging-tx-filter-toggle-btn"
                             onClick={() => setShowFilter((prev) => !prev)}
                         >
-                            {/* Module 63030 Funnel Filter SVG */}
+                            {/* Module 96076 / 63030 Funnel Filter SVG */}
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path
                                     fillRule="evenodd"
@@ -842,7 +944,7 @@ export default function TransactionsPage() {
                     </div>
                 </div>
 
-                {/* Collapsible 18-Field Filter Form (k in module 62089) */}
+                {/* Collapsible Filter Form: M (for Retail Submissions) vs k (for Standard Transactions) */}
                 {showFilter && (
                     <form
                         onSubmit={(e) => {
@@ -851,167 +953,255 @@ export default function TransactionsPage() {
                             setCurrentPage(1);
                         }}
                     >
-                        <div className="staging-tx-filter-grid">
-                            <input
-                                type="text"
-                                placeholder="FURP Account No."
-                                style={inputStyle}
-                                value={draftFilters.FURPAccountNo}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, FURPAccountNo: e.target.value })}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Transaction Ref"
-                                style={inputStyle}
-                                value={draftFilters.TransactionRef}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, TransactionRef: e.target.value })}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Merchant Ref (MTN etc)"
-                                style={inputStyle}
-                                value={draftFilters.MerchantRef}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, MerchantRef: e.target.value })}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Payer Ref"
-                                style={inputStyle}
-                                value={draftFilters.PayerRef}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, PayerRef: e.target.value })}
-                            />
-                            <input
-                                type="text"
-                                placeholder="Recipient (Mobile, Account)"
-                                style={inputStyle}
-                                value={draftFilters.Recipient}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Recipient: e.target.value })}
-                            />
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Channel}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Channel: e.target.value })}
-                            >
-                                <option value="">Select channel</option>
-                                {CHANNEL_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Type}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Type: e.target.value })}
-                            >
-                                <option value="">Select type</option>
-                                {TYPE_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Status}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Status: e.target.value })}
-                            >
-                                <option value="">Select transaction status</option>
-                                {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Payer}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Payer: e.target.value })}
-                            >
-                                <option value="">Select payer</option>
-                                {PAYER_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Provider}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Provider: e.target.value })}
-                            >
-                                <option value="">Select provider</option>
-                                {PROVIDER_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Affiliate}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Affiliate: e.target.value })}
-                            >
-                                <option value="">Select affiliate</option>
-                                {AFFILIATE_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.PaymentStatus}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, PaymentStatus: e.target.value })}
-                            >
-                                <option value="">Select payment status</option>
-                                {PAYMENT_STATUS_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.PaymentMethod}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, PaymentMethod: e.target.value })}
-                            >
-                                <option value="">Select payment method</option>
-                                {PAYMENT_METHOD_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Application}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Application: e.target.value })}
-                            >
-                                <option value="">Select application</option>
-                                {APPLICATION_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.Split}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, Split: e.target.value })}
-                            >
-                                <option value="">Filter by split</option>
-                                {SPLIT_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                style={inputStyle}
-                                value={draftFilters.InitiationRoute}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, InitiationRoute: e.target.value })}
-                            >
-                                <option value="">Select initiation route</option>
-                                {INITIATION_ROUTE_OPTIONS.filter((o) => o.value).map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                placeholder="From date"
-                                style={inputStyle}
-                                value={draftFilters.StartDate}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, StartDate: e.target.value })}
-                            />
-                            <input
-                                type="text"
-                                placeholder="To date"
-                                style={inputStyle}
-                                value={draftFilters.EndDate}
-                                onChange={(e) => setDraftFilters({ ...draftFilters, EndDate: e.target.value })}
-                            />
-                        </div>
+                        {isRetail ? (
+                            /* Retail Filter Form M in module 62089 */
+                            <div className="staging-tx-filter-grid">
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Affiliate}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Affiliate: e.target.value })}
+                                >
+                                    <option value="">Affiliate</option>
+                                    {AFFILIATE_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <input
+                                    type="text"
+                                    placeholder="Partner Refernce Number"
+                                    style={inputStyle}
+                                    value={draftFilters.MerchantRef}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, MerchantRef: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="TUN Number"
+                                    style={inputStyle}
+                                    value={draftFilters.TunNumber}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, TunNumber: e.target.value })}
+                                />
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.FromCurrency}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, FromCurrency: e.target.value })}
+                                >
+                                    <option value="">Currency</option>
+                                    {CURRENCY_OPTIONS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.CollectionMode}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, CollectionMode: e.target.value })}
+                                >
+                                    <option value="">Transaction type</option>
+                                    {RETAIL_TYPE_OPTIONS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.FromCountry}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, FromCountry: e.target.value })}
+                                >
+                                    <option value="">Country</option>
+                                    {COUNTRY_OPTIONS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Status}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Status: e.target.value })}
+                                >
+                                    <option value="">Status</option>
+                                    {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <div style={{ gridColumn: 'span 2 / span 2', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <input
+                                        type="text"
+                                        placeholder="From date"
+                                        style={inputStyle}
+                                        value={draftFilters.StartDate}
+                                        onChange={(e) => setDraftFilters({ ...draftFilters, StartDate: e.target.value })}
+                                    />
+                                    <span style={{ flexShrink: 0, fontSize: 14, color: '#4b5563' }}>to</span>
+                                    <input
+                                        type="text"
+                                        placeholder="To date"
+                                        style={inputStyle}
+                                        value={draftFilters.EndDate}
+                                        onChange={(e) => setDraftFilters({ ...draftFilters, EndDate: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            /* Standard 18-Field Filter Form k in module 62089 */
+                            <div className="staging-tx-filter-grid">
+                                <input
+                                    type="text"
+                                    placeholder="FURP Account No."
+                                    style={inputStyle}
+                                    value={draftFilters.FURPAccountNo}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, FURPAccountNo: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Transaction Ref"
+                                    style={inputStyle}
+                                    value={draftFilters.TransactionRef}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, TransactionRef: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Merchant Ref (MTN etc)"
+                                    style={inputStyle}
+                                    value={draftFilters.MerchantRef}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, MerchantRef: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Payer Ref"
+                                    style={inputStyle}
+                                    value={draftFilters.PayerRef}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, PayerRef: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Recipient (Mobile, Account)"
+                                    style={inputStyle}
+                                    value={draftFilters.Recipient}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Recipient: e.target.value })}
+                                />
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Channel}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Channel: e.target.value })}
+                                >
+                                    <option value="">Select channel</option>
+                                    {CHANNEL_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Type}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Type: e.target.value })}
+                                >
+                                    <option value="">Select type</option>
+                                    {TYPE_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Status}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Status: e.target.value })}
+                                >
+                                    <option value="">Select transaction status</option>
+                                    {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Payer}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Payer: e.target.value })}
+                                >
+                                    <option value="">Select payer</option>
+                                    {PAYER_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Provider}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Provider: e.target.value })}
+                                >
+                                    <option value="">Select provider</option>
+                                    {PROVIDER_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Affiliate}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Affiliate: e.target.value })}
+                                >
+                                    <option value="">Select affiliate</option>
+                                    {AFFILIATE_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.PaymentStatus}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, PaymentStatus: e.target.value })}
+                                >
+                                    <option value="">Select payment status</option>
+                                    {PAYMENT_STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.PaymentMethod}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, PaymentMethod: e.target.value })}
+                                >
+                                    <option value="">Select payment method</option>
+                                    {PAYMENT_METHOD_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Application}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Application: e.target.value })}
+                                >
+                                    <option value="">Select application</option>
+                                    {APPLICATION_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.Split}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, Split: e.target.value })}
+                                >
+                                    <option value="">Filter by split</option>
+                                    {SPLIT_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    style={inputStyle}
+                                    value={draftFilters.InitiationRoute}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, InitiationRoute: e.target.value })}
+                                >
+                                    <option value="">Select initiation route</option>
+                                    {INITIATION_ROUTE_OPTIONS.filter((o) => o.value).map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <input
+                                    type="text"
+                                    placeholder="From date"
+                                    style={inputStyle}
+                                    value={draftFilters.StartDate}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, StartDate: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="To date"
+                                    style={inputStyle}
+                                    value={draftFilters.EndDate}
+                                    onChange={(e) => setDraftFilters({ ...draftFilters, EndDate: e.target.value })}
+                                />
+                            </div>
+                        )}
 
                         <div
                             style={{
@@ -1058,48 +1248,124 @@ export default function TransactionsPage() {
                                     fontFamily: 'inherit',
                                 }}
                             >
-                                Show transactions
+                                {isRetail ? 'Search' : 'Show transactions'}
                             </button>
                         </div>
                     </form>
                 )}
             </div>
 
+            {/* Retail Collapsible Summary Panel (K.l = module 94922 in chunk2089.js) */}
+            {isRetail && retailSummaryRows.length > 0 && (
+                <div
+                    style={{
+                        background: '#ffffff',
+                        borderRadius: 6,
+                        padding: '8px 20px',
+                        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
+                        marginBottom: 24,
+                    }}
+                >
+                    <button
+                        type="button"
+                        aria-expanded={summaryOpen}
+                        onClick={() => setSummaryOpen((prev) => !prev)}
+                        style={{
+                            marginBottom: summaryOpen ? 12 : 4,
+                            display: 'flex',
+                            width: '100%',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontFamily: 'inherit',
+                        }}
+                    >
+                        <h6 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#323130' }}>Summary</h6>
+                        <span style={{ fontSize: 14, color: '#6b7280' }}>{summaryOpen ? 'Hide' : 'Show'}</span>
+                    </button>
+                    {summaryOpen && (
+                        <div style={{ overflowX: 'auto', padding: '0 12px 12px 12px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
+                                <thead>
+                                    <tr style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.025em', color: '#9ca3af' }}>
+                                        <th style={{ padding: '8px 16px 8px 0' }}>Send currency</th>
+                                        <th style={{ padding: '8px 16px 8px 0' }}>Receive currency</th>
+                                        <th style={{ padding: '8px 16px 8px 0' }}>Count</th>
+                                        <th style={{ padding: '8px 16px 8px 0' }}>AvgRate</th>
+                                        <th style={{ padding: '8px 0' }}>Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {retailSummaryRows.map((row, idx) => (
+                                        <tr key={idx} style={{ borderTop: '1px solid #f3f4f6' }}>
+                                            <td style={{ padding: '8px 16px 8px 0' }}>{row.sendingCurrency}</td>
+                                            <td style={{ padding: '8px 16px 8px 0' }}>{row.receivingCurrency}</td>
+                                            <td style={{ padding: '8px 16px 8px 0' }}>{row.count}</td>
+                                            <td style={{ padding: '8px 16px 8px 0' }}>{row.avgRate}</td>
+                                            <td style={{ padding: '8px 0' }}>{row.amount.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                    <tr style={{ borderTop: '1px solid #e5e7eb', fontWeight: 600 }}>
+                                        <td style={{ padding: '8px 16px 8px 0' }}>Totals</td>
+                                        <td style={{ padding: '8px 16px 8px 0' }} />
+                                        <td style={{ padding: '8px 16px 8px 0' }}>
+                                            {retailSummaryRows.reduce((acc, r) => acc + r.count, 0).toLocaleString()}
+                                        </td>
+                                        <td style={{ padding: '8px 16px 8px 0' }} />
+                                        <td style={{ padding: '8px 0' }}>
+                                            {retailSummaryRows.reduce((acc, r) => acc + r.amount, 0).toLocaleString()}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Second Panel: Toolbar + Desktop Table + Mobile Card List + Pagination */}
             <div className="staging-tx-panel-table">
                 {/* Top Toolbar (module 62089) */}
                 <div className="staging-tx-toolbar">
-                    {/* Left: selected count + 9 bulk action buttons */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 14, color: '#605E5C' }}>{selectedIds.length} selected</span>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Pause/Hold')}>
-                            Pause/Hold
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('danger')} onClick={() => handleBulkAction('Bulk Failed')}>
-                            Bulk Failed
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('success')} onClick={() => handleBulkAction('Bulk Success')}>
-                            Bulk Success
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Bulk Query')}>
-                            Bulk Query
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Retry')}>
-                            Retry
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('danger')} onClick={() => handleBulkAction('Abort')}>
-                            Abort
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('primary-outline')} onClick={() => handleBulkAction('Switch')}>
-                            Switch
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('primary-outline')} onClick={() => handleBulkAction('Split')}>
-                            Split
-                        </button>
-                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('ghost')} onClick={() => handleBulkAction('Clear')}>
-                            Clear
-                        </button>
-                    </div>
+                    {/* Left: 9 bulk action buttons only on standard Transactions, empty div on Retail Submissions */}
+                    {!isRetail ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 14, color: '#605E5C' }}>{selectedIds.length} selected</span>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Pause/Hold')}>
+                                Pause/Hold
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('danger')} onClick={() => handleBulkAction('Bulk Failed')}>
+                                Bulk Failed
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('success')} onClick={() => handleBulkAction('Bulk Success')}>
+                                Bulk Success
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Bulk Query')}>
+                                Bulk Query
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Retry')}>
+                                Retry
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('danger')} onClick={() => handleBulkAction('Abort')}>
+                                Abort
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('primary-outline')} onClick={() => handleBulkAction('Switch')}>
+                                Switch
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('primary-outline')} onClick={() => handleBulkAction('Split')}>
+                                Split
+                            </button>
+                            <button type="button" disabled={!hasSelect} style={bulkBtnStyle('ghost')} onClick={() => handleBulkAction('Clear')}>
+                                Clear
+                            </button>
+                        </div>
+                    ) : (
+                        <div />
+                    )}
 
                     {/* Right: Count Pill (N.lJ = en) + Rows Selector (V.t = 39459) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
@@ -1113,7 +1379,7 @@ export default function TransactionsPage() {
                                 color: '#fb4b14',
                             }}
                         >
-                            {filteredTransactions.length} transactions found
+                            {filteredTransactions.length} {filteredTransactions.length === 1 ? 'transaction' : 'transactions'} found
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <label htmlFor="tx-rows-select" style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap' }}>
@@ -1149,129 +1415,235 @@ export default function TransactionsPage() {
 
                 {/* Desktop Table (N.XI = 9117, hidden on mobile < 768px) */}
                 <div className="staging-tx-desktop-table">
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, textAlign: 'left' }}>
-                        <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                            <tr>
-                                <th style={{ width: 32, padding: '8px 12px', textAlign: 'left' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={allVisibleSelected}
-                                        onChange={toggleSelectAll}
-                                        style={{ width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
-                                    />
-                                </th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Ref</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Channel</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Date</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Type</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Amount</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Rate</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left', maxWidth: 224 }}>Details</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left', maxWidth: 160 }}>Provider</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Acc Bal.</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>CreatedBy</th>
-                                <th style={{ width: 56, padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'center' }}>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {paginatedTransactions.map((tx) => {
-                                const isSelected = selectedIds.includes(tx.id);
-                                const dotColor = getStagingStatusColor(tx.status);
-                                return (
-                                    <tr
-                                        key={tx.id}
-                                        style={{
-                                            borderBottom: '1px solid #f3f4f6',
-                                            background: isSelected ? 'rgba(251, 75, 20, 0.04)' : '#ffffff',
-                                            transition: 'background 0.15s',
-                                        }}
-                                    >
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={isSelected}
-                                                onChange={() => toggleSelectRow(tx.id)}
-                                                style={{ width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
-                                            />
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 160 }}>
-                                            <Link
-                                                to={`/financials/transactions/${tx.id}`}
-                                                style={{ color: '#FB4B14', fontWeight: 500, textDecoration: 'none', wordBreak: 'break-all' }}
-                                            >
-                                                {tx.reference}
-                                            </Link>
-                                            {tx.splitTag && (
-                                                <span
-                                                    style={{
-                                                        marginLeft: 6,
-                                                        display: 'inline-block',
-                                                        borderRadius: 4,
-                                                        background: tx.splitTag === 'SP' ? '#ffedd5' : '#dbeafe',
-                                                        padding: '2px 6px',
-                                                        fontSize: 10,
-                                                        fontWeight: 700,
-                                                        color: tx.splitTag === 'SP' ? '#c2410c' : '#1d4ed8',
-                                                    }}
+                    {isRetail ? (
+                        /* Retail Submissions 13-Column Desktop Table from module 62089 */
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, textAlign: 'left' }}>
+                            <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                                <tr>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Mito ref</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Date created</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Affiliate</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>TUN#</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Partner ref</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Transaction Type</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Send country</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Send amount</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Rate</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Receive country</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Receive amount</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>CreatedBy</th>
+                                    <th style={{ width: 56, padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'center' }}>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedTransactions.map((tx) => {
+                                    const dotColor = getStagingStatusColor(tx.status);
+                                    return (
+                                        <tr
+                                            key={tx.id}
+                                            style={{
+                                                borderBottom: '1px solid #f3f4f6',
+                                                background: '#ffffff',
+                                            }}
+                                        >
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top' }}>
+                                                <Link
+                                                    to={`${detailBasePath}/${tx.id}`}
+                                                    style={{ color: '#FB4B14', fontWeight: 500, textDecoration: 'none', wordBreak: 'break-all' }}
                                                 >
-                                                    {tx.splitTag}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>{tx.channel}</td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
-                                            <div>{tx.date}</div>
-                                            <div>{tx.time}</div>
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>{tx.type}</td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
-                                            <div>{tx.currency}</div>
-                                            <div>{tx.amount.toFixed(2)}</div>
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>
-                                            {tx.rate.toFixed(4)}
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 224, wordBreak: 'break-word', color: '#374151' }}>
-                                            {tx.details}
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 160, wordBreak: 'break-word' }}>
-                                            <Link
-                                                to="/configuration/providers"
-                                                style={{ color: '#FB4B14', textDecoration: 'none' }}
-                                            >
-                                                {tx.provider}
-                                            </Link>
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
-                                            {tx.accountBalance}
-                                        </td>
-                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
-                                            <Link
-                                                to="/customer/users"
-                                                title={tx.createdByEmail}
-                                                style={{ color: '#FB4B14', textDecoration: 'none' }}
-                                            >
-                                                {tx.createdBy}
-                                            </Link>
-                                        </td>
-                                        <td style={{ width: 56, padding: '8px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
-                                            {/* Module 45429 Status Dot: ONLY 10px circle dot in Status column */}
-                                            <span
-                                                title={tx.status}
-                                                style={{
-                                                    display: 'inline-block',
-                                                    width: 10,
-                                                    height: 10,
-                                                    borderRadius: '9999px',
-                                                    backgroundColor: dotColor,
-                                                }}
-                                            />
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                                                    {tx.reference}
+                                                </Link>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', whiteSpace: 'nowrap', color: '#374151' }}>
+                                                <div>{tx.date}</div>
+                                                <div>{tx.time}</div>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', color: '#374151' }}>
+                                                {tx.affiliate || 'N/A'}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top' }}>
+                                                <Link
+                                                    to={`/financials/transactions/${tx.id}`}
+                                                    style={{ color: '#FB4B14', fontWeight: 500, textDecoration: 'none' }}
+                                                >
+                                                    {tx.tun || 'N/A'}
+                                                </Link>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', color: '#374151' }}>
+                                                {tx.merchantRef || 'N/A'}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', color: '#374151' }}>
+                                                {tx.type}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', color: '#374151' }}>
+                                                {tx.sendCountry || 'N/A'}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', whiteSpace: 'nowrap', color: '#374151' }}>
+                                                <div>{tx.sendCurrency}</div>
+                                                <div>{tx.sendAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', color: '#374151' }}>
+                                                {Number(tx.rate).toFixed(4)}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', color: '#374151' }}>
+                                                {tx.receiveCountry || 'N/A'}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top', whiteSpace: 'nowrap', color: '#374151' }}>
+                                                <div>{tx.receiveCurrency}</div>
+                                                <div>{tx.receiveAmount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'top' }}>
+                                                <Link
+                                                    to="/customer/users"
+                                                    title={tx.createdByEmail}
+                                                    style={{ color: '#FB4B14', textDecoration: 'none' }}
+                                                >
+                                                    {tx.createdBy}
+                                                </Link>
+                                            </td>
+                                            <td style={{ width: 56, padding: '8px 12px', verticalAlign: 'top', textAlign: 'center' }}>
+                                                <span
+                                                    title={tx.status}
+                                                    style={{
+                                                        display: 'inline-block',
+                                                        width: 10,
+                                                        height: 10,
+                                                        borderRadius: '9999px',
+                                                        backgroundColor: dotColor,
+                                                    }}
+                                                />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    ) : (
+                        /* Standard Transactions 12-Column Desktop Table from module 62089 */
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, textAlign: 'left' }}>
+                            <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                                <tr>
+                                    <th style={{ width: 32, padding: '8px 12px', textAlign: 'left' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={allVisibleSelected}
+                                            onChange={toggleSelectAll}
+                                            style={{ width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
+                                        />
+                                    </th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Ref</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Channel</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Date</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Type</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Amount</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Rate</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left', maxWidth: 224 }}>Details</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left', maxWidth: 160 }}>Provider</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Acc Bal.</th>
+                                    <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>CreatedBy</th>
+                                    <th style={{ width: 56, padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'center' }}>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginatedTransactions.map((tx) => {
+                                    const isSelected = selectedIds.includes(tx.id);
+                                    const dotColor = getStagingStatusColor(tx.status);
+                                    return (
+                                        <tr
+                                            key={tx.id}
+                                            style={{
+                                                borderBottom: '1px solid #f3f4f6',
+                                                background: isSelected ? 'rgba(251, 75, 20, 0.04)' : '#ffffff',
+                                                transition: 'background 0.15s',
+                                            }}
+                                        >
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleSelectRow(tx.id)}
+                                                    style={{ width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
+                                                />
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 160 }}>
+                                                <Link
+                                                    to={`/financials/transactions/${tx.id}`}
+                                                    style={{ color: '#FB4B14', fontWeight: 500, textDecoration: 'none', wordBreak: 'break-all' }}
+                                                >
+                                                    {tx.reference}
+                                                </Link>
+                                                {tx.splitTag && (
+                                                    <span
+                                                        style={{
+                                                            marginLeft: 6,
+                                                            display: 'inline-block',
+                                                            borderRadius: 4,
+                                                            background: tx.splitTag === 'SP' ? '#ffedd5' : '#dbeafe',
+                                                            padding: '2px 6px',
+                                                            fontSize: 10,
+                                                            fontWeight: 700,
+                                                            color: tx.splitTag === 'SP' ? '#c2410c' : '#1d4ed8',
+                                                        }}
+                                                    >
+                                                        {tx.splitTag}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>{tx.channel}</td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
+                                                <div>{tx.date}</div>
+                                                <div>{tx.time}</div>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>{tx.type}</td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
+                                                <div>{tx.currency}</div>
+                                                <div>{tx.amount.toFixed(2)}</div>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>
+                                                {tx.rate.toFixed(4)}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 224, wordBreak: 'break-word', color: '#374151' }}>
+                                                {tx.details}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 160, wordBreak: 'break-word' }}>
+                                                <Link
+                                                    to="/configuration/providers"
+                                                    style={{ color: '#FB4B14', textDecoration: 'none' }}
+                                                >
+                                                    {tx.provider}
+                                                </Link>
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
+                                                {tx.accountBalance}
+                                            </td>
+                                            <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                                                <Link
+                                                    to="/customer/users"
+                                                    title={tx.createdByEmail}
+                                                    style={{ color: '#FB4B14', textDecoration: 'none' }}
+                                                >
+                                                    {tx.createdBy}
+                                                </Link>
+                                            </td>
+                                            <td style={{ width: 56, padding: '8px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                                {/* Module 45429 Status Dot: ONLY 10px circle dot in Status column */}
+                                                <span
+                                                    title={tx.status}
+                                                    style={{
+                                                        display: 'inline-block',
+                                                        width: 10,
+                                                        height: 10,
+                                                        borderRadius: '9999px',
+                                                        backgroundColor: dotColor,
+                                                    }}
+                                                />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    )}
                 </div>
 
                 {/* Mobile Card List (Y in staging_chunk2089.js, visible on mobile < 768px) */}
@@ -1295,20 +1667,22 @@ export default function TransactionsPage() {
                             >
                                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() => toggleSelectRow(tx.id)}
-                                            style={{ marginTop: 4, width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
-                                        />
+                                        {!isRetail && (
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => toggleSelectRow(tx.id)}
+                                                style={{ marginTop: 4, width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
+                                            />
+                                        )}
                                         <div>
                                             <Link
-                                                to={`/financials/transactions/${tx.id}`}
-                                                style={{ fontWeight: 700, color: '#FB4B14', textDecoration: 'none', fontSize: 14 }}
+                                                to={`${detailBasePath}/${tx.id}`}
+                                                style={{ fontWeight: 600, color: '#FB4B14', textDecoration: 'none', fontSize: 14 }}
                                             >
                                                 {tx.reference}
                                             </Link>
-                                            {tx.splitTag && (
+                                            {!isRetail && tx.splitTag && (
                                                 <span
                                                     style={{
                                                         marginLeft: 6,
@@ -1324,10 +1698,10 @@ export default function TransactionsPage() {
                                                     {tx.splitTag}
                                                 </span>
                                             )}
-                                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
                                                 {tx.date} {tx.time}
                                             </div>
-                                            <div style={{ fontSize: 12, color: '#4b5563', marginTop: 2 }}>
+                                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                                                 {tx.channel} · {tx.type}
                                             </div>
                                         </div>
@@ -1348,8 +1722,8 @@ export default function TransactionsPage() {
                                 <div style={{ borderTop: '1px solid #f9fafb', paddingTop: 12, fontSize: 14 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                                         <span style={{ color: '#6b7280' }}>Amount</span>
-                                        <span style={{ fontWeight: 600, color: '#fb4b14' }}>
-                                            {tx.currency} {tx.amount.toFixed(2)}
+                                        <span style={{ fontWeight: 500, color: '#fb4b14' }}>
+                                            {tx.sendCurrency} {tx.amount.toFixed(2)}
                                         </span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
@@ -1360,18 +1734,29 @@ export default function TransactionsPage() {
                                         <span style={{ color: '#6b7280' }}>Provider</span>
                                         <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.provider}</span>
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', gap: 12 }}>
-                                        <span style={{ color: '#6b7280', flexShrink: 0 }}>Details</span>
-                                        <span style={{ fontWeight: 500, color: '#1f2937', textAlign: 'right' }}>{tx.details}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                                        <span style={{ color: '#6b7280' }}>Acc Bal.</span>
-                                        <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.accountBalance}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                                        <span style={{ color: '#6b7280' }}>CreatedBy</span>
-                                        <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.createdBy}</span>
-                                    </div>
+                                    {isRetail ? (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                            <span style={{ color: '#6b7280' }}>Earnings</span>
+                                            <span style={{ fontWeight: 500, color: '#1f2937' }}>
+                                                {tx.sendCurrency} {Number(tx.agentFee ?? 0).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', gap: 12 }}>
+                                                <span style={{ color: '#6b7280', flexShrink: 0 }}>Details</span>
+                                                <span style={{ fontWeight: 500, color: '#1f2937', textAlign: 'right' }}>{tx.details}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span style={{ color: '#6b7280' }}>Acc Bal.</span>
+                                                <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.accountBalance}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                                <span style={{ color: '#6b7280' }}>CreatedBy</span>
+                                                <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.createdBy}</span>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         );

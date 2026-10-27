@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { SEED_TRANSACTIONS, getStagingStatusColor } from './TransactionsPage';
 
 // Exact 17 Admin Actions from module 37177 in staging_7339.js
@@ -268,9 +268,12 @@ const formInputStyle = {
     fontFamily: 'inherit',
 };
 
-export default function TransactionDetailPage() {
+export default function TransactionDetailPage({ type: propType }) {
     const { id } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
+    const isRetail =
+        propType === 'retail' || location.pathname.startsWith('/financials/retail');
 
     const baseTx = useMemo(() => {
         const found = SEED_TRANSACTIONS.find(
@@ -286,6 +289,8 @@ export default function TransactionDetailPage() {
     const [tx, setTx] = useState(baseTx);
     const [activeTab, setActiveTab] = useState('details');
     const [toastMessage, setToastMessage] = useState(null);
+    const [retailNextStatus, setRetailNextStatus] = useState('');
+    const [retailStatusReason, setRetailStatusReason] = useState('');
 
     // Compliance checks in Summary card matching module 55538 (true = checked, false = "failed", null = "n/a")
     const [complianceChecks, setComplianceChecks] = useState({
@@ -526,19 +531,24 @@ export default function TransactionDetailPage() {
                             <li>
                                 /{' '}
                                 <Link
-                                    to="/financials/transactions"
+                                    to={isRetail ? '/financials/retail-transactions' : '/financials/transactions'}
                                     style={{ color: '#605E5C', textDecoration: 'none', textTransform: 'capitalize' }}
                                 >
-                                    Transactions
+                                    {isRetail ? 'Retail-transactions' : 'Transactions'}
                                 </Link>
                             </li>
-                            <li>/ <span style={{ textTransform: 'capitalize' }}>Transaction Details</span></li>
+                            <li>
+                                /{' '}
+                                <span style={{ textTransform: 'capitalize' }}>
+                                    {isRetail ? 'Retail Submission Details' : 'Transaction Details'}
+                                </span>
+                            </li>
                         </ol>
                     </div>
                 </div>
             </div>
 
-            {/* Module 49245: Back Button + "Transaction Details" Heading + "Download details" Button */}
+            {/* Module 49245: Back Button + Heading + "Download details" Button */}
             <div style={{ marginTop: 24, width: '100%' }}>
                 <div
                     style={{
@@ -553,8 +563,10 @@ export default function TransactionDetailPage() {
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                         <button
                             type="button"
-                            onClick={() => navigate('/financials/transactions')}
-                            title="Back to Transactions"
+                            onClick={() =>
+                                navigate(isRetail ? '/financials/retail-transactions' : '/financials/transactions')
+                            }
+                            title={isRetail ? 'Back to Retail Submissions' : 'Back to Transactions'}
                             style={{
                                 flexShrink: 0,
                                 cursor: 'pointer',
@@ -584,55 +596,57 @@ export default function TransactionDetailPage() {
                                 color: '#605E5C',
                             }}
                         >
-                            Transaction Details
+                            {isRetail ? 'Retail Submission Details' : 'Transaction Details'}
                         </h1>
                     </div>
 
-                    {/* Module 45891: Download details button */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            showToast(`Downloading PDF details for ${tx.reference}...`);
-                            window.print();
-                        }}
-                        style={{
-                            height: 40,
-                            padding: '0 16px',
-                            borderRadius: 6,
-                            border: '1px solid #FB4B14',
-                            background: '#FB4B14',
-                            color: '#ffffff',
-                            fontSize: 14,
-                            fontWeight: 600,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                        }}
-                    >
-                        {/* Module 36448 Download SVG */}
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path
-                                opacity="0.5"
-                                d="M17 9.00195C19.175 9.01406 20.3529 9.11051 21.1213 9.8789C22 10.7576 22 12.1718 22 15.0002V16.0002C22 18.8286 22 20.2429 21.1213 21.1215C20.2426 22.0002 18.8284 22.0002 16 22.0002H8C5.17157 22.0002 3.75736 22.0002 2.87868 21.1215C2 20.2429 2 18.8286 2 16.0002L2 15.0002C2 12.1718 2 10.7576 2.87868 9.87889C3.64706 9.11051 4.82497 9.01406 7 9.00195"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                            />
-                            <path
-                                d="M12 2L12 15M12 15L9 11.5M12 15L15 11.5"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        </svg>
-                        <span>Download details</span>
-                    </button>
+                    {/* Module 45891: Download details button (shown on standard Transaction Details) */}
+                    {!isRetail && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                showToast(`Downloading PDF details for ${tx.reference}...`);
+                                window.print();
+                            }}
+                            style={{
+                                height: 40,
+                                padding: '0 16px',
+                                borderRadius: 6,
+                                border: '1px solid #FB4B14',
+                                background: '#FB4B14',
+                                color: '#ffffff',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                            }}
+                        >
+                            {/* Module 36448 Download SVG */}
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    opacity="0.5"
+                                    d="M17 9.00195C19.175 9.01406 20.3529 9.11051 21.1213 9.8789C22 10.7576 22 12.1718 22 15.0002V16.0002C22 18.8286 22 20.2429 21.1213 21.1215C20.2426 22.0002 18.8284 22.0002 16 22.0002H8C5.17157 22.0002 3.75736 22.0002 2.87868 21.1215C2 20.2429 2 18.8286 2 16.0002L2 15.0002C2 12.1718 2 10.7576 2.87868 9.87889C3.64706 9.11051 4.82497 9.01406 7 9.00195"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                />
+                                <path
+                                    d="M12 2L12 15M12 15L9 11.5M12 15L15 11.5"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                            </svg>
+                            <span>Download details</span>
+                        </button>
+                    )}
                 </div>
 
-                {/* Module 55538 (w.Ay in staging_5709.js): Admin Summary Card */}
+                {/* Summary Card: Module 8307 (4 fields for Retail) vs Module 55538 (13 fields + 4 checks for Transactions) */}
                 <div className="staging-summary-card">
                     <div
                         style={{
@@ -663,92 +677,127 @@ export default function TransactionDetailPage() {
                         </div>
                     </div>
 
-                    {/* 4-Column Responsive Grid of 13 Summary Fields */}
-                    <div className="staging-summary-grid">
-                        {summaryFields.map((item, idx) => (
-                            <div key={idx} style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: 12, lineHeight: '16px', color: '#A19F9D' }}>
-                                    {item.label}
-                                </div>
-                                <div
-                                    style={{
-                                        marginTop: 4,
-                                        fontSize: 14,
-                                        lineHeight: '20px',
-                                        fontWeight: 600,
-                                        color: '#323130',
-                                        wordBreak: 'break-word',
-                                    }}
-                                >
-                                    {item.value || '—'}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* 4 Compliance Checkboxes matching c=({label, passed}) in module 55538 */}
-                    <div
-                        style={{
-                            marginTop: 16,
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            columnGap: 20,
-                            rowGap: 8,
-                            borderTop: '1px solid #EDEBE9',
-                            paddingTop: 12,
-                        }}
-                    >
-                        {[
-                            { key: 'verification', label: 'Verification' },
-                            { key: 'kyc', label: 'KYC' },
-                            { key: 'thresholds', label: 'Thresholds' },
-                            { key: 'postcode', label: 'Card postcode' },
-                        ].map((chk) => {
-                            const passed = complianceChecks[chk.key];
-                            return (
-                                <label
-                                    key={chk.key}
-                                    style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 6,
-                                        fontSize: 14,
-                                        lineHeight: '20px',
-                                        fontWeight: 500,
-                                        color: '#323130',
-                                    }}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={passed === true}
-                                        readOnly
-                                        disabled
+                    {isRetail ? (
+                        /* Retail Summary 4-Column Grid from module 8307 in retail_detail_page.js */
+                        <div className="staging-summary-grid">
+                            {[
+                                { label: 'Reference', value: tx.reference },
+                                { label: 'Affiliate', value: tx.affiliate },
+                                { label: 'Total amount', value: `${tx.sendCurrency} ${tx.amount.toFixed(2)}` },
+                                { label: 'Payment mode', value: tx.paymentMethod },
+                            ].map((item, idx) => (
+                                <div key={idx} style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 12, lineHeight: '16px', color: '#A19F9D' }}>
+                                        {item.label}
+                                    </div>
+                                    <div
                                         style={{
-                                            width: 14,
-                                            height: 14,
-                                            accentColor: '#71AD42',
+                                            marginTop: 4,
+                                            fontSize: 14,
+                                            lineHeight: '20px',
+                                            fontWeight: 600,
+                                            color: '#323130',
+                                            wordBreak: 'break-word',
                                         }}
-                                    />
-                                    <span>{chk.label}</span>
-                                    {passed === false ? (
-                                        <span style={{ fontSize: 12, lineHeight: '16px', fontWeight: 400, color: '#D83B01' }}>
-                                            failed
-                                        </span>
-                                    ) : null}
-                                    {passed === null ? (
-                                        <span style={{ fontSize: 12, lineHeight: '16px', fontWeight: 400, color: '#A19F9D' }}>
-                                            n/a
-                                        </span>
-                                    ) : null}
-                                </label>
-                            );
-                        })}
-                    </div>
+                                    >
+                                        {item.value || '—'}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <>
+                            {/* 4-Column Responsive Grid of 13 Summary Fields */}
+                            <div className="staging-summary-grid">
+                                {summaryFields.map((item, idx) => (
+                                    <div key={idx} style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 12, lineHeight: '16px', color: '#A19F9D' }}>
+                                            {item.label}
+                                        </div>
+                                        <div
+                                            style={{
+                                                marginTop: 4,
+                                                fontSize: 14,
+                                                lineHeight: '20px',
+                                                fontWeight: 600,
+                                                color: '#323130',
+                                                wordBreak: 'break-word',
+                                            }}
+                                        >
+                                            {item.value || '—'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* 4 Compliance Checkboxes matching c=({label, passed}) in module 55538 */}
+                            <div
+                                style={{
+                                    marginTop: 16,
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    columnGap: 20,
+                                    rowGap: 8,
+                                    borderTop: '1px solid #EDEBE9',
+                                    paddingTop: 12,
+                                }}
+                            >
+                                {[
+                                    { key: 'verification', label: 'Verification' },
+                                    { key: 'kyc', label: 'KYC' },
+                                    { key: 'thresholds', label: 'Thresholds' },
+                                    { key: 'postcode', label: 'Card postcode' },
+                                ].map((chk) => {
+                                    const passed = complianceChecks[chk.key];
+                                    return (
+                                        <label
+                                            key={chk.key}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                fontSize: 14,
+                                                lineHeight: '20px',
+                                                fontWeight: 500,
+                                                color: '#323130',
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={passed === true}
+                                                readOnly
+                                                disabled
+                                                style={{
+                                                    width: 14,
+                                                    height: 14,
+                                                    accentColor: '#71AD42',
+                                                }}
+                                            />
+                                            <span>{chk.label}</span>
+                                            {passed === false ? (
+                                                <span style={{ fontSize: 12, lineHeight: '16px', fontWeight: 400, color: '#D83B01' }}>
+                                                    failed
+                                                </span>
+                                            ) : null}
+                                            {passed === null ? (
+                                                <span style={{ fontSize: 12, lineHeight: '16px', fontWeight: 400, color: '#A19F9D' }}>
+                                                    n/a
+                                                </span>
+                                            ) : null}
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
                 </div>
 
-                {/* Module eK (l.PM in staging_9147.js): 7 Horizontal Underline Tabs */}
+                {/* Horizontal Underline Tabs: 4 Tabs on Retail (Details, Actions, Trail & comments, Help tickets) vs 7 Tabs on Standard */}
                 <div className="staging-underline-tabs">
-                    {TABS.map((tab) => {
+                    {(isRetail
+                        ? TABS.filter((t) => ['details', 'actions', 'trail', 'tickets'].includes(t.id))
+                        : TABS
+                    ).map((tab) => {
                         const isActive = activeTab === tab.id;
                         return (
                             <button
@@ -781,105 +830,268 @@ export default function TransactionDetailPage() {
                     })}
                 </div>
 
-                {/* TAB 1: DETAILS (Module 35709 in staging_5709.js — 6 Stacked Cards) */}
-                {activeTab === 'details' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <DetailSectionCard
-                            title="Overview"
-                            fields={[
-                                { label: 'Date created', value: `${tx.date} ${tx.time}` },
-                                { label: 'TUN#', value: tx.tun || 'TUN-88492011' },
-                                { label: 'Partner ref', value: tx.merchantRef },
-                                { label: 'Type', value: tx.type },
-                                { label: 'CreatedBy', value: tx.createdBy, href: '/customer/users' },
-                                { label: 'Acc Bal.', value: tx.accountBalance },
-                            ]}
-                        />
-                        <DetailSectionCard
-                            title="Account"
-                            fields={[
-                                { label: 'Account', value: `${tx.furpAccountNo} (${tx.createdBy})`, href: '/customer/accounts' },
-                                { label: 'Cumulative thresholds', value: tx.cumulativeThresholds },
-                                { label: 'Affiliate', value: tx.affiliate },
-                                { label: 'Comments', value: `${comments.length} operational note(s)` },
-                            ]}
-                        />
-                        <DetailSectionCard
-                            title="Sender"
-                            fields={[
-                                { label: 'Name', value: tx.createdBy, href: '/customer/users' },
-                                { label: 'Email', value: tx.createdByEmail },
-                                { label: 'Mobile', value: tx.senderPhone },
-                                { label: 'Address', value: tx.senderAddress },
-                                { label: 'Nationality', value: tx.senderNationality },
-                                { label: 'Country of birth', value: tx.senderCountryOfBirth },
-                                { label: 'Occupation', value: tx.senderOccupation },
-                                { label: 'Date of birth', value: tx.senderDob },
-                                { label: 'ID country', value: tx.senderIdCountry },
-                                { label: 'ID type', value: tx.senderIdType },
-                                { label: 'ID number', value: tx.senderIdNumber },
-                                { label: 'ID issue date', value: tx.senderIdIssueDate },
-                                { label: 'ID expire date', value: tx.senderIdExpireDate },
-                            ]}
-                        />
-                        <DetailSectionCard
-                            title="Beneficiary"
-                            fields={[
+                {/* TAB 1: DETAILS */}
+                {activeTab === 'details' &&
+                    (isRetail ? (
+                        /* Retail Submission Details Single Card (module 90665 & 66954: Service, Beneficiary, Sender, Payment) */
+                        <div className="staging-detail-card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                            {[
                                 {
-                                    label: 'Name',
-                                    value: `${editForm.firstName} ${editForm.lastName}`.trim(),
-                                    href: '/customer/beneficiaries',
+                                    title: 'Service',
+                                    rows: [
+                                        { label: 'Type', value: tx.type },
+                                        { label: 'TUN#', value: tx.tun, href: `/financials/transactions/${tx.id}` },
+                                        { label: 'Channel', value: tx.channel },
+                                        { label: 'Provider', value: tx.provider },
+                                        { label: 'Service code', value: tx.providerCode },
+                                        { label: 'Collection method', value: 'Bank Deposit / Instant Transfer' },
+                                        { label: 'Account number', value: tx.beneficiaryAccount },
+                                        { label: 'Routing number', value: '044150149' },
+                                    ],
                                 },
-                                { label: 'Email', value: editForm.email },
-                                { label: 'Mobile', value: editForm.mobile },
-                                { label: 'Address', value: editForm.address },
-                                { label: 'City', value: editForm.city },
-                                { label: 'Country', value: tx.beneficiaryCountry },
-                                { label: 'Relationship', value: tx.beneficiaryRelationship },
-                                { label: 'Purpose', value: tx.beneficiaryPurpose },
-                                { label: 'ID country', value: tx.beneficiaryCountry },
-                                { label: 'ID type', value: 'National ID / BVN' },
-                                { label: 'ID number', value: 'BVN-22394810291' },
-                            ]}
-                        />
-                        <DetailSectionCard
-                            title="Service"
-                            fields={[
-                                { label: 'Collection method', value: 'Bank Deposit / Instant Transfer' },
-                                { label: 'Provider', value: tx.provider, href: '/configuration/providers' },
-                                { label: 'Provider code', value: tx.providerCode },
-                                { label: 'Destination', value: `${tx.beneficiaryCountry} (${tx.receiveCurrency})` },
-                                { label: 'Account', value: `${editForm.accountNumber} (${tx.beneficiaryBank})` },
-                                { label: 'IBAN', value: '—' },
-                                { label: 'SWIFT / BIC', value: 'ABNGNGLAXXX' },
-                                { label: 'Sort / routing', value: '044150149' },
-                                { label: 'Pickup code', value: '—' },
-                                { label: 'Pickup location', value: '—' },
-                            ]}
-                        />
-                        <DetailSectionCard
-                            title="Cross rates"
-                            fields={[
-                                { label: 'Cross-rate currency', value: `${tx.sendCurrency} / ${tx.receiveCurrency}` },
-                                { label: 'Sender / cross rate', value: tx.rate.toFixed(4) },
-                                { label: 'Sender / cross market rate', value: (tx.rate * 0.992).toFixed(4) },
-                                { label: 'Sender / cross spread', value: '0.80%' },
-                                { label: 'Sender / cross factor', value: '1.0000' },
-                                { label: 'Sender / cross amount', value: `${tx.sendCurrency} ${tx.sendAmount.toFixed(2)}` },
-                                { label: 'Cross / recipient rate', value: tx.rate.toFixed(4) },
-                                { label: 'Cross / recipient market rate', value: (tx.rate * 0.992).toFixed(4) },
                                 {
-                                    label: 'Cross / recipient amount',
-                                    value: `${tx.receiveCurrency} ${tx.receiveAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                    title: 'Beneficiary',
+                                    rows: [
+                                        { label: 'Name', value: tx.beneficiaryName },
+                                        { label: 'Contact number', value: tx.beneficiaryPhone },
+                                        { label: 'Email', value: tx.beneficiaryEmail },
+                                        { label: 'Address', value: tx.beneficiaryAddress },
+                                    ],
                                 },
-                            ]}
-                        />
-                    </div>
-                )}
+                                {
+                                    title: 'Sender',
+                                    rows: [
+                                        { label: 'Name', value: tx.createdBy },
+                                        { label: 'Contact number', value: tx.senderPhone },
+                                        { label: 'Email', value: tx.createdByEmail },
+                                        { label: 'Address', value: tx.senderAddress },
+                                    ],
+                                },
+                                {
+                                    title: 'Payment',
+                                    rows: [
+                                        { label: 'Rate', value: Number(tx.rate).toFixed(4) },
+                                        { label: 'Settlement amount', value: `${tx.sendCurrency} ${tx.sendAmount.toFixed(2)}` },
+                                        {
+                                            label: 'Payout amount',
+                                            value: `${tx.receiveCurrency} ${tx.receiveAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                        },
+                                        { label: 'Total paid', value: `${tx.currency} ${tx.amount.toFixed(2)}` },
+                                        { label: 'Payment method', value: tx.paymentMethod },
+                                        { label: 'Payment status', value: tx.paymentStatus },
+                                        { label: 'Commission', value: `${tx.currency} ${tx.commission.toFixed(2)}` },
+                                        { label: 'Agent commission', value: `${tx.currency} ${Number(tx.agentFee ?? 0.25).toFixed(2)}` },
+                                    ],
+                                },
+                            ].map((sec) => (
+                                <div key={sec.title} style={{ minWidth: 0 }}>
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600, color: '#605E5C' }}>
+                                        {sec.title}
+                                    </h3>
+                                    <div className="staging-detail-grid">
+                                        {sec.rows.map((r, i) => (
+                                            <div key={i} style={{ minWidth: 0 }}>
+                                                <div style={{ fontSize: 12, color: '#A19F9D' }}>{r.label}</div>
+                                                <div
+                                                    style={{
+                                                        marginTop: 2,
+                                                        fontSize: 14,
+                                                        fontWeight: 600,
+                                                        color: '#323130',
+                                                        wordBreak: 'break-word',
+                                                    }}
+                                                >
+                                                    {r.href ? (
+                                                        <Link to={r.href} style={{ color: '#FB4B14', textDecoration: 'none' }}>
+                                                            {r.value || 'N/A'}
+                                                        </Link>
+                                                    ) : (
+                                                        r.value || 'N/A'
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        /* Standard Transaction Details 6 Stacked Cards (Module 35709 in staging_5709.js) */
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <DetailSectionCard
+                                title="Overview"
+                                fields={[
+                                    { label: 'Date created', value: `${tx.date} ${tx.time}` },
+                                    { label: 'TUN#', value: tx.tun || 'TUN-88492011' },
+                                    { label: 'Partner ref', value: tx.merchantRef },
+                                    { label: 'Type', value: tx.type },
+                                    { label: 'CreatedBy', value: tx.createdBy, href: '/customer/users' },
+                                    { label: 'Acc Bal.', value: tx.accountBalance },
+                                ]}
+                            />
+                            <DetailSectionCard
+                                title="Account"
+                                fields={[
+                                    { label: 'Account', value: `${tx.furpAccountNo} (${tx.createdBy})`, href: '/customer/accounts' },
+                                    { label: 'Cumulative thresholds', value: tx.cumulativeThresholds },
+                                    { label: 'Affiliate', value: tx.affiliate },
+                                    { label: 'Comments', value: `${comments.length} operational note(s)` },
+                                ]}
+                            />
+                            <DetailSectionCard
+                                title="Sender"
+                                fields={[
+                                    { label: 'Name', value: tx.createdBy, href: '/customer/users' },
+                                    { label: 'Email', value: tx.createdByEmail },
+                                    { label: 'Mobile', value: tx.senderPhone },
+                                    { label: 'Address', value: tx.senderAddress },
+                                    { label: 'Nationality', value: tx.senderNationality },
+                                    { label: 'Country of birth', value: tx.senderCountryOfBirth },
+                                    { label: 'Occupation', value: tx.senderOccupation },
+                                    { label: 'Date of birth', value: tx.senderDob },
+                                    { label: 'ID country', value: tx.senderIdCountry },
+                                    { label: 'ID type', value: tx.senderIdType },
+                                    { label: 'ID number', value: tx.senderIdNumber },
+                                    { label: 'ID issue date', value: tx.senderIdIssueDate },
+                                    { label: 'ID expire date', value: tx.senderIdExpireDate },
+                                ]}
+                            />
+                            <DetailSectionCard
+                                title="Beneficiary"
+                                fields={[
+                                    {
+                                        label: 'Name',
+                                        value: `${editForm.firstName} ${editForm.lastName}`.trim(),
+                                        href: '/customer/beneficiaries',
+                                    },
+                                    { label: 'Email', value: editForm.email },
+                                    { label: 'Mobile', value: editForm.mobile },
+                                    { label: 'Address', value: editForm.address },
+                                    { label: 'City', value: editForm.city },
+                                    { label: 'Country', value: tx.beneficiaryCountry },
+                                    { label: 'Relationship', value: tx.beneficiaryRelationship },
+                                    { label: 'Purpose', value: tx.beneficiaryPurpose },
+                                    { label: 'ID country', value: tx.beneficiaryCountry },
+                                    { label: 'ID type', value: 'National ID / BVN' },
+                                    { label: 'ID number', value: 'BVN-22394810291' },
+                                ]}
+                            />
+                            <DetailSectionCard
+                                title="Service"
+                                fields={[
+                                    { label: 'Collection method', value: 'Bank Deposit / Instant Transfer' },
+                                    { label: 'Provider', value: tx.provider, href: '/configuration/providers' },
+                                    { label: 'Provider code', value: tx.providerCode },
+                                    { label: 'Destination', value: `${tx.beneficiaryCountry} (${tx.receiveCurrency})` },
+                                    { label: 'Account', value: `${editForm.accountNumber} (${tx.beneficiaryBank})` },
+                                    { label: 'IBAN', value: '—' },
+                                    { label: 'SWIFT / BIC', value: 'ABNGNGLAXXX' },
+                                    { label: 'Sort / routing', value: '044150149' },
+                                    { label: 'Pickup code', value: '—' },
+                                    { label: 'Pickup location', value: '—' },
+                                ]}
+                            />
+                            <DetailSectionCard
+                                title="Cross rates"
+                                fields={[
+                                    { label: 'Cross-rate currency', value: `${tx.sendCurrency} / ${tx.receiveCurrency}` },
+                                    { label: 'Sender / cross rate', value: tx.rate.toFixed(4) },
+                                    { label: 'Sender / cross market rate', value: (tx.rate * 0.992).toFixed(4) },
+                                    { label: 'Sender / cross spread', value: '0.80%' },
+                                    { label: 'Sender / cross factor', value: '1.0000' },
+                                    { label: 'Sender / cross amount', value: `${tx.sendCurrency} ${tx.sendAmount.toFixed(2)}` },
+                                    { label: 'Cross / recipient rate', value: tx.rate.toFixed(4) },
+                                    { label: 'Cross / recipient market rate', value: (tx.rate * 0.992).toFixed(4) },
+                                    {
+                                        label: 'Cross / recipient amount',
+                                        value: `${tx.receiveCurrency} ${tx.receiveAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                    },
+                                ]}
+                            />
+                        </div>
+                    ))}
 
-                {/* TAB 2: ACTIONS (Modules 37177 & 30539 in staging_7339.js) */}
-                {activeTab === 'actions' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {/* TAB 2: ACTIONS */}
+                {activeTab === 'actions' &&
+                    (isRetail ? (
+                        /* Retail Update Status Action Card (N in module 90665) */
+                        <div className="staging-detail-card">
+                            <h3 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, color: '#605E5C' }}>
+                                Update status
+                            </h3>
+                            <p style={{ margin: '0 0 12px 0', fontSize: 14, color: '#A19F9D' }}>
+                                Current status: {tx.status || '—'}. The change is logged in Trail &amp; comments with your name and the reason.
+                            </p>
+                            <div style={{ marginBottom: 12, maxWidth: 448 }}>
+                                <select
+                                    style={formInputStyle}
+                                    value={retailNextStatus}
+                                    onChange={(e) => setRetailNextStatus(e.target.value)}
+                                >
+                                    <option value="">Select status</option>
+                                    <option value="Under Review">Under Review</option>
+                                    <option value="Processed">Processed</option>
+                                    <option value="Successful">Successful</option>
+                                    <option value="Pending">Pending</option>
+                                    <option value="Failed">Failed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                            <textarea
+                                rows={2}
+                                placeholder="Reason"
+                                value={retailStatusReason}
+                                onChange={(e) => setRetailStatusReason(e.target.value)}
+                                style={{
+                                    ...formInputStyle,
+                                    height: 'auto',
+                                    padding: 8,
+                                    marginBottom: 12,
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!retailNextStatus) {
+                                        showToast('Select a status.');
+                                        return;
+                                    }
+                                    if (!retailStatusReason.trim()) {
+                                        showToast('Enter a reason.');
+                                        return;
+                                    }
+                                    setTx((prev) => ({ ...prev, status: retailNextStatus }));
+                                    setAuditTrail((prev) => [
+                                        {
+                                            id: `AUD-${Date.now()}`,
+                                            timestamp: '27 Oct 2026 20:15:00',
+                                            actor: 'Mito Admin',
+                                            text: `Retail submission status updated to ${retailNextStatus}. Reason: ${retailStatusReason.trim()}`,
+                                        },
+                                        ...prev,
+                                    ]);
+                                    setRetailNextStatus('');
+                                    setRetailStatusReason('');
+                                    showToast('Status updated.');
+                                }}
+                                style={{
+                                    height: 36,
+                                    padding: '0 14px',
+                                    borderRadius: 6,
+                                    border: '1px solid #FB4B14',
+                                    background: '#ffffff',
+                                    color: '#FB4B14',
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                }}
+                            >
+                                Update status
+                            </button>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                         <div className="staging-detail-card">
                             <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#605E5C' }}>
                                 Actions
@@ -1035,7 +1247,7 @@ export default function TransactionDetailPage() {
                             </div>
                         </div>
                     </div>
-                )}
+                ))}
 
                 {/* TAB 3: TRAIL & COMMENTS (Module 79333 in staging_7959.js) */}
                 {activeTab === 'trail' && (
