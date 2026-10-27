@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
-// Referral & Bonus admin pages (US-1.1 – US-1.9). Requires the API server on :5000.
-const API = 'http://localhost:5000';
+// Referral & Bonus admin pages (US-1.1 – US-1.9). Requires the API server on :5050.
+const API = process.env.API_URL || 'http://localhost:5050';
 const unique = () => `${Date.now()}`.slice(-6);
 
 test.describe('Referral Settings', () => {
@@ -41,6 +41,28 @@ test.describe('Referral Settings', () => {
         await expect(page.locator('#rf-referee_reward')).toHaveValue('5000');
     });
 
+    test('supports multi-country include/exclude modal, info popovers, and collapsible validity summary', async ({ page }) => {
+        await page.goto('/growth/referral-settings');
+        await page.getByTestId('rf-bonus_validity_days-info-btn').click();
+        await expect(page.getByTestId('rf-bonus_validity_days-info-popover')).toBeVisible();
+        await page.getByTestId('rf-bonus_validity_days-info-popover').getByRole('button', { name: /Close/i }).click();
+        await expect(page.getByTestId('rf-bonus_validity_days-info-popover')).toHaveCount(0);
+
+        await page.getByTestId('toggle-validity-rules-summary').click();
+        await expect(page.getByTestId('toggle-validity-rules-summary')).toContainText('Show summary');
+        await page.getByTestId('toggle-validity-rules-summary').click();
+        await expect(page.getByTestId('toggle-validity-rules-summary')).toContainText('Hide summary');
+
+        await page.getByTestId('configure-send-countries-btn').click();
+        const modal = page.getByTestId('country-scope-modal');
+        await expect(modal).toBeVisible();
+        await modal.getByTestId('mode-card-INCLUDE').click();
+        await modal.getByTestId('country-option-GB').click();
+        await modal.getByTestId('country-option-FR').click();
+        await modal.getByTestId('apply-country-scope-btn').click();
+        await expect(page.getByTestId('send-country-scope-bar')).toContainText('Include only (2)');
+    });
+
     test('creates, deactivates and archives a rule', async ({ page, request }) => {
         // Free up the AUD → NGN corridor so the test can create a rule for it
         const existing = await (await request.get(`${API}/api/referral-rules`)).json();
@@ -73,13 +95,12 @@ test.describe('Referral Settings', () => {
 });
 
 test.describe('Referral reporting', () => {
-    test('performance and tracking pages load from the sidebar', async ({ page }) => {
-        await page.goto('/');
-        await page.getByRole('link', { name: 'Referral Performance' }).click();
+    test('performance and tracking pages load', async ({ page }) => {
+        await page.goto('/growth/referral-performance');
         await expect(page.getByRole('heading', { name: 'Referral Performance' })).toBeVisible();
         await expect(page.getByRole('columnheader', { name: 'Conversion' })).toBeVisible();
 
-        await page.getByRole('link', { name: 'Referral Tracking' }).click();
+        await page.goto('/growth/referral-tracking');
         await expect(page.getByRole('heading', { name: 'Referral Tracking' })).toBeVisible();
         await expect(page.getByPlaceholder('Name, customer ID, email or referral code')).toBeVisible();
     });
