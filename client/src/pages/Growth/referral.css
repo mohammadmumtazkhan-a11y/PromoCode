@@ -17,6 +17,19 @@
 
 .rf-field label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
 .rf-field label .rf-req { color: #dc2626; margin-left: 2px; }
+.rf-label-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.rf-label-row label { margin-bottom: 0; }
+.rf-info-wrap { position: relative; display: inline-flex; align-items: center; }
+.rf-info-btn { width: 17px; height: 17px; border-radius: 50%; border: 1px solid #94a3b8; background: #f8fafc; color: #475569; font-size: 0.7rem; font-weight: 700; font-style: italic; font-family: Georgia, serif; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; transition: all 0.15s; }
+.rf-info-btn:hover, .rf-info-btn[aria-expanded="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
+.rf-info-popover { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 1200; width: 310px; background: #1e293b; color: #f8fafc; border-radius: 10px; padding: 11px 13px; font-size: 0.78rem; line-height: 1.45; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25); }
+.rf-info-popover-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.8rem; color: #fff; }
+.rf-info-close { background: none; border: none; color: #94a3b8; font-size: 1rem; line-height: 1; cursor: pointer; padding: 0 2px; }
+.rf-info-close:hover { color: #fff; }
+.rf-info-popover-body { color: #e2e8f0; font-weight: 400; }
+.rf-validity-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.rf-validity-toggle { background: none; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 9px; font-size: 0.72rem; font-weight: 600; color: #334155; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.rf-validity-toggle:hover { background: #e2e8f0; }
 .rf-input, .rf-select { width: 100%; padding: 10px 12px; background: #fff; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-main); font-size: 0.9rem; outline: none; box-sizing: border-box; font-family: inherit; }
 .rf-input:focus, .rf-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
 .rf-input:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }

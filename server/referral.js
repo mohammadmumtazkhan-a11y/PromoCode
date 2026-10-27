@@ -103,6 +103,8 @@ async function initSchema(db) {
     await addColumnIfMissing(q, 'referral_rules', 'archived_at', 'TEXT');
     // Corridor: the receive currency. NULL only on rules created before corridors existed ("any destination") until an admin edits them.
     await addColumnIfMissing(q, 'referral_rules', 'receive_currency', 'TEXT');
+    await addColumnIfMissing(q, 'referral_rules', 'send_country', 'TEXT');
+    await addColumnIfMissing(q, 'referral_rules', 'receive_country', 'TEXT');
 
     await q.run(`CREATE TABLE IF NOT EXISTS referral_rule_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER, field TEXT, old_value TEXT, new_value TEXT,
@@ -234,6 +236,8 @@ function validateRule(body, { isNew }) {
         reward_type: type,
         base_currency: currency,
         receive_currency: receive || null,
+        send_country: blank(body.send_country) ? null : String(body.send_country).trim().toUpperCase(),
+        receive_country: blank(body.receive_country) ? null : String(body.receive_country).trim().toUpperCase(),
         referrer_reward: type === 'REFEREE' ? 0 : round2(body.referrer_reward),
         referee_reward: type === 'REFERRER' ? 0 : round2(body.referee_reward),
         min_transaction_threshold: round2(floor),
@@ -250,7 +254,7 @@ function validateRule(body, { isNew }) {
     return { errors, clean };
 }
 
-const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'referrer_reward', 'referee_reward',
+const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'send_country', 'receive_country', 'referrer_reward', 'referee_reward',
     'min_transaction_threshold', 'qualification_window_days', 'bonus_validity_days',
     'max_referrals_cap_type', 'max_referrals_per_referrer', 'max_referrals_amount_per_referrer', 'max_scheme_budget',
     'start_date', 'end_date'];

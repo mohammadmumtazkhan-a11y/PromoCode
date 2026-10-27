@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
-import { CURRENCIES, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
+import { CURRENCIES, COUNTRIES, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
 import StatusPill from './StatusPill';
 import { validateForm } from './referralValidation';
 import './referral.css';
@@ -16,6 +16,7 @@ const CURRENCY_DEFAULTS = {
 
 const EMPTY_FORM = {
     name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP', receive_currency: '',
+    send_country: '', receive_country: '',
     referrer_reward: '5', referee_reward: '10', min_transaction_threshold: '50',
     qualification_window_days: '30', bonus_validity_days: '90',
     max_referrals_cap_type: 'COUNT', max_referrals_per_referrer: '', max_referrals_amount_per_referrer: '', max_scheme_budget: '',
@@ -23,13 +24,41 @@ const EMPTY_FORM = {
 };
 
 const TYPE_LABELS = { BOTH: 'Both Parties', REFERRER: 'Referrer Only', REFEREE: 'Referee Only' };
-const Field = ({ id, label, required, error, hint, children }) => (
-    <div className="rf-field">
-        <label htmlFor={id}>{label}{required && <span className="rf-req">*</span>}</label>
-        {children}
-        {error ? <div className="rf-error" id={`${id}-error`}>{error}</div> : hint ? <div className="rf-hint">{hint}</div> : null}
-    </div>
-);
+const Field = ({ id, label, required, error, hint, infoTip, children }) => {
+    const [infoOpen, setInfoOpen] = useState(false);
+    return (
+        <div className="rf-field">
+            <div className="rf-label-row">
+                <label htmlFor={id}>{label}{required && <span className="rf-req">*</span>}</label>
+                {infoTip && (
+                    <span className="rf-info-wrap">
+                        <button
+                            type="button"
+                            className="rf-info-btn"
+                            aria-label={`More info about ${label}`}
+                            aria-expanded={infoOpen}
+                            data-testid={`${id}-info-btn`}
+                            onClick={() => setInfoOpen((v) => !v)}
+                        >
+                            i
+                        </button>
+                        {infoOpen && (
+                            <div className="rf-info-popover" role="tooltip" data-testid={`${id}-info-popover`}>
+                                <div className="rf-info-popover-head">
+                                    <strong>{label}</strong>
+                                    <button type="button" className="rf-info-close" aria-label="Close info" onClick={() => setInfoOpen(false)}>&times;</button>
+                                </div>
+                                <div className="rf-info-popover-body">{infoTip}</div>
+                            </div>
+                        )}
+                    </span>
+                )}
+            </div>
+            {children}
+            {error ? <div className="rf-error" id={`${id}-error`}>{error}</div> : hint ? <div className="rf-hint">{hint}</div> : null}
+        </div>
+    );
+};
 
 const Toggle = ({ on, onClick, label, disabled }) => (
     <button type="button" className="rf-toggle" onClick={onClick} disabled={disabled} aria-pressed={on} aria-label={label}>
@@ -48,6 +77,7 @@ const ReferralSettings = () => {
     const [errors, setErrors] = useState({});
     const [dialog, setDialog] = useState(null);
     const [dialogNotify, setDialogNotify] = useState(true);
+    const [showValiditySummary, setShowValiditySummary] = useState(true);
     const { toasts, push, dismiss } = useToasts();
 
     const fetchRules = useCallback(async () => {
@@ -176,6 +206,7 @@ const ReferralSettings = () => {
         setForm({
             name: rule.name, is_enabled: !!rule.is_enabled, reward_type: rule.reward_type, base_currency: rule.base_currency,
             receive_currency: rule.receive_currency || '', // blank = send-currency-only rule
+            send_country: rule.send_country || '', receive_country: rule.receive_country || '',
             referrer_reward: String(rule.referrer_reward), referee_reward: String(rule.referee_reward),
             min_transaction_threshold: String(rule.min_transaction_threshold),
             qualification_window_days: String(rule.qualification_window_days ?? 30), bonus_validity_days: String(rule.bonus_validity_days ?? 90),
@@ -282,14 +313,29 @@ const ReferralSettings = () => {
                         </Field>
                         <Field id="rf-base_currency" label="Send Currency" required error={err('base_currency')}>
                             <select id="rf-base_currency" className="rf-select" value={form.base_currency} onChange={(e) => onCurrencyChange(e.target.value)}>
-                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.currencyName} ({c.symbol.trim()})</option>)}
                             </select>
                         </Field>
                         <Field id="rf-receive_currency" label="Receive Currency" error={err('receive_currency')}
                             hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to every ${form.base_currency} transfer, unless a specific corridor has its own rule.`}>
                             <select {...aria('receive_currency')} className={`rf-select${err('receive_currency') ? ' rf-invalid' : ''}`} value={form.receive_currency} onChange={(e) => set({ receive_currency: e.target.value })}>
-                                <option value="">All destinations ({form.base_currency} only)</option>
-                                {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} ({c.name})</option>)}
+                                <option value="">All currencies (all receive currencies from {form.base_currency})</option>
+                                {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} — {c.currencyName} ({c.symbol.trim()})</option>)}
+                            </select>
+                        </Field>
+                    </div>
+
+                    <div className="rf-grid rf-grid-2">
+                        <Field id="rf-send_country" label="Send Country (Optional)" hint="Filter by sender's country of residence, or leave as All send countries.">
+                            <select id="rf-send_country" className="rf-select" value={form.send_country || ''} onChange={(e) => set({ send_country: e.target.value })}>
+                                <option value="">All send countries</option>
+                                {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+                            </select>
+                        </Field>
+                        <Field id="rf-receive_country" label="Receive Country (Optional)" hint="Filter by recipient destination country, or leave as All receive countries.">
+                            <select id="rf-receive_country" className="rf-select" value={form.receive_country || ''} onChange={(e) => set({ receive_country: e.target.value })}>
+                                <option value="">All receive countries</option>
+                                {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
                             </select>
                         </Field>
                     </div>
@@ -321,11 +367,12 @@ const ReferralSettings = () => {
                     <div className="rf-section-label">Limits &amp; timing</div>
                     <div className="rf-grid rf-grid-3">
                         <Field id="rf-bonus_validity_days" label="Bonus Validity (days)" required error={err('bonus_validity_days')}
-                            hint="Referee Bonus Validity: If a referee clicks the link and joins before the End Date, their bonus remains valid for this number of days (e.g., 90 days) from the date they join. Referrer Bonus Validity: The referrer's bonus is triggered and valid for this specified validity period ONLY after the referee completes their first successful transaction (not when a transaction is merely clicked or in 'awaiting payment' status).">
+                            infoTip="Referee Bonus Validity: If a referee clicks the link and joins before the End Date, their bonus remains valid for this number of days (e.g., 90 days) from the date they join. Referrer Bonus Validity: The referrer's bonus is triggered and valid for this specified validity period ONLY after the referee completes their first successful transaction (not when a transaction is merely clicked or in 'awaiting payment' status).">
                             <input {...aria('bonus_validity_days')} className={inputCls('bonus_validity_days')} inputMode="numeric"
                                 value={form.bonus_validity_days} onChange={(e) => set({ bonus_validity_days: e.target.value, qualification_window_days: e.target.value })} />
                         </Field>
-                        <Field id="rf-max_referrals_per_referrer" label="Max Rewarded Referrals per Referrer" error={err('max_referrals_per_referrer') || err('max_referrals_amount_per_referrer')} hint="Choose either a maximum Count of referred users (e.g., 5 or 10 people) or a maximum monetary Amount (e.g., £1,000). They cannot both be active at the same time. Leave blank for unlimited.">
+                        <Field id="rf-max_referrals_per_referrer" label="Max Rewarded Referrals per Referrer" error={err('max_referrals_per_referrer') || err('max_referrals_amount_per_referrer')}
+                            infoTip="Choose either a maximum Count of referred users (e.g., 5 or 10 people) or a maximum monetary Amount (e.g., £1,000). They cannot both be active at the same time. Leave blank for unlimited.">
                             <div className="rf-radio-group" role="radiogroup" aria-label="Max rewarded referrals cap mode">
                                 <label className={`rf-radio-opt ${form.max_referrals_cap_type !== 'AMOUNT' ? 'active' : ''}`}>
                                     <input
@@ -358,7 +405,8 @@ const ReferralSettings = () => {
                                     value={form.max_referrals_per_referrer} onChange={(e) => set({ max_referrals_per_referrer: e.target.value })} />
                             )}
                         </Field>
-                        <Field id="rf-max_scheme_budget" label="Maximum Cap per Scheme (Total Budget)" error={err('max_scheme_budget')} hint="Maximum total spend/budget allowed across the entire referral scheme (in addition to the per-user limit). The scheme automatically stops once this overall cap is reached. Leave blank for no overall budget cap.">
+                        <Field id="rf-max_scheme_budget" label="Maximum Cap per Scheme (Total Budget)" error={err('max_scheme_budget')}
+                            infoTip="Maximum total spend/budget allowed across the entire referral scheme (in addition to the per-user limit). The scheme automatically stops once this overall cap is reached. Leave blank for no overall budget cap.">
                             <div className="rf-affix"><span className="rf-prefix">{sym}</span>
                                 <input {...aria('max_scheme_budget')} className={inputCls('max_scheme_budget')} inputMode="decimal" placeholder="Unlimited scheme budget (e.g. 10000)"
                                     value={form.max_scheme_budget} onChange={(e) => set({ max_scheme_budget: e.target.value })} />
@@ -366,12 +414,25 @@ const ReferralSettings = () => {
                         </Field>
                     </div>
                     <div className="rf-validity-rules" data-testid="referral-validity-rules-summary">
-                        <strong>Validity &amp; Expiry Rules Summary:</strong>
-                        <ul>
-                            <li><b>Link Validity (Start Date &amp; End Date):</b> Strictly governs when the referral link itself is active. If a user clicks the link after the End Date, the system states that the referral scheme is closed/expired.</li>
-                            <li><b>Referee Bonus Validity:</b> If a referee clicks the link and joins before the End Date, their bonus remains valid for the number of days specified in <i>Bonus Validity (days)</i> (e.g., 90 days) from the date they join.</li>
-                            <li><b>Referrer Bonus Validity:</b> The referrer&apos;s bonus is triggered and valid for the specified validity period <b>only after the referee completes their first successful transaction</b> (not when a transaction is merely clicked or in &ldquo;awaiting payment&rdquo; status).</li>
-                        </ul>
+                        <div className="rf-validity-head">
+                            <strong>Validity &amp; Expiry Rules Summary:</strong>
+                            <button
+                                type="button"
+                                className="rf-validity-toggle"
+                                aria-expanded={showValiditySummary}
+                                data-testid="toggle-validity-rules-summary"
+                                onClick={() => setShowValiditySummary((v) => !v)}
+                            >
+                                {showValiditySummary ? 'Hide summary ▲' : 'Show summary ▼'}
+                            </button>
+                        </div>
+                        {showValiditySummary && (
+                            <ul>
+                                <li><b>Link Validity (Start Date &amp; End Date):</b> Strictly governs when the referral link itself is active. If a user clicks the link after the End Date, the system states that the referral scheme is closed/expired.</li>
+                                <li><b>Referee Bonus Validity:</b> If a referee clicks the link and joins before the End Date, their bonus remains valid for the number of days specified in <i>Bonus Validity (days)</i> (e.g., 90 days) from the date they join.</li>
+                                <li><b>Referrer Bonus Validity:</b> The referrer&apos;s bonus is triggered and valid for the specified validity period <b>only after the referee completes their first successful transaction</b> (not when a transaction is merely clicked or in &ldquo;awaiting payment&rdquo; status).</li>
+                            </ul>
+                        )}
                     </div>
                     <div className="rf-grid rf-grid-2">
                         <Field id="rf-start_date" label="Start Date" error={err('start_date')} hint="Link Validity Start: Strictly governs when the referral link becomes active (blank = active immediately).">
