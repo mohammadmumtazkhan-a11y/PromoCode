@@ -765,11 +765,8 @@ const TransactionsPage = () => {
                         />
                       </td>
                       <td>
-                        <span
-                          onClick={() => {
-                            setSelectedTx(tx);
-                            setActiveModal('detail');
-                          }}
+                        <Link
+                          to={`/financials/transactions/${tx.id || tx.reference}`}
                           style={{
                             color: '#FB4B14',
                             fontWeight: 600,
@@ -780,7 +777,7 @@ const TransactionsPage = () => {
                           onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
                         >
                           {tx.reference}
-                        </span>
+                        </Link>
                       </td>
                       <td style={{ color: '#323130' }}>{tx.channel}</td>
                       <td>

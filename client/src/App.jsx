@@ -13,6 +13,7 @@ import Login from './pages/Auth/Login';
 import RewardsHub from './pages/Configuration/RewardsHub';
 import PromoCodes from './pages/Financials/PromoCodes';
 import DebitLogs from './pages/Financials/DebitLogs';
+import TransactionDetailPage from './pages/Financials/TransactionDetailPage';
 import Payouts from './pages/Financials/Payouts';
 import Commissions from './pages/Financials/Commissions';
 import ReceiveMoneyPage from './pages/Financials/ReceiveMoneyPage';
@@ -141,6 +142,10 @@ function App() {
             {/* Financials (matching staging-admin Financials sub-menu) */}
             <Route path="/financials/rate-threshold" element={<RateManager />} />
             <Route path="/financials/transactions" element={<DebitLogs />} />
+            <Route path="/financials/transactions/:id" element={<TransactionDetailPage />} />
+            <Route path="/financials/mto-submissions/:id" element={<TransactionDetailPage />} />
+            <Route path="/financials/retail-transactions/:id" element={<TransactionDetailPage />} />
+            <Route path="/financials/biller-transactions/:id" element={<TransactionDetailPage />} />
             <Route path="/financials/mto-submissions" element={<DebitLogs />} />
             <Route path="/financials/retail-transactions" element={<DebitLogs />} />
             <Route path="/financials/biller-transactions" element={<DebitLogs />} />
