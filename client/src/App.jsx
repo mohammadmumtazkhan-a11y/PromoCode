@@ -159,16 +159,19 @@ function App() {
             <Route path="/customer/obo-customer" element={<OnBehalfOfCustomer />} />
 
             {/* Configuration */}
+            <Route path="/configuration/country" element={<RateManager />} />
+            <Route path="/configuration/currency" element={<RateManager />} />
+            <Route path="/configuration/website-configuration" element={<SettingsPage />} />
             <Route path="/configuration/rate-manager" element={<RateManager />} />
             <Route path="/configuration/rates-manager" element={<RateManager />} />
             <Route path="/configuration/rate-manager/:id" element={<RateSettings />} />
             <Route path="/configuration/rates-manager/:id" element={<RateSettings />} />
-            <Route path="/configuration/portal-admins" element={<MerchantList />} />
-            <Route path="/configuration/lookup-data" element={<RateManager />} />
+            <Route path="/configuration/email-templates" element={<SettingsPage />} />
             <Route path="/configuration/providers" element={<MerchantList />} />
             <Route path="/configuration/payers" element={<MerchantList />} />
-            <Route path="/configuration/website-configuration" element={<SettingsPage />} />
-            <Route path="/configuration/email-templates" element={<SettingsPage />} />
+            <Route path="/configuration/single-treasury-account" element={<Payouts />} />
+            <Route path="/configuration/lookup-data" element={<RateManager />} />
+            <Route path="/configuration/portal-admins" element={<MerchantList />} />
 
             {/* Developer & Tools */}
             <Route path="/api-keys" element={<ApiKeys />} />
