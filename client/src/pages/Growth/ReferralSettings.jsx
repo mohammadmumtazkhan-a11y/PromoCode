@@ -17,7 +17,8 @@ const CURRENCY_DEFAULTS = {
 const EMPTY_FORM = {
     name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP', receive_currency: '',
     referrer_reward: '5', referee_reward: '10', min_transaction_threshold: '50',
-    qualification_window_days: '30', bonus_validity_days: '90', max_referrals_per_referrer: '',
+    qualification_window_days: '30', bonus_validity_days: '90',
+    max_referrals_cap_type: 'COUNT', max_referrals_per_referrer: '', max_referrals_amount_per_referrer: '', max_scheme_budget: '',
     start_date: '', end_date: '', notify: true,
 };
 
@@ -100,6 +101,10 @@ const ReferralSettings = () => {
         qualification_window_days: form.bonus_validity_days,
         referrer_reward: form.reward_type === 'REFEREE' ? 0 : form.referrer_reward,
         referee_reward: form.reward_type === 'REFERRER' ? 0 : form.referee_reward,
+        max_referrals_cap_type: form.max_referrals_cap_type === 'AMOUNT' ? 'AMOUNT' : 'COUNT',
+        max_referrals_per_referrer: form.max_referrals_cap_type === 'AMOUNT' ? null : (form.max_referrals_per_referrer || null),
+        max_referrals_amount_per_referrer: form.max_referrals_cap_type === 'AMOUNT' ? (form.max_referrals_amount_per_referrer || null) : null,
+        max_scheme_budget: form.max_scheme_budget || null,
     });
 
     const save = async (notify) => {
@@ -174,7 +179,10 @@ const ReferralSettings = () => {
             referrer_reward: String(rule.referrer_reward), referee_reward: String(rule.referee_reward),
             min_transaction_threshold: String(rule.min_transaction_threshold),
             qualification_window_days: String(rule.qualification_window_days ?? 30), bonus_validity_days: String(rule.bonus_validity_days ?? 90),
+            max_referrals_cap_type: rule.max_referrals_cap_type || (rule.max_referrals_amount_per_referrer ? 'AMOUNT' : 'COUNT'),
             max_referrals_per_referrer: rule.max_referrals_per_referrer ? String(rule.max_referrals_per_referrer) : '',
+            max_referrals_amount_per_referrer: rule.max_referrals_amount_per_referrer ? String(rule.max_referrals_amount_per_referrer) : '',
+            max_scheme_budget: rule.max_scheme_budget ? String(rule.max_scheme_budget) : '',
             start_date: rule.start_date || '', end_date: rule.end_date || '', notify: true,
         });
         setErrors({});
@@ -311,23 +319,66 @@ const ReferralSettings = () => {
                     </div>
 
                     <div className="rf-section-label">Limits &amp; timing</div>
-                    <div className="rf-grid rf-grid-2">
+                    <div className="rf-grid rf-grid-3">
                         <Field id="rf-bonus_validity_days" label="Bonus Validity (days)" required error={err('bonus_validity_days')}
-                            hint="Days the referee's bonus stays valid after joining, and the window in which their first qualifying transfer rewards the referrer.">
+                            hint="Referee Bonus Validity: If a referee clicks the link and joins before the End Date, their bonus remains valid for this number of days (e.g., 90 days) from the date they join. Referrer Bonus Validity: The referrer's bonus is triggered and valid for this specified validity period ONLY after the referee completes their first successful transaction (not when a transaction is merely clicked or in 'awaiting payment' status).">
                             <input {...aria('bonus_validity_days')} className={inputCls('bonus_validity_days')} inputMode="numeric"
                                 value={form.bonus_validity_days} onChange={(e) => set({ bonus_validity_days: e.target.value, qualification_window_days: e.target.value })} />
                         </Field>
-                        <Field id="rf-max_referrals_per_referrer" label="Max Rewarded Referrals per Referrer" error={err('max_referrals_per_referrer')} hint="Leave blank for unlimited.">
-                            <input {...aria('max_referrals_per_referrer')} className={inputCls('max_referrals_per_referrer')} inputMode="numeric" placeholder="Unlimited"
-                                value={form.max_referrals_per_referrer} onChange={(e) => set({ max_referrals_per_referrer: e.target.value })} />
+                        <Field id="rf-max_referrals_per_referrer" label="Max Rewarded Referrals per Referrer" error={err('max_referrals_per_referrer') || err('max_referrals_amount_per_referrer')} hint="Choose either a maximum Count of referred users (e.g., 5 or 10 people) or a maximum monetary Amount (e.g., £1,000). They cannot both be active at the same time. Leave blank for unlimited.">
+                            <div className="rf-radio-group" role="radiogroup" aria-label="Max rewarded referrals cap mode">
+                                <label className={`rf-radio-opt ${form.max_referrals_cap_type !== 'AMOUNT' ? 'active' : ''}`}>
+                                    <input
+                                        type="radio"
+                                        name="max_referrals_cap_type"
+                                        value="COUNT"
+                                        checked={form.max_referrals_cap_type !== 'AMOUNT'}
+                                        onChange={() => set({ max_referrals_cap_type: 'COUNT', max_referrals_amount_per_referrer: '' })}
+                                    />
+                                    <span>By Count (users)</span>
+                                </label>
+                                <label className={`rf-radio-opt ${form.max_referrals_cap_type === 'AMOUNT' ? 'active' : ''}`}>
+                                    <input
+                                        type="radio"
+                                        name="max_referrals_cap_type"
+                                        value="AMOUNT"
+                                        checked={form.max_referrals_cap_type === 'AMOUNT'}
+                                        onChange={() => set({ max_referrals_cap_type: 'AMOUNT', max_referrals_per_referrer: '' })}
+                                    />
+                                    <span>By Amount ({sym})</span>
+                                </label>
+                            </div>
+                            {form.max_referrals_cap_type === 'AMOUNT' ? (
+                                <div className="rf-affix"><span className="rf-prefix">{sym}</span>
+                                    <input {...aria('max_referrals_amount_per_referrer')} className={inputCls('max_referrals_amount_per_referrer')} inputMode="decimal" placeholder="Unlimited (e.g. 1000)"
+                                        value={form.max_referrals_amount_per_referrer} onChange={(e) => set({ max_referrals_amount_per_referrer: e.target.value })} />
+                                </div>
+                            ) : (
+                                <input {...aria('max_referrals_per_referrer')} className={inputCls('max_referrals_per_referrer')} inputMode="numeric" placeholder="Unlimited (e.g. 5 or 10 people)"
+                                    value={form.max_referrals_per_referrer} onChange={(e) => set({ max_referrals_per_referrer: e.target.value })} />
+                            )}
+                        </Field>
+                        <Field id="rf-max_scheme_budget" label="Maximum Cap per Scheme (Total Budget)" error={err('max_scheme_budget')} hint="Maximum total spend/budget allowed across the entire referral scheme (in addition to the per-user limit). The scheme automatically stops once this overall cap is reached. Leave blank for no overall budget cap.">
+                            <div className="rf-affix"><span className="rf-prefix">{sym}</span>
+                                <input {...aria('max_scheme_budget')} className={inputCls('max_scheme_budget')} inputMode="decimal" placeholder="Unlimited scheme budget (e.g. 10000)"
+                                    value={form.max_scheme_budget} onChange={(e) => set({ max_scheme_budget: e.target.value })} />
+                            </div>
                         </Field>
                     </div>
+                    <div className="rf-validity-rules" data-testid="referral-validity-rules-summary">
+                        <strong>Validity &amp; Expiry Rules Summary:</strong>
+                        <ul>
+                            <li><b>Link Validity (Start Date &amp; End Date):</b> Strictly governs when the referral link itself is active. If a user clicks the link after the End Date, the system states that the referral scheme is closed/expired.</li>
+                            <li><b>Referee Bonus Validity:</b> If a referee clicks the link and joins before the End Date, their bonus remains valid for the number of days specified in <i>Bonus Validity (days)</i> (e.g., 90 days) from the date they join.</li>
+                            <li><b>Referrer Bonus Validity:</b> The referrer&apos;s bonus is triggered and valid for the specified validity period <b>only after the referee completes their first successful transaction</b> (not when a transaction is merely clicked or in &ldquo;awaiting payment&rdquo; status).</li>
+                        </ul>
+                    </div>
                     <div className="rf-grid rf-grid-2">
-                        <Field id="rf-start_date" label="Start Date" error={err('start_date')} hint="Blank = starts immediately.">
+                        <Field id="rf-start_date" label="Start Date" error={err('start_date')} hint="Link Validity Start: Strictly governs when the referral link becomes active (blank = active immediately).">
                             <input {...aria('start_date')} type="date" className={inputCls('start_date')} min={editingId ? undefined : ukTodayIso()}
                                 value={form.start_date} onChange={(e) => set({ start_date: e.target.value })} />
                         </Field>
-                        <Field id="rf-end_date" label="End Date" error={err('end_date')} hint="Blank = no end date.">
+                        <Field id="rf-end_date" label="End Date" error={err('end_date')} hint="Link Validity End: Strictly governs when the referral link expires. Clicking the link after this date shows the scheme is closed/expired (referees who joined before this date keep their Bonus Validity window).">
                             <input {...aria('end_date')} type="date" className={inputCls('end_date')}
                                 value={form.end_date} onChange={(e) => set({ end_date: e.target.value })} />
                         </Field>
@@ -403,6 +454,14 @@ const ReferralSettings = () => {
                                         <td style={{ whiteSpace: 'nowrap' }}>
                                             <div>{rule.bonus_validity_days ?? 90}d valid</div>
                                             <span className="rf-sub">{dates}</span>
+                                            <span className="rf-sub">
+                                                {rule.max_referrals_cap_type === 'AMOUNT' && rule.max_referrals_amount_per_referrer
+                                                    ? `Per-user cap: ${formatMoney(rule.max_referrals_amount_per_referrer, c)}`
+                                                    : rule.max_referrals_per_referrer
+                                                        ? `Per-user cap: ${rule.max_referrals_per_referrer} users`
+                                                        : 'Per-user cap: Unlimited'}
+                                                {rule.max_scheme_budget ? ` • Scheme cap: ${formatMoney(rule.max_scheme_budget, c)}` : ''}
+                                            </span>
                                         </td>
                                         <td>
                                             {!archived && (

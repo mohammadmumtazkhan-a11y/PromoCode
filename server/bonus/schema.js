@@ -182,4 +182,40 @@ async function tagSources(q, log = console.log) {
     return counts;
 }
 
-module.exports = { initSchema, backfill, tagSources, SCHEME_TYPES, MANUAL_REASONS };
+async function resolveReferralCreditMeta(q, userId, credits, cur, round2, sourceLabel) {
+    const refRulesById = new Map(), refRulesByCur = new Map(), refReferralsById = new Map();
+    if (!credits || !credits.some((c) => c.credit_source === 'REFERRAL')) return { refRulesById, refRulesByCur, refReferralsById };
+    try {
+        const refRules = await q.all(`SELECT id, base_currency, receive_currency, min_transaction_threshold, is_enabled FROM referral_rules WHERE COALESCE(is_archived,0) = 0`);
+        for (const r of refRules) {
+            const info = {
+                floor: Number(r.min_transaction_threshold) || 0,
+                receive_currency: r.receive_currency ? cur(r.receive_currency) : null,
+                base_currency: cur(r.base_currency),
+                is_enabled: !!r.is_enabled,
+            };
+            refRulesById.set(Number(r.id), info);
+            const existing = refRulesByCur.get(info.base_currency);
+            if (info.is_enabled && (!existing || info.floor > existing.floor || (!existing.receive_currency && info.receive_currency))) {
+                refRulesByCur.set(info.base_currency, info);
+            }
+        }
+        const refRows = await q.all(`SELECT r.id, r.rule_id, r.currency, r.receive_currency, r.floor, c.first_name AS ref_first, c.last_name AS ref_last, c.email AS ref_email FROM referrals r LEFT JOIN customers c ON c.id = r.referrer_id WHERE r.referee_id = ? OR r.referrer_id = ?`, [userId, userId]);
+        for (const ref of refRows) {
+            const rfFirst = String(ref.ref_first || '').trim();
+            const rfLast = String(ref.ref_last || '').trim();
+            const isGen = !rfFirst || /^(friend|your friend|customer|user)$/i.test(rfFirst);
+            const refDisplayName = !isGen ? (rfLast ? `${rfFirst} ${rfLast}` : rfFirst) : (ref.ref_email ? String(ref.ref_email).trim() : null);
+            refReferralsById.set(String(ref.id), {
+                rule_id: ref.rule_id ? Number(ref.rule_id) : null,
+                floor: Number(ref.floor) || 0,
+                receive_currency: ref.receive_currency ? cur(ref.receive_currency) : null,
+                currency: ref.currency ? cur(ref.currency) : null,
+                referrer_display_name: refDisplayName,
+            });
+        }
+    } catch { /* referral_rules absent in isolated tests */ }
+    return { refRulesById, refRulesByCur, refReferralsById };
+}
+
+module.exports = { initSchema, backfill, tagSources, SCHEME_TYPES, MANUAL_REASONS, resolveReferralCreditMeta };

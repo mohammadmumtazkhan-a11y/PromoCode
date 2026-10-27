@@ -5,7 +5,8 @@ import {
     TRANSACTIONS, 
     statusColors, 
     kycStatusColors, 
-    maskPII 
+    maskPII,
+    formatTransactionRewards
 } from './transactionUtils';
 
 // Audit Trail Timeline (Copied from Search for consistency)
@@ -105,12 +106,13 @@ const TransactionDetails = () => {
     };
 
     const hasPromoDiscount = !!(transaction.promoCode && transaction.discountAmount);
+    const rewardInfo = formatTransactionRewards(transaction);
     const paymentDetailsRows = [
         { label: 'Payment method', value: transaction.collectionMethod || 'BANKACCOUNT' },
         { label: 'Amount sent', value: transaction.amountSent || transaction.settle },
         {
-            label: 'Discount applied',
-            value: hasPromoDiscount ? `-${transaction.discountAmount} (${transaction.promoCode})` : '-',
+            label: 'Rewards',
+            value: rewardInfo ? rewardInfo.display : '-',
             isDiscount: hasPromoDiscount
         },
         { label: 'Customer paid', value: transaction.customerPaid || transaction.total, bold: true },
@@ -169,7 +171,7 @@ const TransactionDetails = () => {
                     <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>Amount sent: {transaction.amountSent || transaction.settle}</div>
                 </div>
                 <div>
-                    <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Discount applied</div>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Rewards</div>
                     <div style={{ marginTop: 6 }} data-testid="summary-discount-applied">
                         {hasPromoDiscount ? (
                             <span style={{
@@ -177,7 +179,7 @@ const TransactionDetails = () => {
                                 background: '#dcfce7', color: '#166534', border: '1px solid #86efac',
                                 padding: '4px 10px', borderRadius: 999, fontSize: '0.82rem', fontWeight: 700
                             }}>
-                                🏷️ -{transaction.discountAmount} ({transaction.promoCode})
+                                🏷️ {rewardInfo ? rewardInfo.display : `-${transaction.discountAmount} [PC] (${transaction.promoCode})`}
                             </span>
                         ) : (
                             <span style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8' }}>-</span>
@@ -251,9 +253,24 @@ const TransactionDetails = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                                 <tbody>
                                     <tr>
+                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0', width: '210px', display: 'none' }}>MTN:</td></tr>
+                                    <tr>
+                                        <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0', width: '210px', display: 'none' }}>MTN:</td></tr>
+                                    <tr>
                                         <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0', width: '210px' }}>MTN:</td>
                                         <td style={{ color: '#1e293b', fontWeight: 600, padding: '6px 0' }}>{transaction.mtn}</td>
                                     </tr>
+                                    {transaction.requestRef && (
+                                        <tr data-testid="unified-receive-money-refs">
+                                            <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Unified Lifecycle Refs (UETR):</td>
+                                            <td style={{ color: '#0369a1', fontWeight: 600, padding: '6px 0', fontSize: '0.84rem' }}>
+                                                Request: <span style={{ fontFamily: 'monospace' }}>{transaction.requestRef}</span> · Retail Submission: <span style={{ fontFamily: 'monospace' }}>{transaction.retailSubmissionRef}</span> · Txn: <span style={{ fontFamily: 'monospace' }}>{transaction.mtn}</span>
+                                                <div style={{ fontSize: '0.78rem', color: '#0f172a', marginTop: 2 }}>
+                                                    UETR: <span style={{ fontFamily: 'monospace' }}>{transaction.uetrRef}</span> ({transaction.receiveMoneyLifecycle || transaction.status})
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
                                     <tr>
                                         <td style={{ color: '#64748b', fontWeight: 500, padding: '6px 12px 6px 0' }}>Affiliate:</td>
                                         <td style={{ color: '#1e293b', padding: '6px 0' }}>{transaction.affiliate}</td>

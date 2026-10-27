@@ -30,6 +30,8 @@ export const MOCK_TRANSACTIONS = [
         amountSent: 'GBP 88.00',
         feeAmount: 'GBP 12.00',
         promoCode: 'SAVE55',
+        rewardTag: 'PC',
+        rewardRuleName: 'SAVE55',
         rewardType: 'Promo Code',
         discountAmount: 'GBP 55.00',
         receiverBonusAmount: 'EUR 0.00',
@@ -39,13 +41,13 @@ export const MOCK_TRANSACTIONS = [
         settle: 'GBP 88.00',
         total: 'GBP 45.00',
         messageHistory: [
-            { timestamp: '12 Mar 2026, 11:30', user: 'System', message: 'Promo code SAVE55 applied (GBP 55.00 discount)', type: 'system' },
+            { timestamp: '12 Mar 2026, 11:30', user: 'System', message: 'Promo code [PC] SAVE55 applied (-GBP 55.00 discount)', type: 'system' },
             { timestamp: '12 Mar 2026, 11:32', user: 'Support Agent', message: 'Verified SEPA Instant payout to beneficiary.', type: 'agent' }
         ],
         notes: '',
         auditTrail: [
             { time: '11:30 AM', event: 'Transaction Initiated (Send Amount: GBP 100.00)', status: 'complete' },
-            { time: '11:30 AM', event: 'Promo code SAVE55 applied. Discount given: GBP 55.00', status: 'complete' },
+            { time: '11:30 AM', event: '[PC] Promo code SAVE55 applied. Discount given: -GBP 55.00', status: 'complete' },
             { time: '11:31 AM', event: 'Customer Paid GBP 45.00 — Funds Cleared', status: 'complete' },
             { time: '11:32 AM', event: 'Partner Payout Confirmed (EUR 95.04)', status: 'complete' }
         ],
@@ -54,7 +56,7 @@ export const MOCK_TRANSACTIONS = [
         hasUnseenTickets: false
     },
     {
-        reference: '05023676980', 
+        reference: '05023676980',
         mtn: '05023676980',
         affiliate: 'ITransfer Money Movers',
         status: 'Processed',
@@ -83,6 +85,8 @@ export const MOCK_TRANSACTIONS = [
         amountSent: 'EUR 63.06',
         feeAmount: 'EUR 0.70',
         promoCode: null,
+        rewardTag: null,
+        rewardRuleName: null,
         rewardType: 'None',
         discountAmount: null,
         receiverBonusAmount: 'NGN 0.00',
@@ -135,6 +139,8 @@ export const MOCK_TRANSACTIONS = [
         amountSent: 'GBP 200.00',
         feeAmount: 'GBP 5.00',
         promoCode: 'WELCOME5',
+        rewardTag: 'PC',
+        rewardRuleName: 'WELCOME5',
         rewardType: 'Promo Code',
         discountAmount: 'GBP 5.00',
         receiverBonusAmount: 'KES 0.00',
@@ -145,12 +151,13 @@ export const MOCK_TRANSACTIONS = [
         total: 'GBP 200.00',
         messageHistory: [
             { timestamp: '08 Mar 2026, 14:10', user: 'System', message: 'Transaction created via Direct channel', type: 'system' },
+            { timestamp: '08 Mar 2026, 14:10', user: 'System', message: 'Promo code [PC] WELCOME5 applied (-GBP 5.00 discount)', type: 'system' },
             { timestamp: '08 Mar 2026, 14:45', user: 'Agent Smith', message: 'Customer called inquiring about delay. Escalated to partner.', type: 'agent' }
         ],
         notes: '',
         auditTrail: [
             { time: '09:00 AM', event: 'Transaction Initiated', status: 'complete' },
-            { time: '09:01 AM', event: 'Promo code WELCOME5 applied. Discount given: GBP 5.00', status: 'complete' },
+            { time: '09:01 AM', event: '[PC] Promo code WELCOME5 applied. Discount given: -GBP 5.00', status: 'complete' },
             { time: '09:02 AM', event: 'Funds Cleared', status: 'complete' },
             { time: '09:10 AM', event: 'Partner Payout Confirmed', status: 'complete' },
             { time: '09:12 AM', event: 'Transaction Complete', status: 'complete' },
@@ -189,6 +196,10 @@ export const MOCK_TRANSACTIONS = [
         amountSent: 'EUR 47.90',
         feeAmount: 'EUR 2.32',
         promoCode: 'REF-BONUS',
+        rewardTag: 'RF',
+        rewardRuleName: 'EU-NG Referral Scheme (REF-BONUS)',
+        rewardBonusAmount: 'EUR 2.00',
+        rewardDirection: '+',
         rewardType: 'Referral / Bonus',
         discountAmount: 'EUR 2.00',
         receiverBonusAmount: 'NGN 1500.00',
@@ -199,12 +210,13 @@ export const MOCK_TRANSACTIONS = [
         total: 'EUR 48.22',
         messageHistory: [
             { timestamp: '25 Feb 2026, 12:20', user: 'System', message: 'Transaction released to partner queue', type: 'system' },
+            { timestamp: '25 Feb 2026, 12:21', user: 'System', message: 'Referral rule [RF] EU-NG Referral Scheme (REF-BONUS) applied (+EUR 2.00 referral bonus credit / +NGN 1,500.00 receiver bonus)', type: 'system' },
             { timestamp: '25 Feb 2026, 12:47', user: 'Support Agent', message: 'Customer confirmed beneficiary details.', type: 'agent' }
         ],
         notes: '',
         auditTrail: [
             { time: '12:20 PM', event: 'Transaction Initiated', status: 'complete' },
-            { time: '12:21 PM', event: 'Promo code REF-BONUS applied. Discount given: EUR 2.00', status: 'complete' },
+            { time: '12:21 PM', event: '[RF] Referral rule EU-NG Referral Scheme (REF-BONUS) applied. Bonus credit applied: +EUR 2.00 (Receiver bonus: +NGN 1,500.00)', status: 'complete' },
             { time: '12:23 PM', event: 'Funds Cleared', status: 'complete' },
             { time: '12:28 PM', event: 'Partner Payout Confirmed', status: 'complete' },
             { time: '12:30 PM', event: 'Transaction Complete', status: 'complete' }
@@ -212,6 +224,68 @@ export const MOCK_TRANSACTIONS = [
         kycStatus: 'Passed',
         hasUnseenComments: true,
         hasUnseenTickets: true
+    },
+    {
+        reference: 'MITO-9904112',
+        mtn: 'MITO-9904112',
+        requestRef: 'REQ-2026-9904112',
+        retailSubmissionRef: 'RSL-2026-9904112',
+        uetrRef: 'UETR-8f91c2a0-4b12-49d8-9904-112000778899',
+        receiveMoneyLifecycle: 'Confirmed & Paid Out',
+        affiliate: 'basketmouth.money',
+        status: 'Completed',
+        type: 'REQUESTMONEY',
+        sendingCountry: 'GBR',
+        beneficiaryFirstName: 'Chidi',
+        beneficiaryLastName: 'Okafor',
+        beneficiaryPhone: '2348099887766',
+        beneficiaryEmail: 'chidi.okafor@example.ng',
+        beneficiaryAddress: '24 Admiralty Way, Lekki Phase 1, Lagos',
+        senderFirstName: 'Tunde',
+        senderLastName: 'Bakare',
+        senderPhone: '447911223344',
+        senderEmail: 'tunde.bakare@example.co.uk',
+        senderAddress: '15 Kingsway, London, UK',
+        accountBalance: '£ 3,120.00',
+        lastUpdated: '12 Mar 2026, 15:40',
+        channel: 'Receive Money / Off-Ramp (Unified Lifecycle)',
+        serviceName: 'GTBANK PLC (Receive Money)',
+        serviceCode: '058',
+        collectionMethod: 'OPENBANKING',
+        account: '0123456789',
+        sendCurrency: 'GBP',
+        receiveCurrency: 'NGN',
+        sendAmount: 'GBP 250.00',
+        amountSent: 'GBP 250.00',
+        feeAmount: 'GBP 0.00',
+        promoCode: 'REQ-CREDIT-10',
+        rewardTag: 'RW',
+        rewardRuleName: 'Request Money 10% Credit (REQ-CREDIT-10)',
+        rewardBonusAmount: 'GBP 25.00',
+        rewardDirection: '+',
+        rewardType: 'Referral / Bonus',
+        discountAmount: 'GBP 25.00',
+        receiverBonusAmount: 'NGN 51250.00',
+        customerPaid: 'GBP 250.00',
+        rate: '2050',
+        payout: 'NGN 563750',
+        settle: 'GBP 250.00',
+        total: 'GBP 250.00',
+        messageHistory: [
+            { timestamp: '12 Mar 2026, 15:35', user: 'System', message: 'Unified Receive Money Lifecycle created: Request REQ-2026-9904112 linked to Retail Submission RSL-2026-9904112 and Transaction MITO-9904112 (Status: Awaiting Confirmation)', type: 'system' },
+            { timestamp: '12 Mar 2026, 15:36', user: 'System', message: 'Reward scheme [RW] Request Money 10% Credit (REQ-CREDIT-10) applied (+GBP 25.00 bonus credit)', type: 'system' },
+            { timestamp: '12 Mar 2026, 15:40', user: 'System', message: 'Payment confirmed & paid out under single linked record UETR-8f91c2a0-4b12-49d8-9904-112000778899', type: 'system' }
+        ],
+        notes: '',
+        auditTrail: [
+            { time: '03:35 PM', event: 'Receive Money Request Created — Simultaneous Log in Retail Submissions (RSL-2026-9904112) & Transactions (MITO-9904112) as Awaiting Confirmation [Req: REQ-2026-9904112]', status: 'complete' },
+            { time: '03:36 PM', event: '[RW] Reward rule Request Money 10% Credit (REQ-CREDIT-10) applied. Bonus credit given: +GBP 25.00', status: 'complete' },
+            { time: '03:38 PM', event: 'Payer Email Link Verified & Open Banking Payment Received (GBP 250.00)', status: 'complete' },
+            { time: '03:40 PM', event: 'Unified Record Confirmed & Paid Out (NGN 563,750) — UETR-8f91c2a0-4b12-49d8-9904-112000778899', status: 'complete' }
+        ],
+        kycStatus: 'Passed',
+        hasUnseenComments: false,
+        hasUnseenTickets: false
     },
     {
         reference: 'MITO-6601001',
@@ -243,6 +317,8 @@ export const MOCK_TRANSACTIONS = [
         amountSent: 'EUR 34.50',
         feeAmount: 'EUR 0.39',
         promoCode: null,
+        rewardTag: null,
+        rewardRuleName: null,
         rewardType: 'None',
         discountAmount: null,
         receiverBonusAmount: 'NGN 0.00',
@@ -265,6 +341,31 @@ export const MOCK_TRANSACTIONS = [
         hasUnseenTickets: true
     }
 ];
+
+/**
+ * Formats the back-office "Rewards" display for a transaction:
+ * - Uses `+` for bonuses or `-` for discounts
+ * - Includes tag in brackets: `[PC]` for Promo Code, `[RF]` for Referral, `[RW]` for Reward
+ * - Includes the specific code or rule name
+ */
+export const formatTransactionRewards = (tx) => {
+    if (!tx) return null;
+    const hasReward = !!(tx.promoCode && tx.discountAmount);
+    if (!hasReward) return null;
+
+    const tag = tx.rewardTag || (tx.rewardType === 'Referral / Bonus' ? (String(tx.promoCode || '').startsWith('REF') ? 'RF' : 'RW') : 'PC');
+    const sign = tx.rewardDirection || (tag === 'PC' ? '-' : '+');
+    const amount = tx.rewardBonusAmount || tx.discountAmount;
+    const ruleOrCode = tx.rewardRuleName || tx.promoCode;
+    return {
+        tag,
+        sign,
+        amount,
+        ruleOrCode,
+        isBonus: sign === '+',
+        display: `${sign}${amount} [${tag}] (${ruleOrCode})`
+    };
+};
 
 export const SUMMARY_SNAPSHOT_ROWS = [
     {
@@ -334,9 +435,11 @@ export const SUMMARY_SNAPSHOT_ROWS = [
 ];
 
 export const statusColors = {
+    'Awaiting Confirmation': { bg: '#e0f2fe', color: '#0369a1' },
     'In Progress': { bg: '#fef3c7', color: '#92400e' },
     'Completed': { bg: '#dcfce7', color: '#166534' },
     'Processed': { bg: '#dcfce7', color: '#166534' },
+    'Aborted': { bg: '#fee2e2', color: '#991b1b' },
     'Failed': { bg: '#fee2e2', color: '#991b1b' },
 };
 

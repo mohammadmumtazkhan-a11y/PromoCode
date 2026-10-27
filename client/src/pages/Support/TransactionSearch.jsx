@@ -8,7 +8,8 @@ import {
     DEFAULT_END_DATE,
     statusColors,
     formatDateInputValue,
-    maskPII
+    maskPII,
+    formatTransactionRewards
 } from './transactionUtils';
 
 const TransactionSearch = () => {
@@ -69,7 +70,11 @@ const TransactionSearch = () => {
             const q = searchTerm.toLowerCase();
             switch (searchType) {
                 case 'reference':
-                    matchesQuery = t.reference.toLowerCase().includes(q) || t.mtn.toLowerCase().includes(q);
+                    matchesQuery = t.reference.toLowerCase().includes(q)
+                        || t.mtn.toLowerCase().includes(q)
+                        || (t.requestRef && t.requestRef.toLowerCase().includes(q))
+                        || (t.retailSubmissionRef && t.retailSubmissionRef.toLowerCase().includes(q))
+                        || (t.uetrRef && t.uetrRef.toLowerCase().includes(q));
                     break;
                 case 'payer':
                     matchesQuery = `${t.senderFirstName} ${t.senderLastName}`.toLowerCase().includes(q);
@@ -155,6 +160,7 @@ const TransactionSearch = () => {
     const demoTips = [
         { label: '22505502 (SAVE55)', value: '22505502' },
         { label: 'MITO-7721003', value: 'MITO-7721003' },
+        { label: 'MITO-9904112 (Receive Money UETR)', value: 'MITO-9904112' },
         { label: 'ogbeide.sender@example.com', value: 'ogbeide.sender@example.com' }
     ];
 
@@ -222,6 +228,7 @@ const TransactionSearch = () => {
                                 <option value="Rhemito Direct">Rhemito Direct</option>
                                 <option value="ITransfer Money Movers">ITransfer Money Movers</option>
                                 <option value="Partner-KE">Partner-KE</option>
+                                <option value="basketmouth.money">basketmouth.money</option>
                             </select>
                             <span style={{ fontSize: '0.78rem', color: '#475569', background: '#f1f5f9', padding: '6px 10px', borderRadius: 8 }}>
                                 Date Range: {startDate} to {endDate}
@@ -503,7 +510,14 @@ const TransactionSearch = () => {
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#fff7ed'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                     >
-                                        <td style={{ padding: '16px 20px', fontSize: '0.85rem', fontWeight: 600, color: '#1e293b' }}>{t.reference}</td>
+                                        <td style={{ padding: '16px 20px', fontSize: '0.85rem', fontWeight: 600, color: '#1e293b' }}>
+                                            <div>{t.reference}</div>
+                                            {t.requestRef && (
+                                                <div style={{ fontSize: '0.7rem', color: '#0369a1', fontWeight: 500, marginTop: 2 }}>
+                                                    {t.requestRef} · {t.retailSubmissionRef}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td style={{ padding: '16px 20px', fontSize: '0.85rem', color: '#64748b' }}>{t.lastUpdated}</td>
                                         <td style={{ padding: '16px 20px' }}>
                                             <div style={{ fontSize: '0.85rem', fontWeight: 500, color: '#334155' }}>{maskPII(`${t.beneficiaryFirstName} ${t.beneficiaryLastName}`, 'name')}</div>
@@ -569,8 +583,8 @@ const TransactionSearch = () => {
                                                         <strong>{t.sendAmount || t.total}</strong>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', color: '#4ade80' }}>
-                                                        <span>Discount ({t.promoCode}):</span>
-                                                        <strong>-{t.discountAmount}</strong>
+                                                        <span>Rewards ({formatTransactionRewards(t)?.tag ? `[${formatTransactionRewards(t).tag}] ` : ''}{t.promoCode}):</span>
+                                                        <strong>{formatTransactionRewards(t)?.display || `-${t.discountAmount}`}</strong>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #334155', marginTop: 4, paddingTop: 4 }}>
                                                         <span style={{ color: '#cbd5e1' }}>Actual Customer Paid:</span>

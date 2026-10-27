@@ -58,6 +58,15 @@ const money = (amount, currency) => {
 const corridorLabel = (send, receive) => (receive ? `${send} → ${receive}` : `${send} (all destinations)`);
 const maskName = (first, last) => `${first || 'Customer'}${last ? ' ' + last.trim()[0].toUpperCase() + '.' : ''}`;
 const fmtUkDate = (ymd) => (ymd ? ymd.split('-').reverse().join('/') : '');
+const referrerInviteName = (referrer) => {
+    if (!referrer) return 'Customer';
+    const first = String(referrer.first_name || '').trim();
+    const last = String(referrer.last_name || '').trim();
+    const isGeneric = !first || /^(friend|your friend|customer|user)$/i.test(first);
+    if (!isGeneric) return last ? `${first} ${last}` : first;
+    if (referrer.email) return String(referrer.email).trim();
+    return first || 'Customer';
+};
 
 function promisify(db) {
     return {
@@ -84,6 +93,9 @@ async function initSchema(db) {
     await addColumnIfMissing(q, 'referral_rules', 'qualification_window_days', 'INTEGER DEFAULT 30');
     await addColumnIfMissing(q, 'referral_rules', 'bonus_validity_days', 'INTEGER DEFAULT 90');
     await addColumnIfMissing(q, 'referral_rules', 'max_referrals_per_referrer', 'INTEGER');
+    await addColumnIfMissing(q, 'referral_rules', 'max_referrals_cap_type', "TEXT DEFAULT 'COUNT'");
+    await addColumnIfMissing(q, 'referral_rules', 'max_referrals_amount_per_referrer', 'REAL');
+    await addColumnIfMissing(q, 'referral_rules', 'max_scheme_budget', 'REAL');
     await addColumnIfMissing(q, 'referral_rules', 'min_redeem_amount', 'REAL DEFAULT 0');
     await addColumnIfMissing(q, 'referral_rules', 'start_date', 'TEXT');
     await addColumnIfMissing(q, 'referral_rules', 'end_date', 'TEXT');
@@ -188,7 +200,26 @@ function validateRule(body, { isNew }) {
     const qw = blank(body.qualification_window_days) ? (isIntIn(bv, 1, 730) ? Number(bv) : 90) : body.qualification_window_days;
     // Same range as Bonus Validity: the admin form sends the qualification window equal to Bonus Validity (one window, up to 730 days)
     if (!blank(body.qualification_window_days) && !isIntIn(qw, 1, 730)) errors.qualification_window_days = 'Enter a whole number of days from 1 to 730.';
-    if (!blank(body.max_referrals_per_referrer) && !isIntIn(body.max_referrals_per_referrer, 1, 10000)) {
+    const rawCapType = String(body.max_referrals_cap_type || '').toUpperCase();
+    const capType = rawCapType === 'AMOUNT' || (blank(body.max_referrals_cap_type) && !blank(body.max_referrals_amount_per_referrer) && blank(body.max_referrals_per_referrer))
+        ? 'AMOUNT'
+        : 'COUNT';
+    if (rawCapType && !['COUNT', 'AMOUNT'].includes(rawCapType)) {
+        errors.max_referrals_cap_type = 'Select Count or Amount for the per-referrer limit.';
+    }
+    if (capType === 'AMOUNT') {
+        const capAmt = body.max_referrals_amount_per_referrer;
+        if (!blank(capAmt) && (isNaN(Number(capAmt)) || Number(capAmt) <= 0 || Number(capAmt) > 10000000 || !decimalsOk(capAmt, currency))) {
+            errors.max_referrals_amount_per_referrer = 'Leave blank for unlimited, or enter a positive monetary cap up to 10,000,000.';
+        }
+    }
+    if (!blank(body.max_scheme_budget)) {
+        const sb = body.max_scheme_budget;
+        if (isNaN(Number(sb)) || Number(sb) <= 0 || Number(sb) > 100000000 || !decimalsOk(sb, currency)) {
+            errors.max_scheme_budget = 'Leave blank for unlimited, or enter a total scheme budget greater than 0.';
+        }
+    }
+    if (capType === 'COUNT' && !blank(body.max_referrals_per_referrer) && !isIntIn(body.max_referrals_per_referrer, 1, 10000)) {
         errors.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
     }
     const today = ukToday();
@@ -208,7 +239,10 @@ function validateRule(body, { isNew }) {
         min_transaction_threshold: round2(floor),
         qualification_window_days: Number(qw),
         bonus_validity_days: Number(bv),
-        max_referrals_per_referrer: blank(body.max_referrals_per_referrer) ? null : Number(body.max_referrals_per_referrer),
+        max_referrals_cap_type: capType,
+        max_referrals_per_referrer: capType === 'COUNT' && !blank(body.max_referrals_per_referrer) ? Number(body.max_referrals_per_referrer) : null,
+        max_referrals_amount_per_referrer: capType === 'AMOUNT' && !blank(body.max_referrals_amount_per_referrer) ? round2(body.max_referrals_amount_per_referrer) : null,
+        max_scheme_budget: blank(body.max_scheme_budget) ? null : round2(body.max_scheme_budget),
         min_redeem_amount: 0, // retired: the Floor is the only minimum amount on a rule
         start_date: start,
         end_date: end,
@@ -217,7 +251,8 @@ function validateRule(body, { isNew }) {
 }
 
 const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'referrer_reward', 'referee_reward',
-    'min_transaction_threshold', 'qualification_window_days', 'bonus_validity_days', 'max_referrals_per_referrer',
+    'min_transaction_threshold', 'qualification_window_days', 'bonus_validity_days',
+    'max_referrals_cap_type', 'max_referrals_per_referrer', 'max_referrals_amount_per_referrer', 'max_scheme_budget',
     'start_date', 'end_date'];
 
 function offerText(rule) {
@@ -237,7 +272,11 @@ function publicOffer(rule) {
         referrer_reward: rule.referrer_reward, referee_reward: rule.referee_reward,
         floor: rule.min_transaction_threshold, qualification_window_days: rule.qualification_window_days,
         bonus_validity_days: rule.bonus_validity_days, min_redeem_amount: 0,
-        max_referrals_per_referrer: rule.max_referrals_per_referrer, end_date: rule.end_date,
+        max_referrals_cap_type: rule.max_referrals_cap_type || 'COUNT',
+        max_referrals_per_referrer: rule.max_referrals_per_referrer,
+        max_referrals_amount_per_referrer: rule.max_referrals_amount_per_referrer ?? null,
+        max_scheme_budget: rule.max_scheme_budget ?? null,
+        end_date: rule.end_date,
         text: offerText(rule),
     };
 }
@@ -454,6 +493,12 @@ async function createReferral(q, { code, rule_id, referee }) {
     if (!rule && !deferred) { status = 'NOT_ELIGIBLE'; reason = `No active referral programme for ${corridorLabel(currency, receive)}`; }
     else if (match) { status = 'NOT_ELIGIBLE'; reason = `Self-referral: same ${match}`; }
     else if (returning) { status = 'NOT_ELIGIBLE'; reason = 'Returning customer'; }
+    else if (rule && Number(rule.max_scheme_budget) > 0 && (await totalSchemeSpend(q, rule.id)) >= Number(rule.max_scheme_budget)) {
+        status = 'NOT_ELIGIBLE'; reason = 'Scheme maximum budget cap reached';
+    } else if (rule && rule.reward_type !== 'REFERRER' && Number(rule.referee_reward) > 0 && Number(rule.max_scheme_budget) > 0 &&
+        (await totalSchemeSpend(q, rule.id)) + Number(rule.referee_reward) > Number(rule.max_scheme_budget)) {
+        status = 'NOT_ELIGIBLE'; reason = 'Scheme maximum budget cap reached';
+    }
 
     const latest = deferred ? liveForSend.map((x) => overallDeadlineFor(x, regDay)).sort().pop() : null;
     const referrerBy = deferred ? liveForSend.map((x) => referrerDeadlineFor(x, regDay)).sort().pop() : null;
@@ -463,7 +508,7 @@ async function createReferral(q, { code, rule_id, referee }) {
         try {
             refereeCreditId = await addCredit({
                 userId: referee.id, amount: rule.referee_reward, currency,
-                referenceId: `${id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}`,
+                referenceId: `${id}:referee`, notes: `Referee reward – invited by ${referrerInviteName(referrer)}`,
                 referralId: id, ruleId: rule.id, validityDays: rule.bonus_validity_days,
             });
             refereeCredited = rule.referee_reward;
@@ -484,6 +529,35 @@ async function createReferral(q, { code, rule_id, referee }) {
 
 async function rewardedCountForReferrer(q, referrerId, ruleId) {
     const r = await q.get(`SELECT COUNT(*) AS c FROM referrals WHERE referrer_id = ? AND rule_id = ? AND referrer_credited > 0`, [referrerId, ruleId]);
+    return r.c;
+}
+
+async function rewardedAmountForReferrer(q, referrerId, ruleId) {
+    const r = await q.get(`SELECT COALESCE(SUM(referrer_credited), 0) AS s FROM referrals WHERE referrer_id = ? AND rule_id = ? AND referrer_credited > 0`, [referrerId, ruleId]);
+    return round2(r ? r.s : 0);
+}
+
+async function totalSchemeSpend(q, ruleId) {
+    const r = await q.get(`SELECT COALESCE(SUM(COALESCE(referrer_credited, 0) + COALESCE(referee_credited, 0)), 0) AS s FROM referrals WHERE rule_id = ? AND status != 'REVERSED'`, [ruleId]);
+    return round2(r ? r.s : 0);
+}
+
+async function isReferrerCapReached(q, referrerId, rule, nextRewardAmount = 0) {
+    if (!rule) return false;
+    const capType = String(rule.max_referrals_cap_type || 'COUNT').toUpperCase();
+    if (capType === 'AMOUNT') {
+        const capAmt = Number(rule.max_referrals_amount_per_referrer || 0);
+        if (!(capAmt > 0)) return false;
+        const earned = await rewardedAmountForReferrer(q, referrerId, rule.id);
+        return earned >= capAmt || (nextRewardAmount > 0 && round2(earned + Number(nextRewardAmount)) > capAmt);
+    }
+    const capCnt = Number(rule.max_referrals_per_referrer || 0);
+    if (!(capCnt > 0)) return false;
+    const rewarded = await rewardedCountForReferrer(q, referrerId, rule.id);
+    return rewarded >= capCnt;
+}
+
+async function unusedPlaceholderForDiff() { return true; //
     return r.c;
 }
 
@@ -537,7 +611,12 @@ async function tryAward(q, referral) {
         if (rewardsReferrer) {
             const cap = rule && rule.max_referrals_per_referrer;
             if (referrer.account_status !== 'ACTIVE') notes.push('Referrer account not active');
-            else if (cap && (await rewardedCountForReferrer(q, r.referrer_id, r.rule_id)) >= cap) notes.push('Referrer cap reached');
+            const schemeCapHit = rule && Number(rule.max_scheme_budget) > 0 &&
+                round2((await totalSchemeSpend(q, r.rule_id)) + Number(r.referrer_reward || 0)) > Number(rule.max_scheme_budget);
+            const referrerCapHit = await isReferrerCapReached(q, r.referrer_id, rule, r.referrer_reward);
+            if (referrer.account_status !== 'ACTIVE') notes.push('Referrer account not active');
+            else if (schemeCapHit) notes.push('Scheme maximum budget cap reached');
+            else if (referrerCapHit) notes.push('Referrer cap reached');
             else {
                 referrerCreditId = await addCredit({
                     userId: r.referrer_id, amount: r.referrer_reward, currency: r.currency,
@@ -550,7 +629,7 @@ async function tryAward(q, referral) {
         if (rewardsReferee && !refereeCreditId) {
             refereeCreditId = await addCredit({
                 userId: r.referee_id, amount: r.referee_reward, currency: r.currency,
-                referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}`,
+                referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${referrerInviteName(referrer)}`,
                 referralId: r.id, ruleId: r.rule_id, validityDays: r.bonus_validity_days,
             });
             refereeCredited = r.referee_reward;
@@ -804,7 +883,17 @@ function registerReferralRoutes(app, db, hooks = {}) {
     const withMeta = async (rule) => {
         const c = await q.all(`SELECT status, COUNT(*) AS c FROM referrals WHERE rule_id = ? GROUP BY status`, [rule.id]);
         const n = (st) => c.filter((x) => st.includes(x.status)).reduce((s, x) => s + x.c, 0);
-        return { ...rule, status: ruleStatus(rule), pending_count: n(['REGISTERED', 'PENDING']), referral_count: n(Object.keys(STATUS_LABELS)) };
+        const schemeSpend = await totalSchemeSpend(q, rule.id);
+        const schemeCapReached = !!(Number(rule.max_scheme_budget) > 0 && schemeSpend >= Number(rule.max_scheme_budget));
+        return {
+            ...rule,
+            max_referrals_cap_type: rule.max_referrals_cap_type || 'COUNT',
+            scheme_spend: schemeSpend,
+            scheme_cap_reached: schemeCapReached,
+            status: ruleStatus(rule),
+            pending_count: n(['REGISTERED', 'PENDING']),
+            referral_count: n(Object.keys(STATUS_LABELS)),
+        };
     };
 
     // ---- Admin: rules (US-1.1 – US-1.5) ----
@@ -872,7 +961,7 @@ function registerReferralRoutes(app, db, hooks = {}) {
                     try {
                         refereeCreditId = await addCredit({
                             userId: r.referee_id, amount: rule.referee_reward, currency: r.currency,
-                            referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer && referrer.first_name, referrer && referrer.last_name)}`,
+                            referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${referrerInviteName(referrer)}`,
                             referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days,
                         });
                         refereeCredited = rule.referee_reward;
@@ -952,7 +1041,12 @@ function registerReferralRoutes(app, db, hooks = {}) {
                 offer.referral_code = await ensureReferralCode(q, customer.id);
                 offer.referral_link = `https://rhemito.com/ref/${offer.referral_code}`;
                 const rewarded = await rewardedCountForReferrer(q, customer.id, rule.id);
-                offer.cap_reached = !!(rule.max_referrals_per_referrer && rewarded >= rule.max_referrals_per_referrer && rule.reward_type !== 'REFEREE');
+                const referrerCapHit = rule.reward_type !== 'REFEREE' && (await isReferrerCapReached(q, customer.id, rule, rule.referrer_reward));
+                const schemeSpend = await totalSchemeSpend(q, rule.id);
+                const schemeCapHit = !!(Number(rule.max_scheme_budget) > 0 && schemeSpend >= Number(rule.max_scheme_budget));
+                offer.cap_reached = !!(referrerCapHit || schemeCapHit);
+                offer.scheme_cap_reached = schemeCapHit;
+                offer.scheme_spend = schemeSpend;
             }
             return offer;
         };
@@ -1094,7 +1188,7 @@ function registerReferralRoutes(app, db, hooks = {}) {
             referrerCredited = rr;
         }
         if (type !== 'REFERRER' && re > 0) {
-            refereeCreditId = await addCredit({ userId: r.referee_id, amount: re, currency: r.currency, referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${maskName(referrer.first_name, referrer.last_name)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
+            refereeCreditId = await addCredit({ userId: r.referee_id, amount: re, currency: r.currency, referenceId: `${r.id}:referee`, notes: `Referee reward – invited by ${referrerInviteName(referrer)}${note}`, referralId: r.id, ruleId: rule.id, validityDays: rule.bonus_validity_days });
             refereeCredited = re;
         }
         await q.run(`UPDATE referrals SET status = 'REWARDED', rule_id = ?, receive_currency = ?, rewarded_at = ?, referrer_credited = ?, referee_credited = ?, referrer_credit_id = ?, referee_credit_id = ?, approved_by = ?, approval_reason = ?, status_reason = 'Approved by admin', updated_at = ? WHERE id = ?`,

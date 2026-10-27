@@ -32,7 +32,21 @@ export function validateForm(f, { isNew, rules, editingId }) {
     if (blank(fl) || Number.isNaN(Number(fl)) || Number(fl) <= 0 || Number(fl) > 10000000 || !dpOk(fl, cur)) e.min_transaction_threshold = 'Enter a minimum transaction amount greater than 0.';
     if (!blank(f.qualification_window_days) && !intIn(f.qualification_window_days, 1, 730)) e.qualification_window_days = 'Enter a whole number of days from 1 to 730.';
     if (!intIn(f.bonus_validity_days, 1, 730)) e.bonus_validity_days = 'Enter a whole number of days from 1 to 730.';
-    if (!blank(f.max_referrals_per_referrer) && !intIn(f.max_referrals_per_referrer, 1, 10000)) e.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
+    const capType = (f.max_referrals_cap_type || 'COUNT').toUpperCase();
+    if (capType === 'AMOUNT') {
+        const capAmt = f.max_referrals_amount_per_referrer;
+        if (!blank(capAmt) && (Number.isNaN(Number(capAmt)) || Number(capAmt) <= 0 || Number(capAmt) > 10000000 || !dpOk(capAmt, cur))) {
+            e.max_referrals_amount_per_referrer = 'Leave blank for unlimited, or enter a positive monetary cap up to 10,000,000.';
+        }
+    } else if (!blank(f.max_referrals_per_referrer) && !intIn(f.max_referrals_per_referrer, 1, 10000)) {
+        e.max_referrals_per_referrer = 'Leave blank for unlimited, or enter a whole number from 1 to 10,000.';
+    }
+    if (!blank(f.max_scheme_budget)) {
+        const sb = f.max_scheme_budget;
+        if (Number.isNaN(Number(sb)) || Number(sb) <= 0 || Number(sb) > 100000000 || !dpOk(sb, cur)) {
+            e.max_scheme_budget = 'Leave blank for unlimited, or enter a total scheme budget greater than 0.';
+        }
+    }
     const today = ukTodayIso();
     if (f.start_date && isNew && f.start_date < today) e.start_date = 'Start date cannot be in the past.';
     if (f.end_date && (isNew ? f.end_date <= (f.start_date || today) : f.start_date && f.end_date <= f.start_date)) e.end_date = 'End date must be after the start date.';

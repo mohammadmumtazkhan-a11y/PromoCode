@@ -472,3 +472,17 @@ Export from `server/promo/index.js`: `listRedemptions({ userId?, codeId?, from?,
 - Must-not-break checklist (Section 11) ticked in the PR description with how each was verified.
 - Promo module has no `require` of bonus, referral or ledger code.
 - Backfill ran on a copy of `server/database.sqlite` with counts logged.
+
+---
+
+## 17. Back-Office Transaction Details, Audit Trail & Unified Receive Money Lifecycle (Sponsor Update)
+
+1. **Transaction Details `Rewards` Field (replaces `DiscountReceived` / `Discount applied`):**
+   - In the back-office Transaction Details view (Summary Card, Payment Details table, and PDF receipt preview), the field label is **`Rewards`**.
+   - Display the applied amount with `+` for bonuses or `-` for discounts, alongside a bracketed tag (`[PC]` for Promo Code, `[RF]` for Referral, `[RW]` for Reward) and the specific code or rule name, e.g. `-GBP 55.00 [PC] (SAVE55)` or `+EUR 2.00 [RF] (EU-NG Referral Scheme (REF-BONUS))`.
+2. **Referrals & Rewards in Audit Trail (`Trail` & `Comments` tabs):**
+   - Applied referral bonuses (`[RF]`) and reward schemes (`[RW]`) must be logged in the transaction's `Trail` and `Comments` tabs in the exact same structured manner as promo codes (`[PC]`), showing the rule applied and the bonus/discount amount given.
+3. **Unified Transaction References for "Receive Money" (Single Audit Log / UETR):**
+   - A Receive Money request must not generate two separate, unlinked order numbers across Retail Submissions and Transactions.
+   - `Request Reference` (`REQ-...`), `Retail Submission Reference` (`RSL-...`), and `Transaction Reference` (`MTN` / `MITO-...`) are linked together under a single lifecycle/audit trail (`UETR-...`).
+   - When a request is created, it logs simultaneously in Retail Submissions and Transactions as `Awaiting Confirmation`. If payment arrives, it confirms and pays out under that single linked record (`Confirmed & Paid Out`); if it times out, it aborts and updates the status (`Aborted`).

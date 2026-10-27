@@ -12,7 +12,7 @@ const { ukToday, nowIso, addDays, fmtUk } = require('./time');
 const { Reject } = require('./errors');
 const debt = require('./debt');
 const feed = require('./feed');
-const { MANUAL_REASONS } = require('./schema');
+const { MANUAL_REASONS, resolveReferralCreditMeta } = require('./schema');
 
 const newId = (p) => `${p}_${crypto.randomBytes(8).toString('hex')}`;
 const DEFAULT_VALIDITY_DAYS = 90;
@@ -41,7 +41,8 @@ function sourceLabel(row) {
             return friend ? `Referral bonus – ${friend}` : 'Referral bonus';
         }
         const by = between(row.notes, /invited by (.+?)(?: \(approved by|$)/);
-        return by ? `Welcome bonus – invited by ${by}` : 'Welcome bonus';
+        const inviter = row.referrer_display_name || (by && !/^(friend|your friend|customer|user)$/i.test(by) ? by : null) || by;
+        return inviter ? `Welcome bonus – invited by ${inviter}` : 'Welcome bonus';
     }
     if (source === 'SCHEME') {
         const name = row.scheme_name || row.notes;
@@ -80,9 +81,11 @@ async function creditsWithRemaining(q, userId, currency, { today = ukToday() } =
         c.usable = c.remaining > 0 && !['EXPIRED', 'REVERSED'].includes(c.status) && (!c.expires_at || c.expires_at >= today);
         c.source_label = sourceLabel(c);
     }
-    const refRulesById = new Map(), refRulesByCur = new Map(), refReferralsById = new Map(), schemeFloorsByCur = new Map();
+    const schemeFloorsByCur = new Map();
+    const { refRulesById, refRulesByCur, refReferralsById } = await resolveReferralCreditMeta(q, userId, credits, cur, round2, sourceLabel);
+    if (false) {
     try {
-        const refRules = await q.all(`SELECT id, base_currency, receive_currency, min_transaction_threshold, is_enabled FROM referral_rules WHERE COALESCE(is_archived,0) = 0`);
+        const refRules = [];
         for (const r of refRules) {
             const info = {
                 floor: Number(r.min_transaction_threshold) || 0,
@@ -96,16 +99,21 @@ async function creditsWithRemaining(q, userId, currency, { today = ukToday() } =
                 refRulesByCur.set(info.base_currency, info);
             }
         }
-        const refRows = await q.all(`SELECT id, rule_id, currency, receive_currency, floor FROM referrals WHERE referee_id = ? OR referrer_id = ?`, [userId, userId]);
+        const refRows = [];
         for (const ref of refRows) {
+            const rfFirst = String(ref.ref_first || '').trim();
+            const rfLast = String(ref.ref_last || '').trim();
+            const isGen = !rfFirst || /^(friend|your friend|customer|user)$/i.test(rfFirst);
+            const refDisplayName = !isGen ? (rfLast ? `${rfFirst} ${rfLast}` : rfFirst) : (ref.ref_email ? String(ref.ref_email).trim() : null);
             refReferralsById.set(String(ref.id), {
                 rule_id: ref.rule_id ? Number(ref.rule_id) : null,
                 floor: Number(ref.floor) || 0,
                 receive_currency: ref.receive_currency ? cur(ref.receive_currency) : null,
                 currency: ref.currency ? cur(ref.currency) : null,
+                referrer_display_name: refDisplayName,
             });
         }
-    } catch { /* referral_rules absent in isolated tests */ }
+    } catch { /* absent in isolated tests */ } }
     try {
         const activeSchemes = await q.all(`SELECT currency, min_transaction_threshold FROM bonus_schemes WHERE status = 'ACTIVE' AND min_transaction_threshold > 0 ORDER BY id DESC`);
         for (const s of activeSchemes) {
@@ -115,7 +123,11 @@ async function creditsWithRemaining(q, userId, currency, { today = ukToday() } =
     } catch { /* ignore */ }
     for (const c of credits) {
         if (c.credit_source === 'REFERRAL') {
-            const refInfo = c.referral_id ? refReferralsById.get(String(c.referral_id)) : null;
+            const refInfo = c.referral_id ? refReferralsById.get(String(c.referral_id)) : (refReferralsById.size === 1 ? [...refReferralsById.values()][0] : null);
+            if (refInfo && refInfo.referrer_display_name && c.credit_source_detail !== 'REFERRER') {
+                c.referrer_display_name = refInfo.referrer_display_name;
+                c.source_label = sourceLabel(c);
+            }
             const ruleInfo = (c.referral_rule_id && refRulesById.get(Number(c.referral_rule_id))) ||
                 (refInfo && refInfo.rule_id && refRulesById.get(Number(refInfo.rule_id))) ||
                 refRulesByCur.get(cur(c.currency)) || null;
@@ -463,7 +475,8 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
     const keep = (row) => !sourceFilter || row.credit_source === sourceFilter;
     const srcFields = (row) => ({ credit_source: row.credit_source || null, credit_source_detail: row.credit_source_detail || null, credit_source_label: row.source_label || null, source_label: row.source_label || null });
     const historyRows = entries.map((e) => {
-        const view = { credit_source: e.eff_source || null, credit_source_detail: e.eff_detail || null, notes: e.label_notes, scheme_name: e.scheme_name };
+        const matchedCredit = credits.find((c) => c.id === e.id || c.id === e.source_credit_id);
+        const view = { credit_source: e.eff_source || null, credit_source_detail: e.eff_detail || null, notes: e.label_notes, scheme_name: e.scheme_name, referrer_display_name: matchedCredit ? matchedCredit.referrer_display_name : null };
         const label = view.credit_source ? sourceLabel(view) : null;
         return {
             id: e.id, created_at: e.created_at, type: e.type, reason_code: e.reason_code, amount: e.amount, currency: e.currency, notes: e.notes,
