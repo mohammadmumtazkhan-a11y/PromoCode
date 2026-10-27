@@ -24,6 +24,46 @@ const nowIso = () => clock.now().toISOString();
 const newId = (prefix) => `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+const ANDROID_PACKAGE_ID = process.env.RHEMITO_ANDROID_PACKAGE_ID || 'com.funtechcom.rhemito';
+const IOS_APP_STORE_URL = process.env.RHEMITO_IOS_APP_STORE_URL || 'https://apps.apple.com/gb/app/rhemito-money-transfer/id1494717263';
+
+function playStoreUrlFor(trackingId, referralCode) {
+    const referrerParam = trackingId
+        ? `tracking_id=${trackingId}${referralCode ? `&referral_code=${referralCode}` : ''}`
+        : (referralCode ? `referral_code=${referralCode}` : '');
+    const base = `https://play.google.com/store/apps/details?id=${encodeURIComponent(ANDROID_PACKAGE_ID)}`;
+    return referrerParam ? `${base}&referrer=${encodeURIComponent(referrerParam)}` : base;
+}
+
+function detectDeviceFromUa(userAgent, explicitDevice, explicitOs) {
+    const ua = String(userAgent || '');
+    let operatingSystem = explicitOs ? String(explicitOs).trim() : '';
+    if (!operatingSystem) {
+        if (/android/i.test(ua)) operatingSystem = 'Android';
+        else if (/ipad|iphone|ipod|ios/i.test(ua)) operatingSystem = 'iOS';
+        else if (/windows/i.test(ua)) operatingSystem = 'Windows';
+        else if (/macintosh|mac os x/i.test(ua)) operatingSystem = 'macOS';
+        else if (/linux/i.test(ua)) operatingSystem = 'Linux';
+        else operatingSystem = 'Other';
+    }
+    let deviceType = explicitDevice ? String(explicitDevice).trim().toLowerCase() : '';
+    if (!deviceType) {
+        if (/ipad|tablet/i.test(ua)) deviceType = 'tablet';
+        else if (/mobi|android|iphone|ipod/i.test(ua)) deviceType = 'mobile';
+        else deviceType = 'desktop';
+    }
+    return { deviceType, operatingSystem };
+}
+
+async function generateTrackingId(q) {
+    for (let i = 0; i < 20; i++) {
+        const candidate = `REF${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+        const clash = await q.get(`SELECT id FROM referral_link_visits WHERE tracking_id = ?`, [candidate]);
+        if (!clash) return candidate;
+    }
+    return `REF${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
 const SUPPORTED_CURRENCIES = ['GBP', 'USD', 'EUR', 'NGN', 'CAD', 'AUD', 'JPY', 'CNY', 'INR', 'ZAR', 'KES', 'GHS', 'AED'];
 const COUNTRY_SEND_CURRENCIES = {
     GB: ['GBP', 'USD', 'EUR'],
@@ -146,6 +186,22 @@ async function initSchema(db) {
     // Where the wallet credits of this referral live (ids returned by rewardWallet.issueCredit), so reversal can void them
     await addColumnIfMissing(q, 'referrals', 'referrer_credit_id', 'TEXT');
     await addColumnIfMissing(q, 'referrals', 'referee_credit_id', 'TEXT');
+    // Cross-platform attribution & traceability (Web, Android Play Install Referrer, iOS App Store handoff)
+    await addColumnIfMissing(q, 'referral_link_visits', 'tracking_id', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'rule_id', 'INTEGER');
+    await addColumnIfMissing(q, 'referral_link_visits', 'device_type', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'operating_system', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'source_channel', "TEXT DEFAULT 'LINK'");
+    await addColumnIfMissing(q, 'referral_link_visits', 'attribution_status', "TEXT DEFAULT 'CLICKED'");
+    await addColumnIfMissing(q, 'referral_link_visits', 'store_target', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'resolved_at', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'linked_referral_id', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'linked_referee_id', 'TEXT');
+    await addColumnIfMissing(q, 'referral_link_visits', 'expires_at', 'TEXT');
+    await addColumnIfMissing(q, 'referrals', 'tracking_id', 'TEXT');
+    await addColumnIfMissing(q, 'referrals', 'registration_channel', "TEXT DEFAULT 'WEB'");
+    await addColumnIfMissing(q, 'referrals', 'attribution_method', "TEXT DEFAULT 'DIRECT_LINK'");
+    await addColumnIfMissing(q, 'referrals', 'device_os', 'TEXT');
 }
 
 // ---------- rules ----------
@@ -444,7 +500,172 @@ async function lookupCode(q, code) {
     return { valid: true, code: clean, referrer };
 }
 
-async function createReferral(q, { code, rule_id, referee }) {
+async function recordClick(q, payload = {}, userAgent = '') {
+    const rawCode = payload.code || payload.referralCode;
+    const look = await lookupCode(q, rawCode);
+    if (!look.valid) throw Object.assign(new Error(look.message), { status: 404, code: look.reason });
+    const visitor = String(payload.visitor_id || payload.visitorId || 'anonymous').slice(0, 64);
+    const { deviceType, operatingSystem } = detectDeviceFromUa(userAgent, payload.device_type || payload.deviceType, payload.operating_system || payload.operatingSystem);
+    const sourceChannel = String(payload.source_channel || payload.sourceChannel || 'LINK').toUpperCase();
+    const storeTarget = payload.store_target || payload.storeTarget ? String(payload.store_target || payload.storeTarget).toUpperCase() : null;
+    const initialStatus = storeTarget === 'GOOGLE_PLAY' || storeTarget === 'APPLE_APP_STORE' ? 'STORE_REDIRECT' : 'CLICKED';
+
+    let visitCurrency = look.referrer.send_currency || 'GBP';
+    let visitReceive = String(payload.receive_currency || payload.receiveCurrency || '').toUpperCase() || null;
+    const requestedRuleId = payload.rule_id || payload.ruleId ? Number(payload.rule_id || payload.ruleId) : null;
+    if (requestedRuleId) {
+        const chosen = await q.get(`SELECT base_currency, receive_currency FROM referral_rules WHERE id = ?`, [requestedRuleId]);
+        if (chosen) {
+            visitCurrency = chosen.base_currency || visitCurrency;
+            visitReceive = chosen.receive_currency || visitReceive;
+        }
+    }
+
+    const since = new Date(clock.now().getTime() - 86400000).toISOString();
+    const dup = visitor !== 'anonymous'
+        ? await q.get(`SELECT * FROM referral_link_visits WHERE code = ? AND visitor_id = ? AND created_at >= ? ORDER BY id DESC LIMIT 1`, [look.code, visitor, since])
+        : null;
+
+    const clickedAt = nowIso();
+    const expiresAt = new Date(clock.now().getTime() + 90 * 86400000).toISOString();
+    let trackingId = dup && dup.tracking_id ? dup.tracking_id : await generateTrackingId(q);
+
+    if (dup) {
+        await q.run(`UPDATE referral_link_visits SET tracking_id = COALESCE(tracking_id, ?), device_type = COALESCE(?, device_type), operating_system = COALESCE(?, operating_system),
+            store_target = COALESCE(?, store_target), attribution_status = CASE WHEN attribution_status IN ('LINKED', 'RESOLVED') THEN attribution_status ELSE ? END
+            WHERE id = ?`,
+        [trackingId, deviceType, operatingSystem, storeTarget, initialStatus, dup.id]);
+    } else {
+        await q.run(`INSERT INTO referral_link_visits (code, referrer_id, currency, receive_currency, rule_id, visitor_id, tracking_id, device_type, operating_system, source_channel, attribution_status, store_target, expires_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [look.code, look.referrer.id, visitCurrency, visitReceive, requestedRuleId, visitor, trackingId, deviceType, operatingSystem, sourceChannel, initialStatus, storeTarget, expiresAt, clickedAt]);
+    }
+
+    return {
+        success: true,
+        counted: !dup,
+        referralCode: look.code,
+        referrerId: look.referrer.id,
+        referrerFirstName: look.referrer.first_name,
+        trackingId,
+        tracking_id: trackingId,
+        deviceType,
+        device_type: deviceType,
+        operatingSystem,
+        operating_system: operatingSystem,
+        sourceChannel,
+        storeTarget,
+        clickedAt: dup ? dup.created_at : clickedAt,
+        expiresAt,
+        status: initialStatus,
+        playStoreUrl: playStoreUrlFor(trackingId, look.code),
+        play_store_url: playStoreUrlFor(trackingId, look.code),
+        appStoreUrl: IOS_APP_STORE_URL,
+        app_store_url: IOS_APP_STORE_URL,
+    };
+}
+
+async function updateClickHandoff(q, trackingId, patch = {}) {
+    const cleanId = String(trackingId || '').trim().toUpperCase();
+    if (!cleanId) throw Object.assign(new Error('trackingId is required'), { status: 400, code: 'VALIDATION' });
+    const row = await q.get(`SELECT * FROM referral_link_visits WHERE tracking_id = ?`, [cleanId]);
+    if (!row) throw Object.assign(new Error('Tracking ID not found.'), { status: 404, code: 'NOT_FOUND' });
+    const storeTarget = patch.store_target || patch.storeTarget ? String(patch.store_target || patch.storeTarget).toUpperCase() : row.store_target;
+    const nextStatus = row.attribution_status === 'LINKED'
+        ? 'LINKED'
+        : (patch.attribution_status || patch.status || (storeTarget === 'GOOGLE_PLAY' || storeTarget === 'APPLE_APP_STORE' ? 'STORE_REDIRECT' : row.attribution_status || 'CLICKED'));
+    const os = patch.operating_system || patch.operatingSystem || row.operating_system;
+    await q.run(`UPDATE referral_link_visits SET store_target = ?, attribution_status = ?, operating_system = COALESCE(?, operating_system) WHERE tracking_id = ?`,
+        [storeTarget, nextStatus, os, cleanId]);
+    const updated = await q.get(`SELECT * FROM referral_link_visits WHERE tracking_id = ?`, [cleanId]);
+    return {
+        ...updated,
+        trackingId: updated.tracking_id,
+        referralCode: updated.code,
+        playStoreUrl: playStoreUrlFor(updated.tracking_id, updated.code),
+        appStoreUrl: IOS_APP_STORE_URL,
+    };
+}
+
+function parseReferrerToken(input) {
+    const raw = String(input || '').trim();
+    if (!raw) return { trackingId: '', referralCode: '' };
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch { /* ignore */ }
+    if (decoded.includes('=') || decoded.includes('&')) {
+        const params = new URLSearchParams(decoded.replace(/^\?/, ''));
+        return {
+            trackingId: String(params.get('tracking_id') || params.get('trackingId') || '').trim().toUpperCase(),
+            referralCode: String(params.get('referral_code') || params.get('referralCode') || params.get('code') || '').trim().toUpperCase(),
+        };
+    }
+    return { trackingId: decoded.toUpperCase(), referralCode: '' };
+}
+
+async function resolveTrackingId(q, payload = {}) {
+    const parsed = parseReferrerToken(payload.trackingId || payload.tracking_id || payload.referrer || '');
+    const trackingId = parsed.trackingId;
+    const channel = String(payload.channel || 'ANDROID').toUpperCase();
+    if (!trackingId) {
+        return { valid: false, error: 'INVALID_TRACKING_ID', message: 'Tracking ID is required to resolve install attribution.' };
+    }
+    const click = await q.get(`SELECT * FROM referral_link_visits WHERE tracking_id = ?`, [trackingId]);
+    if (!click) {
+        return { valid: false, error: 'TRACKING_NOT_FOUND', message: 'Install referral tracking ID was not found. You can enter a referral code manually.' };
+    }
+    if (click.expires_at && click.expires_at < nowIso()) {
+        await q.run(`UPDATE referral_link_visits SET attribution_status = 'EXPIRED' WHERE id = ?`, [click.id]);
+        return { valid: false, error: 'TRACKING_EXPIRED', message: 'This referral install link has expired. You can still enter a referral code manually.' };
+    }
+    const look = await lookupCode(q, click.code);
+    if (!look.valid) {
+        return { valid: false, error: look.reason, message: look.message };
+    }
+    const resolvedAt = nowIso();
+    const nextStatus = click.attribution_status === 'LINKED' ? 'LINKED' : 'RESOLVED';
+    await q.run(`UPDATE referral_link_visits SET attribution_status = ?, resolved_at = COALESCE(resolved_at, ?), operating_system = CASE WHEN ? = 'ANDROID' THEN 'Android' WHEN ? = 'IOS' THEN 'iOS' ELSE operating_system END WHERE id = ?`,
+        [nextStatus, resolvedAt, channel, channel, click.id]);
+
+    const currency = String(click.currency || look.referrer.send_currency || 'GBP').toUpperCase();
+    const rules = await offerRulesFor(q, currency, click.receive_currency);
+    const sendCurrencies = sendCurrenciesForCountry(look.referrer.country, currency);
+    const currencyOffers = [];
+    for (const cur of sendCurrencies) {
+        const curRules = cur === currency ? rules : await offerRulesFor(q, cur, click.receive_currency);
+        for (const r of curRules) currencyOffers.push(publicOffer(r));
+    }
+    const referralContextId = `CTX-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+    return {
+        valid: true,
+        trackingId: click.tracking_id,
+        tracking_id: click.tracking_id,
+        referralCode: look.code,
+        code: look.code,
+        referrerId: look.referrer.id,
+        referrerFirstName: look.referrer.first_name,
+        referrer_first_name: look.referrer.first_name,
+        referralContextId,
+        channel,
+        ruleId: click.rule_id || null,
+        offer: rules.length === 1 ? publicOffer(rules[0]) : (currencyOffers[0] || null),
+        offers: rules.map(publicOffer),
+        send_currencies: sendCurrencies,
+        currency_offers: currencyOffers,
+    };
+}
+
+async function createReferral(q, payload = {}) {
+    const { rule_id, referee } = payload;
+    let code = payload.code || payload.referralCode || (referee && referee.referral_code);
+    const rawTracking = payload.tracking_id || payload.trackingId || (referee && (referee.tracking_id || referee.trackingId)) || '';
+    const parsedTracking = parseReferrerToken(rawTracking);
+    const trackingId = parsedTracking.trackingId || null;
+    let clickRow = null;
+    if (trackingId) {
+        clickRow = await q.get(`SELECT * FROM referral_link_visits WHERE tracking_id = ?`, [trackingId]);
+        if (clickRow && !code) code = clickRow.code;
+    }
+    if (!code && parsedTracking.referralCode) code = parsedTracking.referralCode;
     const look = await lookupCode(q, code);
     if (!look.valid) throw Object.assign(new Error(look.message), { status: 400, code: look.reason });
     const referrer = look.referrer;
@@ -528,14 +749,43 @@ async function createReferral(q, { code, rule_id, referee }) {
             console.error('[referral] referee welcome reward could not be issued at registration', id, err.message);
         }
     }
+    // Determine cross-platform attribution metadata
+    if (!clickRow && !trackingId) {
+        const recentWindow = new Date(clock.now().getTime() - 7 * 86400000).toISOString();
+        clickRow = await q.get(`SELECT * FROM referral_link_visits WHERE code = ? AND linked_referral_id IS NULL AND created_at >= ? ORDER BY id DESC LIMIT 1`, [look.code, recentWindow]);
+    }
+    const effectiveTrackingId = trackingId || (clickRow && clickRow.tracking_id) || null;
+    const rawChannel = payload.registration_channel || payload.channel || (referee && (referee.registration_channel || referee.channel)) || '';
+    const registrationChannel = ['WEB', 'ANDROID', 'IOS'].includes(String(rawChannel).toUpperCase())
+        ? String(rawChannel).toUpperCase()
+        : (clickRow && clickRow.store_target === 'GOOGLE_PLAY' ? 'ANDROID'
+            : clickRow && clickRow.store_target === 'APPLE_APP_STORE' ? 'IOS'
+                : clickRow && clickRow.operating_system === 'Android' && clickRow.attribution_status === 'RESOLVED' ? 'ANDROID'
+                    : 'WEB');
+    const rawMethod = payload.attribution_method || (referee && referee.attribution_method) || '';
+    const attributionMethod = rawMethod
+        ? String(rawMethod).toUpperCase()
+        : (registrationChannel === 'ANDROID' && effectiveTrackingId ? 'PLAY_INSTALL_REFERRER'
+            : registrationChannel === 'IOS' && trackingId ? 'IOS_PRE_REGISTER'
+                : registrationChannel === 'IOS' ? 'IOS_MANUAL_CODE'
+                    : effectiveTrackingId ? 'DIRECT_LINK' : 'MANUAL_CODE');
+    const deviceOs = payload.device_os || (referee && referee.device_os) || (clickRow && clickRow.operating_system) || (registrationChannel === 'ANDROID' ? 'Android' : registrationChannel === 'IOS' ? 'iOS' : 'Web');
+
     await q.run(`INSERT INTO referrals (id, referrer_id, referee_id, code, rule_id, currency, receive_currency, reward_type, referrer_reward, referee_reward, floor,
-        qualification_window_days, bonus_validity_days, qualification_deadline, referrer_deadline, referee_credited, referee_credit_id, status, status_reason, registered_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        qualification_window_days, bonus_validity_days, qualification_deadline, referrer_deadline, referee_credited, referee_credit_id, status, status_reason,
+        tracking_id, registration_channel, attribution_method, device_os, registered_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, referrer.id, referee.id, look.code, rule ? rule.id : null, currency, rule ? rule.receive_currency : receive,
         rule ? rule.reward_type : null, rule ? rule.referrer_reward : 0, rule ? rule.referee_reward : 0, rule ? rule.min_transaction_threshold : null,
         rule ? rule.qualification_window_days : null, rule ? rule.bonus_validity_days : null,
         rule ? overallDeadlineFor(rule, regDay) : latest, rule ? referrerDeadlineFor(rule, regDay) : referrerBy,
-        refereeCredited, refereeCreditId, status, reason, registeredAt, registeredAt]);
+        refereeCredited, refereeCreditId, status, reason,
+        effectiveTrackingId, registrationChannel, attributionMethod, deviceOs, registeredAt, registeredAt]);
+
+    if (clickRow && clickRow.id) {
+        await q.run(`UPDATE referral_link_visits SET attribution_status = 'LINKED', linked_referral_id = ?, linked_referee_id = ?, resolved_at = COALESCE(resolved_at, ?) WHERE id = ?`,
+            [id, referee.id, registeredAt, clickRow.id]);
+    }
     return q.get(`SELECT * FROM referrals WHERE id = ?`, [id]);
 }
 
@@ -799,6 +1049,7 @@ const STATUS_LABELS = {
 function trackingWhere(f) {
     const cond = [], params = [];
     if (f.status) { cond.push('r.status = ?'); params.push(f.status); }
+    if (f.channel || f.registration_channel) { cond.push("COALESCE(r.registration_channel, 'WEB') = ?"); params.push(String(f.channel || f.registration_channel).toUpperCase()); }
     if (f.currency) { cond.push('r.currency = ?'); params.push(f.currency); }
     if (f.receive_currency) { cond.push('r.receive_currency = ?'); params.push(f.receive_currency); }
     if (f.rule_id) { cond.push('r.rule_id = ?'); params.push(Number(f.rule_id)); }
@@ -808,10 +1059,44 @@ function trackingWhere(f) {
     if (f.to) { cond.push('date(r.registered_at) <= date(?)'); params.push(f.to); }
     if (f.q) {
         const like = `%${String(f.q).toLowerCase()}%`;
-        cond.push(`(lower(r.id) LIKE ? OR lower(r.code) LIKE ? OR lower(a.id) LIKE ? OR lower(b.id) LIKE ? OR lower(a.first_name || ' ' || a.last_name) LIKE ? OR lower(b.first_name || ' ' || b.last_name) LIKE ? OR lower(a.email) LIKE ? OR lower(b.email) LIKE ?)`);
-        params.push(like, like, like, like, like, like, like, like);
+        cond.push(`(lower(r.id) LIKE ? OR lower(r.code) LIKE ? OR lower(COALESCE(r.tracking_id,'')) LIKE ? OR lower(a.id) LIKE ? OR lower(b.id) LIKE ? OR lower(a.first_name || ' ' || a.last_name) LIKE ? OR lower(b.first_name || ' ' || b.last_name) LIKE ? OR lower(a.email) LIKE ? OR lower(b.email) LIKE ?)`);
+        params.push(like, like, like, like, like, like, like, like, like);
     }
     return { where: cond.length ? `WHERE ${cond.join(' AND ')}` : '', params };
+}
+
+async function clicksReport(q, f = {}) {
+    const cond = [], params = [];
+    if (f.status) { cond.push("COALESCE(v.attribution_status, 'CLICKED') = ?"); params.push(String(f.status).toUpperCase()); }
+    if (f.os) { cond.push('lower(COALESCE(v.operating_system, \'\')) = lower(?)'); params.push(String(f.os)); }
+    if (f.store_target) { cond.push('v.store_target = ?'); params.push(String(f.store_target).toUpperCase()); }
+    if (f.q) {
+        const like = `%${String(f.q).toLowerCase()}%`;
+        cond.push(`(lower(COALESCE(v.tracking_id,'')) LIKE ? OR lower(v.code) LIKE ? OR lower(COALESCE(v.linked_referral_id,'')) LIKE ? OR lower(COALESCE(a.first_name || ' ' || a.last_name,'')) LIKE ?)`);
+        params.push(like, like, like, like);
+    }
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+    const pageSize = Math.min(Number(f.page_size) || 25, 500);
+    const page = Math.max(Number(f.page) || 1, 1);
+    const total = (await q.get(`SELECT COUNT(*) AS c FROM referral_link_visits v LEFT JOIN customers a ON a.id = v.referrer_id ${where}`, params)).c;
+    const data = await q.all(`SELECT v.*, a.first_name AS referrer_first_name, a.last_name AS referrer_last_name, a.email AS referrer_email,
+        b.first_name AS referee_first_name, b.last_name AS referee_last_name, b.email AS referee_email
+        FROM referral_link_visits v
+        LEFT JOIN customers a ON a.id = v.referrer_id
+        LEFT JOIN customers b ON b.id = v.linked_referee_id
+        ${where} ORDER BY v.id DESC LIMIT ? OFFSET ?`, [...params, pageSize, (page - 1) * pageSize]);
+    const stats = await q.all(`SELECT COALESCE(attribution_status, 'CLICKED') AS status, COALESCE(operating_system, 'Other') AS os, COUNT(*) AS c FROM referral_link_visits GROUP BY COALESCE(attribution_status, 'CLICKED'), COALESCE(operating_system, 'Other')`);
+    const summary = { total_clicks: 0, store_redirects: 0, install_resolved: 0, linked_registrations: 0, android_clicks: 0, ios_clicks: 0, web_clicks: 0 };
+    for (const s of stats) {
+        summary.total_clicks += s.c;
+        if (s.status === 'STORE_REDIRECT') summary.store_redirects += s.c;
+        if (s.status === 'RESOLVED') summary.install_resolved += s.c;
+        if (s.status === 'LINKED') summary.linked_registrations += s.c;
+        if (s.os === 'Android') summary.android_clicks += s.c;
+        else if (s.os === 'iOS') summary.ios_clicks += s.c;
+        else summary.web_clicks += s.c;
+    }
+    return { data, total, page, page_size: pageSize, summary };
 }
 
 const TRACKING_SELECT = `SELECT r.*, rr.name AS rule_name,
@@ -1128,47 +1413,102 @@ function registerReferralRoutes(app, db, hooks = {}) {
         });
     }));
 
-    // Record a link visit (AC-3.1.10) — repeat visits within 24h count once
+    // Record a link visit / click (AC-3.1.10, FR-02) — repeat visits within 24h count once, returns unpredictable trackingId
     app.post('/api/referral/visits', wrap(async (req, res) => {
-        const look = await lookupCode(q, (req.body || {}).code);
-        if (!look.valid) return res.status(404).json({ error: look.reason, message: look.message });
-        const visitor = String(req.body.visitor_id || 'anonymous').slice(0, 64);
-        const since = new Date(clock.now().getTime() - 86400000).toISOString();
-        const dup = await q.get(`SELECT id FROM referral_link_visits WHERE code = ? AND visitor_id = ? AND created_at >= ?`, [look.code, visitor, since]);
-        if (!dup) {
-            let visitCurrency = look.referrer.send_currency;
-            let visitReceive = String(req.body.receive_currency || '').toUpperCase() || null;
-            if (req.body.rule_id) {
-                const chosen = await q.get(`SELECT base_currency, receive_currency FROM referral_rules WHERE id = ?`, [Number(req.body.rule_id)]);
-                if (chosen) {
-                    visitCurrency = chosen.base_currency || visitCurrency;
-                    visitReceive = chosen.receive_currency || visitReceive;
-                }
-            }
-            await q.run(`INSERT INTO referral_link_visits (code, referrer_id, currency, receive_currency, visitor_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-                [look.code, look.referrer.id, visitCurrency, visitReceive, visitor, nowIso()]);
-        }
-        res.json({ success: true, counted: !dup });
+        const out = await recordClick(q, req.body || {}, req.headers['user-agent'] || '');
+        res.json(out);
     }));
 
-    // Create the referral on email verification (AC-3.1.5 – 3.1.7)
-    app.post('/api/referral/referrals', wrap(async (req, res) => {
-        const r = await createReferral(q, req.body || {});
+    app.post(['/api/referral/clicks', '/api/v1/referrals/clicks'], wrap(async (req, res) => {
+        const out = await recordClick(q, req.body || {}, req.headers['user-agent'] || '');
+        res.status(201).json(out);
+    }));
+
+    app.post(['/api/referral/clicks/:trackingId/handoff', '/api/v1/referrals/clicks/:trackingId/handoff'], wrap(async (req, res) => {
+        const out = await updateClickHandoff(q, req.params.trackingId, req.body || {});
+        res.json({ data: out });
+    }));
+
+    app.get(['/api/referral/clicks', '/api/v1/referrals/clicks'], wrap(async (req, res) => {
+        res.json(await clicksReport(q, req.query || {}));
+    }));
+
+    // Resolve Android Play Install Referrer trackingId or Universal Link context (FR-05, FR-07)
+    app.post(['/api/referral/resolve', '/api/v1/referrals/resolve'], wrap(async (req, res) => {
+        const out = await resolveTrackingId(q, req.body || {});
+        if (!out.valid) return res.status(404).json(out);
+        res.json(out);
+    }));
+
+    // Validate a manual referral code (FR-06, Section 9.4)
+    app.post(['/api/referral/validate', '/api/v1/referrals/validate'], wrap(async (req, res) => {
+        const rawCode = (req.body || {}).referralCode || (req.body || {}).code;
+        const look = await lookupCode(q, rawCode);
+        if (!look.valid) return res.status(look.reason === 'INVALID_FORMAT' ? 400 : 404).json({ valid: false, error: look.reason, message: look.message });
+        const currency = String((req.body || {}).currency || look.referrer.send_currency || 'GBP').toUpperCase();
+        const rules = await offerRulesFor(q, currency, (req.body || {}).receive_currency);
+        const sendCurrencies = sendCurrenciesForCountry(look.referrer.country, currency);
+        const currencyOffers = [];
+        for (const cur of sendCurrencies) {
+            const curRules = cur === currency ? rules : await offerRulesFor(q, cur, (req.body || {}).receive_currency);
+            for (const r of curRules) currencyOffers.push(publicOffer(r));
+        }
+        res.json({
+            valid: true,
+            referralCode: look.code,
+            code: look.code,
+            referrerId: look.referrer.id,
+            referrerFirstName: look.referrer.first_name,
+            offer: rules.length === 1 ? publicOffer(rules[0]) : (currencyOffers[0] || null),
+            offers: rules.map(publicOffer),
+            send_currencies: sendCurrencies,
+            currency_offers: currencyOffers,
+        });
+    }));
+
+    // Create the referral on email verification or mobile registration (AC-3.1.5 – 3.1.7, Section 9.5)
+    app.post(['/api/referral/referrals', '/api/v1/referrals/registrations'], wrap(async (req, res) => {
+        const body = req.body || {};
+        const normalized = body.referee
+            ? body
+            : {
+                code: body.referralCode || body.code,
+                tracking_id: body.trackingId || body.tracking_id,
+                registration_channel: body.channel || body.registration_channel,
+                rule_id: body.ruleId || body.rule_id,
+                referee: {
+                    id: body.refereeCustomerId || body.referee_id,
+                    email: body.email,
+                    phone: body.phone,
+                    country: body.country,
+                    send_currency: body.sendCurrency || body.send_currency,
+                    device_id: body.deviceId || body.device_id,
+                },
+            };
+        const r = await createReferral(q, normalized);
         res.status(201).json({ data: r });
     }));
 
-    // My referrals (US-2.3) — Referee names masked
-    app.get('/api/referral/referrals', wrap(async (req, res) => {
-        if (!req.query.referrer_id) return res.status(400).json({ error: 'VALIDATION', message: 'referrer_id is required' });
-        const rows = await q.all(`SELECT r.*, b.first_name, b.last_name FROM referrals r LEFT JOIN customers b ON b.id = r.referee_id WHERE r.referrer_id = ? ORDER BY r.registered_at DESC`, [req.query.referrer_id]);
+    // My referrals (US-2.3) — Referee names masked + channel & tracking_id included
+    app.get(['/api/referral/referrals', '/api/v1/referrals/me'], wrap(async (req, res) => {
+        const referrerId = req.query.referrer_id || req.query.customer_id;
+        if (!referrerId) return res.status(400).json({ error: 'VALIDATION', message: 'referrer_id is required' });
+        const rows = await q.all(`SELECT r.*, b.first_name, b.last_name FROM referrals r LEFT JOIN customers b ON b.id = r.referee_id WHERE r.referrer_id = ? ORDER BY r.registered_at DESC`, [referrerId]);
         const data = rows.map((r) => ({
             id: r.id, friend: maskName(r.first_name, r.last_name), joined_on: r.registered_at, status: r.status,
             status_label: STATUS_LABELS[r.status] || r.status, currency: r.currency, receive_currency: r.receive_currency, floor: r.floor,
             qualification_deadline: r.qualification_deadline, reward: r.referrer_credited || (r.reward_type === 'REFEREE' ? 0 : r.referrer_reward), credited: r.referrer_credited,
+            tracking_id: r.tracking_id || null, registration_channel: r.registration_channel || 'WEB', attribution_method: r.attribution_method || 'DIRECT_LINK',
         }));
         const earned = {};
         for (const r of rows) if (r.referrer_credited) earned[r.currency] = round2((earned[r.currency] || 0) + r.referrer_credited);
         res.json({ data, summary: { joined: rows.length, earned_count: rows.filter((r) => r.referrer_credited > 0).length, total_earned: earned } });
+    }));
+
+    app.get('/api/v1/referrals/:referralId', wrap(async (req, res) => {
+        const r = await q.get(`${TRACKING_SELECT} WHERE r.id = ?`, [req.params.referralId]);
+        if (!r) return res.status(404).json({ error: 'NOT_FOUND', message: 'Referral not found.' });
+        res.json({ data: r });
     }));
 
     // Transfer lifecycle events from Rhemito (US-4.1, US-4.4, AC-5.2.10)
@@ -1227,7 +1567,8 @@ function registerReferralRoutes(app, db, hooks = {}) {
     app.get('/api/referral/tracking.csv', wrap(async (req, res) => {
         const result = await tracking(q, { ...req.query, page: 1, page_size: 500 });
         const csv = toCsv([
-            ['Referral ID', 'id'], ['Referrer ID', 'referrer_id'], ['Referrer', (r) => `${r.referrer_first_name || ''} ${r.referrer_last_name || ''}`.trim()],
+            ['Referral ID', 'id'], ['Tracking ID', 'tracking_id'], ['Channel', (r) => r.registration_channel || 'WEB'], ['Attribution Method', (r) => r.attribution_method || 'DIRECT_LINK'],
+            ['Referrer ID', 'referrer_id'], ['Referrer', (r) => `${r.referrer_first_name || ''} ${r.referrer_last_name || ''}`.trim()],
             ['Referee ID', 'referee_id'], ['Referee', (r) => `${r.referee_first_name || ''} ${r.referee_last_name || ''}`.trim()],
             ['Rule', 'rule_name'], ['Send Currency', 'currency'], ['Receive Currency', 'receive_currency'], ['Registered On', 'registered_at'], ['Qualification Deadline', 'qualification_deadline'],
             ['Qualifying Transfer ID', 'qualifying_transfer_id'], ['Status', 'status'], ['Reason', 'status_reason'],

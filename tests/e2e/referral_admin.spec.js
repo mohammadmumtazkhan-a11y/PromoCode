@@ -101,8 +101,13 @@ test.describe('Referral reporting', () => {
         await expect(page.getByRole('columnheader', { name: 'Conversion' })).toBeVisible();
 
         await page.goto('/growth/referral-tracking');
-        await expect(page.getByRole('heading', { name: 'Referral Tracking' })).toBeVisible();
-        await expect(page.getByPlaceholder('Name, customer ID, email or referral code')).toBeVisible();
+        await expect(page.getByRole('heading', { name: /Referral Tracking/ })).toBeVisible();
+        await expect(page.getByPlaceholder(/Name, customer ID, email, referral code/)).toBeVisible();
+        await expect(page.getByRole('tab', { name: /Link Clicks & App Installs/ })).toBeVisible();
+        await page.getByRole('tab', { name: /Link Clicks & App Installs/ }).click();
+        await expect(page.getByRole('columnheader', { name: 'Tracking ID' })).toBeVisible();
+        await page.getByRole('tab', { name: /Registered Referrals/ }).click();
+        await expect(page.locator('#rt-channel')).toBeVisible();
     });
 
     test('credit ledger shows real customer names and an Amount column', async ({ page }) => {

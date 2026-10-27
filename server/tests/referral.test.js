@@ -704,4 +704,67 @@ describe('Corridor rules (send currency → receive currency)', () => {
         expect(csv.text.split('\n')[0]).toContain('Send Currency,Receive Currency');
     });
 
+    it('tracks cross-platform referral clicks, resolves Android Play Install Referrer, and attributes registrations to tracking_id and channel (FR-02 – FR-06)', async () => {
+        const app = makeApp();
+        await request(app).post('/api/referral-rules').send(GBP_RULE).expect(201);
+        const referrer = await request(app).post('/api/referral/customers').send({
+            id: 'REF_USER_1', first_name: 'John', last_name: 'Doe', email: 'john@x.com', phone: '+44111', send_currency: 'GBP', kyc_status: 'PASSED', device_id: 'dev-j',
+        });
+        const code = referrer.body.data.referral_code;
+
+        // 1. Record click from an Android User-Agent
+        const click = await request(app)
+            .post('/api/v1/referrals/clicks')
+            .set('User-Agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36')
+            .send({ code, visitor_id: 'v-android-1' });
+        expect(click.status).toBe(201);
+        expect(click.body.trackingId).toMatch(/^REF[A-F0-9]{10}$/);
+        expect(click.body.deviceType).toBe('mobile');
+        expect(click.body.operatingSystem).toBe('Android');
+        expect(click.body.playStoreUrl).toContain('https://play.google.com/store/apps/details?id=com.funtechcom.rhemito&referrer=');
+        expect(click.body.appStoreUrl).toBe('https://apps.apple.com/gb/app/rhemito-money-transfer/id1494717263');
+
+        const trackingId = click.body.trackingId;
+
+        // 2. Record store handoff
+        const handoff = await request(app)
+            .post(`/api/v1/referrals/clicks/${trackingId}/handoff`)
+            .send({ storeTarget: 'GOOGLE_PLAY', status: 'STORE_REDIRECT' });
+        expect(handoff.status).toBe(200);
+        expect(handoff.body.data.attribution_status).toBe('STORE_REDIRECT');
+
+        // 3. Resolve trackingId via Android Play Install Referrer endpoint
+        const resolved = await request(app)
+            .post('/api/v1/referrals/resolve')
+            .send({ trackingId: `tracking_id=${trackingId}&referral_code=${code}`, channel: 'ANDROID' });
+        expect(resolved.status).toBe(200);
+        expect(resolved.body.valid).toBe(true);
+        expect(resolved.body.referralCode).toBe(code);
+        expect(resolved.body.trackingId).toBe(trackingId);
+        expect(resolved.body.referralContextId).toMatch(/^CTX/);
+
+        // 4. Register referee with tracking_id and ANDROID channel
+        const reg = await request(app).post('/api/referral/referrals').send({
+            code,
+            tracking_id: trackingId,
+            registration_channel: 'ANDROID',
+            attribution_method: 'PLAY_INSTALL_REFERRER',
+            referee: { id: 'REFEREE_AND_1', first_name: 'Amara', last_name: 'Okafor', email: 'amara@x.com', phone: '+44222', send_currency: 'GBP', receive_currency: 'NGN', kyc_status: 'PASSED', device_id: 'dev-amara' },
+        });
+        expect(reg.status).toBe(201);
+        expect(reg.body.data.tracking_id).toBe(trackingId);
+        expect(reg.body.data.registration_channel).toBe('ANDROID');
+        expect(reg.body.data.attribution_method).toBe('PLAY_INSTALL_REFERRER');
+
+        // 5. Verify click log is now LINKED and tracking filter by channel works
+        const clicksList = await request(app).get(`/api/referral/clicks?q=${trackingId}`);
+        expect(clicksList.body.total).toBe(1);
+        expect(clicksList.body.data[0].attribution_status).toBe('LINKED');
+        expect(clicksList.body.data[0].linked_referee_id).toBe('REFEREE_AND_1');
+
+        const trackedAndroid = await request(app).get('/api/referral/tracking?channel=ANDROID');
+        expect(trackedAndroid.body.total).toBe(1);
+        expect(trackedAndroid.body.data[0].tracking_id).toBe(trackingId);
+    });
+
 });

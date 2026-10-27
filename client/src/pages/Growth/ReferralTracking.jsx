@@ -44,12 +44,37 @@ const FILTER_TIPS = {
 };
 const fullName = (f, l) => `${f || ''} ${l || ''}`.trim() || 'Unknown customer';
 
-// US-1.6: every referral with its Referrer, Referee, status and reward
+const CHANNEL_BADGES = {
+    WEB: { label: 'Web', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+    ANDROID: { label: 'Android App', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+    IOS: { label: 'iOS App', bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe' },
+};
+
+const METHOD_LABELS = {
+    DIRECT_LINK: 'Direct referral link',
+    PLAY_INSTALL_REFERRER: 'Google Play Install Referrer',
+    IOS_PRE_REGISTER: 'iOS Register Before Download',
+    IOS_MANUAL_CODE: 'iOS App Manual Code',
+    MANUAL_CODE: 'Manual Referral Code',
+    UNIVERSAL_LINK: 'App / Universal Link',
+};
+
+const CLICK_STATUS_BADGES = {
+    CLICKED: { label: 'Link Clicked', bg: '#f1f5f9', color: '#334155', border: '#cbd5e1' },
+    STORE_REDIRECT: { label: 'Store Redirected', bg: '#fef3c7', color: '#b45309', border: '#fde68a' },
+    RESOLVED: { label: 'App First-Launch Resolved', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
+    LINKED: { label: 'Registered & Attributed', bg: '#dcfce7', color: '#15803d', border: '#86efac' },
+    EXPIRED: { label: 'Expired', bg: '#fee2e2', color: '#b91c1c', border: '#fecaca' },
+};
+
+// US-1.6: every referral with its Referrer, Referee, status, channel attribution and reward
 const ReferralTracking = () => {
     const [params, setParams] = useSearchParams();
     const navigate = useNavigate();
+    const [viewMode, setViewMode] = useState(params.get('view') === 'clicks' ? 'clicks' : 'referrals');
     const [rules, setRules] = useState([]);
     const [result, setResult] = useState({ data: [], total: 0, summary: null });
+    const [clicksResult, setClicksResult] = useState({ data: [], total: 0, summary: null });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [search, setSearch] = useState(params.get('q') || '');
@@ -60,7 +85,7 @@ const ReferralTracking = () => {
     const [tokenError, setTokenError] = useState('');
     const { toasts, push, dismiss } = useToasts();
 
-    const filters = Object.fromEntries(['status', 'status_group', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q', 'page'].map((k) => [k, params.get(k) || '']));
+    const filters = Object.fromEntries(['status', 'status_group', 'channel', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q', 'page'].map((k) => [k, params.get(k) || '']));
     const page = Number(filters.page || 1);
 
     const setFilter = (key, value) => {
@@ -80,9 +105,13 @@ const ReferralTracking = () => {
         try {
             const qs = new URLSearchParams(params);
             qs.set('page_size', String(PAGE_SIZE));
-            const res = await fetch(`/api/referral/tracking?${qs.toString()}`);
-            if (!res.ok) throw new Error();
-            setResult(await res.json());
+            const [refRes, clkRes] = await Promise.all([
+                fetch(`/api/referral/tracking?${qs.toString()}`),
+                fetch(`/api/referral/clicks?${qs.toString()}`),
+            ]);
+            if (!refRes.ok) throw new Error();
+            setResult(await refRes.json());
+            if (clkRes.ok) setClicksResult(await clkRes.json());
         } catch { setError(true); } finally { setLoading(false); }
     }, [params]);
 
@@ -119,14 +148,49 @@ const ReferralTracking = () => {
     };
 
     const s = result.summary;
-    const pages = Math.max(1, Math.ceil((result.total || 0) / PAGE_SIZE));
-    const hasFilters = ['status', 'status_group', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q'].some((k) => filters[k]);
+    const cs = clicksResult.summary;
+    const pages = Math.max(1, Math.ceil(((viewMode === 'clicks' ? clicksResult.total : result.total) || 0) / PAGE_SIZE));
+    const hasFilters = ['status', 'status_group', 'channel', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q'].some((k) => filters[k]);
 
     return (
         <div className="rf-page">
             <ToastStack toasts={toasts} onDismiss={dismiss} />
-            <h2 className="rf-title">Referral Tracking</h2>
-            <p className="rf-subtitle">Every customer who joined through a referral link or code, and what happened next.</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
+                <div>
+                    <h2 className="rf-title">Referral Tracking &amp; Attribution</h2>
+                    <p className="rf-subtitle">Every customer who joined through a referral link or code across Web, Android (Google Play Install Referrer), and iOS (App Store).</p>
+                </div>
+                <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: 4, borderRadius: 10, border: '1px solid #e2e8f0' }} role="tablist" aria-label="Tracking view mode">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={viewMode === 'referrals'}
+                        onClick={() => setViewMode('referrals')}
+                        style={{
+                            padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                            background: viewMode === 'referrals' ? '#ffffff' : 'transparent',
+                            color: viewMode === 'referrals' ? '#0f172a' : '#64748b',
+                            boxShadow: viewMode === 'referrals' ? '0 1px 2px rgba(15,23,42,0.08)' : 'none',
+                        }}
+                    >
+                        Registered Referrals ({result.total || 0})
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={viewMode === 'clicks'}
+                        onClick={() => setViewMode('clicks')}
+                        style={{
+                            padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                            background: viewMode === 'clicks' ? '#ffffff' : 'transparent',
+                            color: viewMode === 'clicks' ? '#0f172a' : '#64748b',
+                            boxShadow: viewMode === 'clicks' ? '0 1px 2px rgba(15,23,42,0.08)' : 'none',
+                        }}
+                    >
+                        Link Clicks &amp; App Installs ({clicksResult.total || 0})
+                    </button>
+                </div>
+            </div>
 
             <div className="rf-kpis">
                 <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Total referrals" tip={KPI_TIPS.total} /></div><div className="rf-kpi-value">{s ? s.total : '—'}</div></div>
@@ -138,18 +202,32 @@ const ReferralTracking = () => {
                         {s && Object.keys(s.bonus_issued).length ? Object.entries(s.bonus_issued).map(([c, v]) => <div key={c}>{formatMoney(v, c)}</div>) : '—'}
                     </div>
                 </div>
+                {cs && (
+                    <div className="rf-kpi">
+                        <div className="rf-kpi-label"><ColHead label="Click → App / Web Traceability" tip="Tracked referral link clicks across Web, Android Google Play Store, and Apple App Store." /></div>
+                        <div className="rf-kpi-value" style={{ fontSize: '1.05rem' }}>{cs.total_clicks} clicks</div>
+                        <div className="rf-kpi-sub">Android: {cs.android_clicks} · iOS: {cs.ios_clicks} · Linked: {cs.linked_registrations}</div>
+                    </div>
+                )}
             </div>
 
             <div className="rf-card">
                 <div className="rf-filters">
                     <div className="rf-field" style={{ flex: 2 }}><label htmlFor="rt-q"><ColHead label="Search" tip={FILTER_TIPS.search} /></label>
-                        <input id="rt-q" className="rf-input" placeholder="Name, customer ID, email or referral code" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+                        <input id="rt-q" className="rf-input" placeholder="Name, customer ID, email, referral code or tracking ID (REF...)" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
                     <div className="rf-field"><label htmlFor="rt-status"><ColHead label="Status" tip={FILTER_TIPS.status} /></label>
                         <select id="rt-status" className="rf-select" value={filters.status || (filters.status_group ? `group:${filters.status_group}` : '')}
                             onChange={(e) => (e.target.value.startsWith('group:') ? setFilter('status_group', e.target.value.slice(6)) : setFilter('status', e.target.value))}>
                             <option value="">All statuses</option>
                             {filters.status_group && <option value={`group:${filters.status_group}`}>{filters.status_group === 'pending' ? 'Registered or Pending' : 'Expired / Not eligible / Reversed'}</option>}
                             {STATUSES.map((st) => <option key={st} value={st}>{st.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</option>)}
+                        </select></div>
+                    <div className="rf-field"><label htmlFor="rt-channel"><ColHead label="Channel" tip="Filter referrals by the platform channel where the referee registered (Web, Android App, or iOS App)." /></label>
+                        <select id="rt-channel" className="rf-select" value={filters.channel} onChange={(e) => setFilter('channel', e.target.value)}>
+                            <option value="">All channels</option>
+                            <option value="WEB">Web</option>
+                            <option value="ANDROID">Android App</option>
+                            <option value="IOS">iOS App</option>
                         </select></div>
                     <div className="rf-field"><label htmlFor="rt-currency"><ColHead label="Send currency" tip={FILTER_TIPS.currency} /></label>
                         <select id="rt-currency" className="rf-select" value={filters.currency} onChange={(e) => setFilter('currency', e.target.value)}>
@@ -176,60 +254,153 @@ const ReferralTracking = () => {
                     </div>
                 </div>
 
-                <div className="rf-table-wrap">
-                    <table className="rf-table">
-                        <thead>
-                            <tr>
-                                {COLUMNS.map((c) => (
-                                    <th key={c.label} className={c.num ? 'rf-num' : undefined}><ColHead label={c.label} tip={c.tip} /></th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan="12" className="rf-empty">Loading referrals...</td></tr>
-                            ) : error ? (
-                                <tr><td colSpan="12" className="rf-empty">We couldn&apos;t load referrals. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
-                            ) : result.data.length === 0 ? (
-                                <tr><td colSpan="12" className="rf-empty">{hasFilters ? 'No referrals match your filters.' : 'No referrals yet.'}</td></tr>
-                            ) : result.data.map((r) => (
-                                <tr key={r.id}>
-                                    <td className="rf-strong" style={{ whiteSpace: 'nowrap' }}>{r.id}<span className="rf-sub">Code {r.code}</span></td>
-                                    <td>{fullName(r.referrer_first_name, r.referrer_last_name)}<span className="rf-sub">ID: {r.referrer_id}</span></td>
-                                    <td>{fullName(r.referee_first_name, r.referee_last_name)}<span className="rf-sub">ID: {r.referee_id}</span></td>
-                                    <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{r.rule_id ? corridorLabel(r.currency, r.receive_currency, '?') : `${r.currency || '?'} · rule set at first transfer`}</span></td>
-                                    <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.registered_at)}</td>
-                                    <td style={{ whiteSpace: 'nowrap' }}>
-                                        {r.referrer_deadline && r.qualification_deadline && r.referrer_deadline.slice(0, 10) !== r.qualification_deadline.slice(0, 10) ? (
-                                            <>
-                                                <div className="rf-bonus"><span>Referrer</span><b className="rf-dl">{formatUkDate(r.referrer_deadline)}</b></div>
-                                                <div className="rf-bonus"><span>Referee</span><b className="rf-dl">{formatUkDate(r.qualification_deadline)}</b></div>
-                                            </>
-                                        ) : formatUkDate(r.qualification_deadline || r.referrer_deadline)}
-                                    </td>
-                                    <td>{r.qualifying_transfer_id || <span className="rf-muted">—</span>}{r.qualifying_amount ? <span className="rf-sub">{formatMoney(r.qualifying_amount, r.currency)}</span> : null}</td>
-                                    <td>
-                                        <StatusPill status={r.status} title={r.status_reason} />
-                                        {r.status_reason && <span className="rf-sub" style={{ maxWidth: 200 }}>{r.status_reason}</span>}
-                                    </td>
-                                    <td className="rf-num">
-                                        {r.referrer_credited > 0
-                                            ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referrer_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referrer_credited, r.currency)}</button>
-                                            : <span className="rf-muted">{r.reward_type === 'REFEREE' || !r.rule_id ? '—' : formatMoney(r.referrer_reward, r.currency) + ' due'}</span>}
-                                    </td>
-                                    <td className="rf-num">
-                                        {r.referee_credited > 0
-                                            ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referee_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referee_credited, r.currency)}</button>
-                                            : <span className="rf-muted">{r.reward_type === 'REFERRER' || !r.rule_id ? '—' : formatMoney(r.referee_reward, r.currency) + ' due'}</span>}
-                                    </td>
-                                    <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.rewarded_at)}</td>
-                                    <td>{r.status === 'NOT_ELIGIBLE' && <button type="button" className="rf-btn-sm" onClick={() => { setApprove(r); setReason(''); setReasonError(''); }}>Approve reward</button>}</td>
+                {viewMode === 'referrals' ? (
+                    <div className="rf-table-wrap">
+                        <table className="rf-table">
+                            <thead>
+                                <tr>
+                                    {COLUMNS.map((c) => (
+                                        <th key={c.label} className={c.num ? 'rf-num' : undefined}><ColHead label={c.label} tip={c.tip} /></th>
+                                    ))}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {result.total > PAGE_SIZE && (
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan="12" className="rf-empty">Loading referrals...</td></tr>
+                                ) : error ? (
+                                    <tr><td colSpan="12" className="rf-empty">We couldn&apos;t load referrals. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
+                                ) : result.data.length === 0 ? (
+                                    <tr><td colSpan="12" className="rf-empty">{hasFilters ? 'No referrals match your filters.' : 'No referrals yet.'}</td></tr>
+                                ) : result.data.map((r) => {
+                                    const chKey = String(r.registration_channel || 'WEB').toUpperCase();
+                                    const chBadge = CHANNEL_BADGES[chKey] || CHANNEL_BADGES.WEB;
+                                    const methodText = METHOD_LABELS[r.attribution_method] || r.attribution_method || 'Direct link';
+                                    return (
+                                        <tr key={r.id}>
+                                            <td className="rf-strong" style={{ whiteSpace: 'nowrap' }}>
+                                                {r.id}
+                                                <span className="rf-sub">Code {r.code}</span>
+                                                {r.tracking_id && <span className="rf-sub" style={{ fontFamily: 'monospace', color: '#0369a1' }} title="Click / Install Tracking ID">Track: {r.tracking_id}</span>}
+                                            </td>
+                                            <td>{fullName(r.referrer_first_name, r.referrer_last_name)}<span className="rf-sub">ID: {r.referrer_id}</span></td>
+                                            <td>{fullName(r.referee_first_name, r.referee_last_name)}<span className="rf-sub">ID: {r.referee_id}</span></td>
+                                            <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{r.rule_id ? corridorLabel(r.currency, r.receive_currency, '?') : `${r.currency || '?'} · rule set at first transfer`}</span></td>
+                                            <td style={{ whiteSpace: 'nowrap' }}>
+                                                {formatUkDate(r.registered_at)}
+                                                <div style={{ marginTop: 4 }}>
+                                                    <span style={{
+                                                        display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 600,
+                                                        background: chBadge.bg, color: chBadge.color, border: `1px solid ${chBadge.border}`,
+                                                    }} title={methodText}>
+                                                        {chBadge.label}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td style={{ whiteSpace: 'nowrap' }}>
+                                                {r.referrer_deadline && r.qualification_deadline && r.referrer_deadline.slice(0, 10) !== r.qualification_deadline.slice(0, 10) ? (
+                                                    <>
+                                                        <div className="rf-bonus"><span>Referrer</span><b className="rf-dl">{formatUkDate(r.referrer_deadline)}</b></div>
+                                                        <div className="rf-bonus"><span>Referee</span><b className="rf-dl">{formatUkDate(r.qualification_deadline)}</b></div>
+                                                    </>
+                                                ) : formatUkDate(r.qualification_deadline || r.referrer_deadline)}
+                                            </td>
+                                            <td>{r.qualifying_transfer_id || <span className="rf-muted">—</span>}{r.qualifying_amount ? <span className="rf-sub">{formatMoney(r.qualifying_amount, r.currency)}</span> : null}</td>
+                                            <td>
+                                                <StatusPill status={r.status} title={r.status_reason} />
+                                                {r.status_reason && <span className="rf-sub" style={{ maxWidth: 200 }}>{r.status_reason}</span>}
+                                            </td>
+                                            <td className="rf-num">
+                                                {r.referrer_credited > 0
+                                                    ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referrer_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referrer_credited, r.currency)}</button>
+                                                    : <span className="rf-muted">{r.reward_type === 'REFEREE' || !r.rule_id ? '—' : formatMoney(r.referrer_reward, r.currency) + ' due'}</span>}
+                                            </td>
+                                            <td className="rf-num">
+                                                {r.referee_credited > 0
+                                                    ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referee_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referee_credited, r.currency)}</button>
+                                                    : <span className="rf-muted">{r.reward_type === 'REFERRER' || !r.rule_id ? '—' : formatMoney(r.referee_reward, r.currency) + ' due'}</span>}
+                                            </td>
+                                            <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.rewarded_at)}</td>
+                                            <td>{r.status === 'NOT_ELIGIBLE' && <button type="button" className="rf-btn-sm" onClick={() => { setApprove(r); setReason(''); setReasonError(''); }}>Approve reward</button>}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div className="rf-table-wrap">
+                        <table className="rf-table" data-testid="clicks-traceability-table">
+                            <thead>
+                                <tr>
+                                    <th><ColHead label="Tracking ID" tip="Unique unpredictable tracking identifier generated when the referral link was opened." /></th>
+                                    <th><ColHead label="Referral Code & Referrer" tip="The referral code clicked and the existing customer who owns it." /></th>
+                                    <th><ColHead label="Device & OS" tip="Detected device category (mobile / tablet / desktop) and operating system (Android / iOS / Desktop)." /></th>
+                                    <th><ColHead label="Store / Handoff Target" tip="Where the visitor chose to continue: Google Play Store (with Play Install Referrer), Apple App Store, or Web." /></th>
+                                    <th><ColHead label="Attribution Status" tip="Lifecycle of the click: Link Clicked → Store Redirected → App First-Launch Resolved → Registered & Attributed." /></th>
+                                    <th><ColHead label="Linked Referral & Referee" tip="Once the referee completes registration, this links the click directly to their Referral ID and customer account." /></th>
+                                    <th><ColHead label="Clicked At" tip="Timestamp when the referral link was accessed." /></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan="7" className="rf-empty">Loading click traceability records...</td></tr>
+                                ) : clicksResult.data.length === 0 ? (
+                                    <tr><td colSpan="7" className="rf-empty">No referral link clicks recorded yet.</td></tr>
+                                ) : clicksResult.data.map((c) => {
+                                    const stKey = String(c.attribution_status || 'CLICKED').toUpperCase();
+                                    const stBadge = CLICK_STATUS_BADGES[stKey] || CLICK_STATUS_BADGES.CLICKED;
+                                    return (
+                                        <tr key={c.id}>
+                                            <td className="rf-strong" style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                                                {c.tracking_id || `VISIT-${c.id}`}
+                                            </td>
+                                            <td>
+                                                <strong>{c.code}</strong>
+                                                <span className="rf-sub">{fullName(c.referrer_first_name, c.referrer_last_name)} ({c.referrer_id})</span>
+                                            </td>
+                                            <td>
+                                                <strong>{c.operating_system || 'Unknown OS'}</strong>
+                                                <span className="rf-sub">{c.device_type || 'desktop'} · {c.source_channel || 'LINK'}</span>
+                                            </td>
+                                            <td>
+                                                {c.store_target === 'GOOGLE_PLAY' ? (
+                                                    <span style={{ color: '#047857', fontWeight: 600 }}>Google Play Store (com.funtechcom.rhemito)</span>
+                                                ) : c.store_target === 'APPLE_APP_STORE' ? (
+                                                    <span style={{ color: '#6d28d9', fontWeight: 600 }}>Apple App Store (id1494717263)</span>
+                                                ) : c.store_target === 'WEB' ? (
+                                                    <span style={{ color: '#1d4ed8', fontWeight: 600 }}>Web Registration</span>
+                                                ) : (
+                                                    <span className="rf-muted">Landing Page Viewed</span>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <span style={{
+                                                    display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: '0.74rem', fontWeight: 600,
+                                                    background: stBadge.bg, color: stBadge.color, border: `1px solid ${stBadge.border}`,
+                                                }}>
+                                                    {stBadge.label}
+                                                </span>
+                                                {c.resolved_at && <span className="rf-sub">Resolved: {formatUkDate(c.resolved_at)}</span>}
+                                            </td>
+                                            <td>
+                                                {c.linked_referral_id ? (
+                                                    <>
+                                                        <strong>{c.linked_referral_id}</strong>
+                                                        <span className="rf-sub">{fullName(c.referee_first_name, c.referee_last_name)} ({c.linked_referee_id})</span>
+                                                    </>
+                                                ) : (
+                                                    <span className="rf-muted">Awaiting registration</span>
+                                                )}
+                                            </td>
+                                            <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(c.created_at)}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {(viewMode === 'clicks' ? clicksResult.total : result.total) > PAGE_SIZE && (
                     <div className="rf-pager">
                         <span>Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, result.total)} of {result.total}</span>
                         <div className="rf-quick">
