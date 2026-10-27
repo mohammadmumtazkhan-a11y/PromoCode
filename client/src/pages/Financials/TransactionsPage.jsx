@@ -1,1068 +1,1630 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 
-// Funnel / Filter SVG Icon
-const FilterIcon = ({ className = 'w-4 h-4' }) => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <path d="M4 6H20M7 12H17M10 18H14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const SearchIcon = ({ className = 'w-4 h-4' }) => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-);
-
-// Top Financials Tabs matching module 97917 in staging-admin
-const FINANCIALS_TABS = [
-  { label: 'Transactions', href: '/financials/transactions' },
-  { label: 'MTO Submissions', href: '/financials/mto-submissions' },
-  { label: 'Retail Submissions', href: '/financials/retail-transactions' },
-  { label: 'Biller Submissions', href: '/financials/biller-transactions' },
-  { label: 'Receive Money', href: '/financials/receive-money' },
+// Exact Financials sub-navigation tabs from module 97917 in staging_chunk2089.js
+const FINANCIAL_TABS = [
+    { label: 'Transactions', href: '/financials/transactions' },
+    { label: 'MTO Submissions', href: '/financials/mto' },
+    { label: 'Retail Submissions', href: '/financials/retail' },
+    { label: 'Biller Submissions', href: '/financials/billers' },
+    { label: 'Receive Money', href: '/financials/receive' },
 ];
 
-// Status badge dot color helper matching module 33607 in staging-admin
-const getStatusDotColor = (status) => {
-  switch (status) {
-    case 'Successful':
-    case 'Processed':
-    case 'Paid Out':
-    case 'PAID':
-      return '#62AA32';
-    case 'Failed':
-    case 'Aborted':
-    case 'Cancelled':
-    case 'Timeout':
-    case 'EXPIRED':
-    case 'Expired':
-    case 'FAILED':
-    case 'CANCELLED':
-      return '#8F0404';
-    case 'In Progress':
-    case 'Under Review':
-    case 'Ready To Process':
-    case 'Paying Out':
-    case 'Payment Processing':
-    case 'Pending':
-    case 'Awaiting Payment':
-      return '#FED217';
-    default:
-      return '#9658F7';
-  }
-};
-
-const DEFAULT_FILTER_VALUES = {
-  senderAccount: '',
-  transactionRef: '',
-  merchantRef: '',
-  payerRef: '',
-  recipientAccount: '',
-  channel: '',
-  type: '',
-  status: '',
-  payer: '',
-  provider: '',
-  paymentStatus: '',
-  paymentMethod: '',
-  application: '',
-  splitFilter: '',
-  startDate: '',
-  endDate: '',
-};
-
-// Seed/mock transactions dataset with full Mito fields
-const SEED_TRANSACTIONS = [
-  {
-    id: 't1',
-    reference: 'TXN100001',
-    channel: 'Web Portal',
-    date: '24/10/2024',
-    time: '10:30 AM',
-    type: 'Money Transfer',
-    sendCurrency: 'GBP',
-    amount: '500.00',
-    rate: '1545.7900',
-    details: 'Transfer to Global Tech Ltd via GTBank',
-    provider: 'GTBank Nigeria',
-    accBal: '£ 12,450.00',
-    createdBy: 'admin@mito.money',
-    transactionStatus: 'Successful',
-    paymentStatus: 'PAID',
-    senderAccount: 'FURP-882101',
-    merchantRef: 'MTN-8821',
-    payerRef: 'PAY-0091',
-    recipientAccount: '0123456789',
-    application: 'Mito Web'
-  },
-  {
-    id: 't2',
-    reference: 'TXN100002',
-    channel: 'Mobile App',
-    date: '24/10/2024',
-    time: '11:15 AM',
-    type: 'Debit',
-    sendCurrency: 'NGN',
-    amount: '150,000.00',
-    rate: '1.0000',
-    details: 'Debit from John Doe Logistics wallet',
-    provider: 'Flutterwave',
-    accBal: '₦ 840,000.00',
-    createdBy: 'john@doelogistics.com',
-    transactionStatus: 'Pending',
-    paymentStatus: 'PENDING',
-    senderAccount: 'FURP-882102',
-    merchantRef: 'MTN-8822',
-    payerRef: 'PAY-0092',
-    recipientAccount: '0987654321',
-    application: 'Mito App'
-  },
-  {
-    id: 't3',
-    reference: 'TXN100003',
-    channel: 'API Integration',
-    date: '23/10/2024',
-    time: '09:45 PM',
-    type: 'Money Transfer',
-    sendCurrency: 'USD',
-    amount: '1,200.00',
-    rate: '1620.5000',
-    details: 'Remittance payout to ShopRite Nigeria',
-    provider: 'Cellulant Payout',
-    accBal: '$ 45,900.00',
-    createdBy: 'api-service@mito.money',
-    transactionStatus: 'Successful',
-    paymentStatus: 'PAID',
-    senderAccount: 'FURP-882103',
-    merchantRef: 'MTN-8823',
-    payerRef: 'PAY-0093',
-    recipientAccount: '1122334455',
-    application: 'Mito API'
-  },
-  {
-    id: 't4',
-    reference: 'TXN100004',
-    channel: 'Web Portal',
-    date: '23/10/2024',
-    time: '04:12 PM',
-    type: 'Bill Payment',
-    sendCurrency: 'KES',
-    amount: '45,000.00',
-    rate: '130.2500',
-    details: 'Utility bill settlement Nairobi Water',
-    provider: 'M-Pesa Kenya',
-    accBal: 'KSh 320,000.00',
-    createdBy: 'ops@mito.money',
-    transactionStatus: 'Failed',
-    paymentStatus: 'FAILED',
-    senderAccount: 'FURP-882104',
-    merchantRef: 'MTN-8824',
-    payerRef: 'PAY-0094',
-    recipientAccount: '2233445566',
-    application: 'Mito Web'
-  },
-  {
-    id: 't5',
-    reference: 'TXN100005',
-    channel: 'Mobile App',
-    date: '22/10/2024',
-    time: '01:50 PM',
-    type: 'Money Transfer',
-    sendCurrency: 'EUR',
-    amount: '750.00',
-    rate: '1.0820',
-    details: 'Family support transfer to Accra Ghana',
-    provider: 'MTN MoMo Ghana',
-    accBal: '€ 8,230.00',
-    createdBy: 'kwame@example.com',
-    transactionStatus: 'In Progress',
-    paymentStatus: 'PENDING',
-    senderAccount: 'FURP-882105',
-    merchantRef: 'MTN-8825',
-    payerRef: 'PAY-0095',
-    recipientAccount: '3344556677',
-    application: 'Mito App'
-  },
-  {
-    id: 't6',
-    reference: 'TXN100006',
-    channel: 'API Integration',
-    date: '22/10/2024',
-    time: '10:05 AM',
-    type: 'Airtime',
-    sendCurrency: 'NGN',
-    amount: '10,000.00',
-    rate: '1.0000',
-    details: 'Airtime VTU topup MTN Nigeria',
-    provider: 'OnePipe VTU',
-    accBal: '₦ 2,150,000.00',
-    createdBy: 'system@mito.money',
-    transactionStatus: 'Successful',
-    paymentStatus: 'PAID',
-    senderAccount: 'FURP-882106',
-    merchantRef: 'MTN-8826',
-    payerRef: 'PAY-0096',
-    recipientAccount: '4455667788',
-    application: 'Mito API'
-  }
+// Exact filter dropdown options from staging_chunk2089.js
+const CHANNEL_OPTIONS = [
+    { label: 'All Channels', value: '' },
+    { label: 'Web', value: 'Web' },
+    { label: 'Mobile', value: 'Mobile' },
+    { label: 'USSD', value: 'USSD' },
+    { label: 'API', value: 'API' },
 ];
 
-const TransactionsPage = () => {
-  const location = useLocation();
-  const currentPath = location.pathname;
+const TYPE_OPTIONS = [
+    { label: 'All Types', value: '' },
+    { label: 'Send Money', value: 'Send Money' },
+    { label: 'Biller', value: 'Biller' },
+    { label: 'AirTime', value: 'AirTime' },
+    { label: 'Wallet Funding', value: 'Wallet Funding' },
+];
 
-  // Filter visibility toggle
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [filters, setFilters] = useState(DEFAULT_FILTER_VALUES);
+const STATUS_OPTIONS = [
+    { label: 'All Statuses', value: '' },
+    { label: 'Processed', value: 'Processed' },
+    { label: 'Pending', value: 'Pending' },
+    { label: 'PaymentReceived', value: 'PaymentReceived' },
+    { label: 'ProcessFailed', value: 'ProcessFailed' },
+    { label: 'WaitOps', value: 'WaitOps' },
+    { label: 'Hold', value: 'Hold' },
+    { label: 'ComplianceHold', value: 'ComplianceHold' },
+    { label: 'Suspended', value: 'Suspended' },
+    { label: 'Cancelled', value: 'Cancelled' },
+    { label: 'Void', value: 'Void' },
+    { label: 'Verified', value: 'Verified' },
+    { label: 'Received', value: 'Received' },
+    { label: 'Refunded', value: 'Refunded' },
+];
 
-  // Table data state
-  const [transactions, setTransactions] = useState(SEED_TRANSACTIONS);
-  const [selectedIds, setSelectedIds] = useState({});
-  const [pageSize, setPageSize] = useState(10);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [activeModal, setActiveModal] = useState(null); // 'hold' | 'fail' | 'success' | 'detail'
-  const [selectedTx, setSelectedTx] = useState(null);
-  const [actionNotes, setActionNotes] = useState('');
-  const [alertBanner, setAlertBanner] = useState(null);
+const PAYER_OPTIONS = [
+    { label: 'All Payers', value: '' },
+    { label: 'Access Bank Nigeria', value: 'Access Bank Nigeria' },
+    { label: 'Zenith Bank PLC', value: 'Zenith Bank PLC' },
+    { label: 'GTBank PLC', value: 'GTBank PLC' },
+    { label: 'MPESA Kenya', value: 'MPESA Kenya' },
+    { label: 'MTN Mobile Money Ghana', value: 'MTN Mobile Money Ghana' },
+];
 
-  // Fetch live transactions from backend if available
-  useEffect(() => {
-    fetch('/api/transactions')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (json?.data && Array.isArray(json.data) && json.data.length > 0) {
-          const mapped = json.data.map((row) => ({
-            id: String(row.id || row.ref_number),
-            reference: row.ref_number || `TXN${row.id}`,
-            channel: row.channel || 'Web Portal',
-            date: row.debit_date ? new Date(row.debit_date).toLocaleDateString('en-GB') : '24/10/2024',
-            time: row.debit_date ? new Date(row.debit_date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '10:30 AM',
-            type: row.type || 'Debit',
-            sendCurrency: row.sendCurrency || 'NGN',
-            amount: Number(row.amount_debit_ngn || row.amount || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 }),
-            rate: row.rate_applied ? Number(row.rate_applied).toFixed(4) : '1.0000',
-            details: `Debit transaction from ${row.merchant_name || 'Merchant'}`,
-            provider: row.merchant_name || 'Mito Pay',
-            accBal: '₦ 500,000.00',
-            createdBy: 'admin@mito.money',
-            transactionStatus: row.status || 'Successful',
-            paymentStatus: row.status === 'Successful' ? 'PAID' : 'PENDING',
-            senderAccount: 'FURP-001',
-            merchantRef: row.ref_number,
-            payerRef: 'PAY-001',
-            recipientAccount: '0123456789',
-            application: 'Mito Web'
-          }));
-          // Merge unique rows
-          const existingRefs = new Set(mapped.map((m) => m.reference));
-          const complementary = SEED_TRANSACTIONS.filter((s) => !existingRefs.has(s.reference));
-          setTransactions([...mapped, ...complementary]);
-        }
-      })
-      .catch(() => {
-        // Fallback to seed transactions if offline
-      });
-  }, []);
+const PROVIDER_OPTIONS = [
+    { label: 'All Providers', value: '' },
+    { label: 'Flutterwave', value: 'Flutterwave' },
+    { label: 'Paystack', value: 'Paystack' },
+    { label: 'Interswitch', value: 'Interswitch' },
+    { label: 'Thunes', value: 'Thunes' },
+    { label: 'Onafriq', value: 'Onafriq' },
+    { label: 'Zeepay', value: 'Zeepay' },
+];
 
-  const handleFilterChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-  };
+const AFFILIATE_OPTIONS = [
+    { label: 'All Affiliates', value: '' },
+    { label: 'Mito Direct UK', value: 'Mito Direct UK' },
+    { label: 'Rhemito Europe', value: 'Rhemito Europe' },
+    { label: 'Mito Canada Corridor', value: 'Mito Canada Corridor' },
+];
 
-  const handleClearFilter = () => {
-    setFilters(DEFAULT_FILTER_VALUES);
-    setCurrentPage(1);
-  };
+const PAYMENT_STATUS_OPTIONS = [
+    { label: 'All Payment Statuses', value: '' },
+    { label: 'Paid', value: 'Paid' },
+    { label: 'Pending', value: 'Pending' },
+    { label: 'Failed', value: 'Failed' },
+    { label: 'Refunded', value: 'Refunded' },
+    { label: 'Chargeback', value: 'Chargeback' },
+];
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
-      if (filters.transactionRef && !tx.reference.toLowerCase().includes(filters.transactionRef.toLowerCase())) return false;
-      if (filters.senderAccount && !tx.senderAccount.toLowerCase().includes(filters.senderAccount.toLowerCase())) return false;
-      if (filters.merchantRef && !tx.merchantRef.toLowerCase().includes(filters.merchantRef.toLowerCase())) return false;
-      if (filters.recipientAccount && !tx.recipientAccount.toLowerCase().includes(filters.recipientAccount.toLowerCase())) return false;
-      if (filters.channel && tx.channel !== filters.channel) return false;
-      if (filters.type && tx.type !== filters.type) return false;
-      if (filters.status && tx.transactionStatus !== filters.status) return false;
-      if (filters.provider && tx.provider !== filters.provider) return false;
-      if (filters.paymentStatus && tx.paymentStatus !== filters.paymentStatus) return false;
-      if (filters.application && tx.application !== filters.application) return false;
-      return true;
-    });
-  }, [transactions, filters]);
+const PAYMENT_METHOD_OPTIONS = [
+    { label: 'All Payment Methods', value: '' },
+    { label: 'Debit Card', value: 'Debit Card' },
+    { label: 'Bank Transfer', value: 'Bank Transfer' },
+    { label: 'Open Banking (Truelayer)', value: 'Open Banking (Truelayer)' },
+    { label: 'Wallet Balance', value: 'Wallet Balance' },
+];
 
-  const totalCount = filteredTransactions.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const displayedTransactions = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredTransactions.slice(start, start + pageSize);
-  }, [filteredTransactions, currentPage, pageSize]);
+const APPLICATION_OPTIONS = [
+    { label: 'All Applications', value: '' },
+    { label: 'Mito Web Portal', value: 'Mito Web Portal' },
+    { label: 'Mito iOS App', value: 'Mito iOS App' },
+    { label: 'Mito Android App', value: 'Mito Android App' },
+    { label: 'Partner API Gateway', value: 'Partner API Gateway' },
+];
 
-  // Checkbox selection
-  const selectedCount = Object.values(selectedIds).filter(Boolean).length;
-  const allCurrentSelected = displayedTransactions.length > 0 && displayedTransactions.every((tx) => selectedIds[tx.id]);
+const SPLIT_OPTIONS = [
+    { label: 'All Transactions', value: '' },
+    { label: 'Split Parents Only (SP)', value: 'SP' },
+    { label: 'Split Children Only (SC)', value: 'SC' },
+];
 
-  const toggleSelectAll = () => {
-    if (allCurrentSelected) {
-      setSelectedIds({});
-    } else {
-      const next = { ...selectedIds };
-      displayedTransactions.forEach((tx) => {
-        next[tx.id] = true;
-      });
-      setSelectedIds(next);
+const INITIATION_ROUTE_OPTIONS = [
+    { label: 'All Initiation Routes', value: '' },
+    { label: 'Direct Customer', value: 'Direct Customer' },
+    { label: 'Agent Assisted', value: 'Agent Assisted' },
+    { label: 'Recurring Standing Order', value: 'Recurring Standing Order' },
+];
+
+// Exact Status Dot colors from module 33607 in staging_chunk2089.js
+export function getStagingStatusColor(status = '') {
+    switch (status) {
+        case 'Successful':
+        case 'Processed':
+        case 'Paid Out':
+        case 'PAID':
+        case 'Verified':
+            return '#62AA32'; // green
+        case 'Failed':
+        case 'ProcessFailed':
+        case 'Aborted':
+        case 'Cancelled':
+        case 'Timeout':
+        case 'EXPIRED':
+        case 'Expired':
+        case 'FAILED':
+        case 'CANCELLED':
+        case 'Void':
+            return '#8F0404'; // dark red
+        case 'In Progress':
+        case 'Under Review':
+        case 'Ready To Process':
+        case 'Paying Out':
+        case 'Payment Processing':
+        case 'PENDING_REVIEW':
+        case 'PAYMENT_PENDING':
+        case 'Awaiting Payment':
+        case 'Awaiting Payment Confirmation':
+        case 'Sent':
+        case 'SENT':
+        case 'Pending':
+        case 'PaymentReceived':
+        case 'Received':
+            return '#FED217'; // yellow
+        default:
+            return '#9658F7'; // purple
     }
-  };
+}
 
-  const toggleSelectRow = (id) => {
-    setSelectedIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+// Seed transactions including exact sample ID a4452812-9c03-41a6-8da9-430167c0d976 from staging screenshot
+export const SEED_TRANSACTIONS = [
+    {
+        id: 'a4452812-9c03-41a6-8da9-430167c0d976',
+        reference: '22505551',
+        tun: '22505551',
+        merchantRef: 'FT-22505551',
+        payerRef: 'PAY-22505551',
+        furpAccountNo: 'FURP-0022505',
+        channel: 'API',
+        date: '27 Oct 2026',
+        time: '07:40',
+        createdDisplay: 'Created: 27 Oct 2026 at 07:40',
+        isoDate: '2026-10-27',
+        type: 'Send Money',
+        summaryText: 'Initiate Payout for User',
+        currency: 'GBP',
+        amount: 1.00,
+        sendCurrency: 'GBP',
+        sendAmount: 1.00,
+        receiveCurrency: 'GBP',
+        receiveAmount: 1.00,
+        rate: 1,
+        rateDisplay: '1',
+        commission: 0.00,
+        discount: null,
+        discountDisplay: '—',
+        promoCode: null,
+        details: 'Initiate Payout for User · Account Wallet · MITOADMIN / FunTech',
+        beneficiaryName: 'Adebayo Ogunlesi',
+        beneficiaryBank: 'Access Bank Nigeria',
+        beneficiaryAccount: '0038492011',
+        beneficiaryPhone: '+234 803 441 9920',
+        beneficiaryEmail: 'adebayo.ogunlesi@gmail.com',
+        beneficiaryAddress: '24 Admiralty Way, Lekki Phase 1',
+        beneficiaryCity: 'Lagos',
+        beneficiaryCountry: 'United Kingdom',
+        beneficiaryRelationship: 'Self',
+        beneficiaryPurpose: 'Initiate Payout for User',
+        provider: 'FunTech',
+        providerCode: 'FUNTECH_GBP',
+        payer: 'Access Bank Nigeria',
+        affiliate: 'MITOADMIN',
+        paymentStatus: 'Paid',
+        paymentMethod: 'Account Wallet',
+        paymentReference: '',
+        application: 'MITOADMIN',
+        initiationRoute: 'FunTech',
+        splitTag: null,
+        accountBalance: 'GBP 42,810.50',
+        createdBy: 'Mito Admin',
+        createdByEmail: 'admin@mito.money',
+        senderPhone: '+44 7700 900412',
+        senderAddress: '14 Kensington High Street, London, W8 4PT',
+        senderNationality: 'United Kingdom',
+        senderCountryOfBirth: 'United Kingdom',
+        senderOccupation: 'Administrator',
+        senderDob: '14/05/1988',
+        senderIdCountry: 'United Kingdom',
+        senderIdType: 'Passport',
+        senderIdNumber: 'GBR-559281740',
+        senderIdIssueDate: '10/02/2021',
+        senderIdExpireDate: '10/02/2031',
+        cumulativeThresholds: 'Open user hub',
+        status: 'Under Review',
+        verificationPassed: false,
+        kycPassed: true,
+        thresholdsPassed: null,
+        postcodePassed: null,
+    },
+    {
+        id: 'TXN-90841',
+        reference: 'MITO-99482709',
+        tun: 'TUN-88492010',
+        merchantRef: 'PSK-TX-77192831',
+        payerRef: 'ZEN-NG-1192834',
+        furpAccountNo: 'FURP-0049199',
+        channel: 'Mobile',
+        date: '27 Oct 2026',
+        time: '13:48:04',
+        isoDate: '2026-10-27',
+        type: 'Send Money',
+        currency: 'GBP',
+        amount: 1200.00,
+        sendCurrency: 'GBP',
+        sendAmount: 1185.00,
+        receiveCurrency: 'NGN',
+        receiveAmount: 2429250.00,
+        rate: 2050.0,
+        commission: 20.00,
+        discount: 5.00,
+        promoCode: 'VIP100',
+        details: 'Ngozi Okonkwo · Zenith Bank PLC (2099481723) · Property Investment',
+        beneficiaryName: 'Ngozi Okonkwo',
+        beneficiaryBank: 'Zenith Bank PLC',
+        beneficiaryAccount: '2099481723',
+        beneficiaryPhone: '+234 809 112 3341',
+        beneficiaryEmail: 'ngozi.okonkwo@yahoo.com',
+        beneficiaryAddress: '8B Maitama Sule Street, Ikoyi',
+        beneficiaryCity: 'Lagos',
+        beneficiaryCountry: 'Nigeria',
+        beneficiaryRelationship: 'Spouse',
+        beneficiaryPurpose: 'Property Investment',
+        provider: 'Paystack',
+        providerCode: 'PSK_NG_INSTANT',
+        payer: 'Zenith Bank PLC',
+        affiliate: 'Mito Direct UK',
+        paymentStatus: 'Paid',
+        paymentMethod: 'Open Banking (Truelayer)',
+        paymentReference: 'TRL-OB-88371625',
+        application: 'Mito iOS App',
+        initiationRoute: 'Direct Customer',
+        splitTag: 'SP',
+        accountBalance: 'GBP 43,295.50',
+        createdBy: 'Amara Eze',
+        createdByEmail: 'amara.eze@example.com',
+        senderPhone: '+44 7911 123456',
+        senderAddress: '82 Deansgate, Manchester, M3 2ER',
+        senderNationality: 'United Kingdom',
+        senderCountryOfBirth: 'Nigeria',
+        senderOccupation: 'Clinical Pharmacist',
+        senderDob: '22/11/1990',
+        senderIdCountry: 'United Kingdom',
+        senderIdType: 'Driving Licence',
+        senderIdNumber: 'EZEAM901122G99AB',
+        senderIdIssueDate: '15/06/2020',
+        senderIdExpireDate: '15/06/2030',
+        cumulativeThresholds: 'GBP 6,850.00 / GBP 10,000.00 (30 Days)',
+        status: 'WaitOps',
+        verificationChecked: true,
+        kycChecked: true,
+        thresholdsChecked: true,
+        postcodeChecked: true,
+    },
+    {
+        id: 'TXN-90840',
+        reference: 'MITO-99482708',
+        tun: 'TUN-88492009',
+        merchantRef: 'THN-TX-66281940',
+        payerRef: 'MPS-KE-5540192',
+        furpAccountNo: 'FURP-0050120',
+        channel: 'Mobile',
+        date: '27 Oct 2026',
+        time: '12:15:52',
+        isoDate: '2026-10-27',
+        type: 'Send Money',
+        currency: 'EUR',
+        amount: 310.00,
+        sendCurrency: 'EUR',
+        sendAmount: 300.00,
+        receiveCurrency: 'KES',
+        receiveAmount: 42150.00,
+        rate: 140.5,
+        commission: 10.00,
+        discount: 0.00,
+        promoCode: null,
+        details: 'Kamau Wanjiru · MPESA Kenya (+254712345678) · Medical Expenses',
+        beneficiaryName: 'Kamau Wanjiru',
+        beneficiaryBank: 'MPESA Kenya',
+        beneficiaryAccount: '+254712345678',
+        beneficiaryPhone: '+254 712 345 678',
+        beneficiaryEmail: 'kamau.wanjiru@gmail.com',
+        beneficiaryAddress: 'Ngong Road, Kilimani',
+        beneficiaryCity: 'Nairobi',
+        beneficiaryCountry: 'Kenya',
+        beneficiaryRelationship: 'Parent',
+        beneficiaryPurpose: 'Medical Expenses',
+        provider: 'Thunes',
+        providerCode: 'THN_KE_MPESA',
+        payer: 'MPESA Kenya',
+        affiliate: 'Rhemito Europe',
+        paymentStatus: 'Paid',
+        paymentMethod: 'Debit Card',
+        paymentReference: 'ADY-PM-44918273',
+        application: 'Mito Android App',
+        initiationRoute: 'Direct Customer',
+        splitTag: null,
+        accountBalance: 'EUR 19,420.00',
+        createdBy: 'DavidMwangi',
+        createdByEmail: 'david.mwangi@example.com',
+        senderPhone: '+49 1512 3456789',
+        senderAddress: 'Friedrichstraße 114A, 10117 Berlin',
+        senderNationality: 'Germany',
+        senderCountryOfBirth: 'Kenya',
+        senderOccupation: 'Civil Engineer',
+        senderDob: '03/08/1985',
+        senderIdCountry: 'Germany',
+        senderIdType: 'National ID',
+        senderIdNumber: 'DEU-991028374',
+        senderIdIssueDate: '01/09/2022',
+        senderIdExpireDate: '01/09/2032',
+        cumulativeThresholds: 'EUR 1,240.00 / EUR 10,000.00 (30 Days)',
+        status: 'Processed',
+        verificationChecked: true,
+        kycChecked: true,
+        thresholdsChecked: true,
+        postcodeChecked: true,
+    },
+    {
+        id: 'TXN-90839',
+        reference: 'MITO-99482707',
+        tun: 'TUN-88492008',
+        merchantRef: 'ZEE-TX-55192834',
+        payerRef: 'MTN-GH-9920183',
+        furpAccountNo: 'FURP-0050311',
+        channel: 'Web',
+        date: '26 Oct 2026',
+        time: '18:04:11',
+        isoDate: '2026-10-26',
+        type: 'Send Money',
+        currency: 'GBP',
+        amount: 225.00,
+        sendCurrency: 'GBP',
+        sendAmount: 220.00,
+        receiveCurrency: 'GHS',
+        receiveAmount: 4356.00,
+        rate: 19.8,
+        commission: 8.00,
+        discount: 3.00,
+        promoCode: 'GHANA3',
+        details: 'Kwame Mensah · MTN Mobile Money Ghana (0244881920) · Education Fees',
+        beneficiaryName: 'Kwame Mensah',
+        beneficiaryBank: 'MTN Mobile Money Ghana',
+        beneficiaryAccount: '0244881920',
+        beneficiaryPhone: '+233 24 488 1920',
+        beneficiaryEmail: 'kwame.mensah@outlook.com',
+        beneficiaryAddress: '19 Oxford Street, Osu',
+        beneficiaryCity: 'Accra',
+        beneficiaryCountry: 'Ghana',
+        beneficiaryRelationship: 'Sibling',
+        beneficiaryPurpose: 'Education Fees',
+        provider: 'Zeepay',
+        providerCode: 'ZEE_GH_MOMO',
+        payer: 'MTN Mobile Money Ghana',
+        affiliate: 'Mito Direct UK',
+        paymentStatus: 'Failed',
+        paymentMethod: 'Debit Card',
+        paymentReference: 'STRP-PM-11029384',
+        application: 'Mito Web Portal',
+        initiationRoute: 'Direct Customer',
+        splitTag: null,
+        accountBalance: 'GBP 44,495.50',
+        createdBy: 'Akosua Boateng',
+        createdByEmail: 'akosua.boateng@example.com',
+        senderPhone: '+44 7800 554321',
+        senderAddress: '55 Peckham High Street, London, SE15 5EB',
+        senderNationality: 'United Kingdom',
+        senderCountryOfBirth: 'Ghana',
+        senderOccupation: 'Registered Nurse',
+        senderDob: '19/02/1992',
+        senderIdCountry: 'United Kingdom',
+        senderIdType: 'Passport',
+        senderIdNumber: 'GBR-773819204',
+        senderIdIssueDate: '12/04/2019',
+        senderIdExpireDate: '12/04/2029',
+        cumulativeThresholds: 'GBP 890.00 / GBP 10,000.00 (30 Days)',
+        status: 'ProcessFailed',
+        verificationChecked: true,
+        kycChecked: true,
+        thresholdsChecked: true,
+        postcodeChecked: false,
+    },
+    {
+        id: 'TXN-90838',
+        reference: 'MITO-99482706',
+        tun: 'TUN-88492007',
+        merchantRef: 'ISW-TX-44019283',
+        payerRef: 'GTB-NG-6638192',
+        furpAccountNo: 'FURP-0050890',
+        channel: 'API',
+        date: '26 Oct 2026',
+        time: '15:39:29',
+        isoDate: '2026-10-26',
+        type: 'Biller',
+        currency: 'GBP',
+        amount: 95.00,
+        sendCurrency: 'GBP',
+        sendAmount: 92.00,
+        receiveCurrency: 'NGN',
+        receiveAmount: 188600.00,
+        rate: 2050.0,
+        commission: 3.00,
+        discount: 0.00,
+        promoCode: null,
+        details: 'IKEDC Prepaid Meter · GTBank PLC (0129384756) · Utility Bill Payment',
+        beneficiaryName: 'Tunde Bakare (IKEDC Prepaid)',
+        beneficiaryBank: 'GTBank PLC',
+        beneficiaryAccount: '0129384756',
+        beneficiaryPhone: '+234 802 998 1122',
+        beneficiaryEmail: 'tunde.bakare@gmail.com',
+        beneficiaryAddress: '12 Allen Avenue, Ikeja',
+        beneficiaryCity: 'Lagos',
+        beneficiaryCountry: 'Nigeria',
+        beneficiaryRelationship: 'Self',
+        beneficiaryPurpose: 'Utility Bill Payment',
+        provider: 'Interswitch',
+        providerCode: 'ISW_NG_BILLER',
+        payer: 'GTBank PLC',
+        affiliate: 'Mito Direct UK',
+        paymentStatus: 'Pending',
+        paymentMethod: 'Bank Transfer',
+        paymentReference: 'BNK-TR-66291834',
+        application: 'Partner API Gateway',
+        initiationRoute: 'Agent Assisted',
+        splitTag: 'SC',
+        accountBalance: 'GBP 44,720.50',
+        createdBy: 'Tunde Bakare',
+        createdByEmail: 'tunde.bakare@example.com',
+        senderPhone: '+44 7712 889900',
+        senderAddress: '101 Broad Street, Birmingham, B15 1AU',
+        senderNationality: 'United Kingdom',
+        senderCountryOfBirth: 'Nigeria',
+        senderOccupation: 'Business Analyst',
+        senderDob: '09/12/1987',
+        senderIdCountry: 'United Kingdom',
+        senderIdType: 'Passport',
+        senderIdNumber: 'GBR-119283746',
+        senderIdIssueDate: '20/08/2021',
+        senderIdExpireDate: '20/08/2031',
+        cumulativeThresholds: 'GBP 2,150.00 / GBP 10,000.00 (30 Days)',
+        status: 'Hold',
+        verificationChecked: true,
+        kycChecked: true,
+        thresholdsChecked: false,
+        postcodeChecked: true,
+    },
+    {
+        id: 'TXN-90837',
+        reference: 'MITO-99482705',
+        tun: 'TUN-88492006',
+        merchantRef: 'ONF-TX-33918274',
+        payerRef: 'MPS-KE-3301928',
+        furpAccountNo: 'FURP-0051002',
+        channel: 'USSD',
+        date: '25 Oct 2026',
+        time: '09:12:45',
+        isoDate: '2026-10-25',
+        type: 'AirTime',
+        currency: 'GBP',
+        amount: 50.00,
+        sendCurrency: 'GBP',
+        sendAmount: 50.00,
+        receiveCurrency: 'KES',
+        receiveAmount: 7025.00,
+        rate: 140.5,
+        commission: 0.00,
+        discount: 0.00,
+        promoCode: null,
+        details: 'Safaricom Topup · MPESA Kenya (+254722998877) · Mobile Airtime',
+        beneficiaryName: 'Grace Mutua',
+        beneficiaryBank: 'MPESA Kenya',
+        beneficiaryAccount: '+254722998877',
+        beneficiaryPhone: '+254 722 998 877',
+        beneficiaryEmail: 'grace.mutua@gmail.com',
+        beneficiaryAddress: 'Moi Avenue, Mombasa',
+        beneficiaryCity: 'Mombasa',
+        beneficiaryCountry: 'Kenya',
+        beneficiaryRelationship: 'Friend',
+        beneficiaryPurpose: 'Mobile Airtime',
+        provider: 'Onafriq',
+        providerCode: 'ONF_KE_AIRTIME',
+        payer: 'MPESA Kenya',
+        affiliate: 'Mito Canada Corridor',
+        paymentStatus: 'Pending',
+        paymentMethod: 'Wallet Balance',
+        paymentReference: 'WLT-PM-77482910',
+        application: 'Mito Android App',
+        initiationRoute: 'Recurring Standing Order',
+        splitTag: null,
+        accountBalance: 'GBP 44,815.50',
+        createdBy: 'Faith Otieno',
+        createdByEmail: 'faith.otieno@example.com',
+        senderPhone: '+1 416 555 0198',
+        senderAddress: '200 Bay Street, Toronto, ON M5J 2J2',
+        senderNationality: 'Canada',
+        senderCountryOfBirth: 'Kenya',
+        senderOccupation: 'Accountant',
+        senderDob: '27/04/1993',
+        senderIdCountry: 'Canada',
+        senderIdType: 'Passport',
+        senderIdNumber: 'CAN-664738291',
+        senderIdIssueDate: '04/01/2023',
+        senderIdExpireDate: '04/01/2033',
+        cumulativeThresholds: 'GBP 450.00 / GBP 10,000.00 (30 Days)',
+        status: 'Pending',
+        verificationChecked: true,
+        kycChecked: true,
+        thresholdsChecked: true,
+        postcodeChecked: true,
+    },
+];
 
-  const clearSelection = () => {
-    setSelectedIds({});
-  };
+const INITIAL_FILTERS = {
+    FURPAccountNo: '',
+    TransactionRef: '',
+    MerchantRef: '',
+    PayerRef: '',
+    Recipient: '',
+    Channel: '',
+    Type: '',
+    Status: '',
+    Payer: '',
+    Provider: '',
+    Affiliate: '',
+    PaymentStatus: '',
+    PaymentMethod: '',
+    Application: '',
+    Split: '',
+    InitiationRoute: '',
+    StartDate: '20/10/2026',
+    EndDate: '27/10/2026',
+};
 
-  // Bulk actions
-  const handleBulkAction = (actionType) => {
-    if (selectedCount === 0) return;
-    setActiveModal(actionType);
-  };
+const inputStyle = {
+    width: '100%',
+    height: 38,
+    padding: '6px 12px',
+    border: '1px solid #e0e6ed',
+    borderRadius: 6,
+    fontSize: 14,
+    color: '#0e1726',
+    background: '#ffffff',
+    outline: 'none',
+    fontFamily: 'inherit',
+};
 
-  const executeBulkAction = () => {
-    const affectedIds = Object.keys(selectedIds).filter((id) => selectedIds[id]);
-    setTransactions((prev) =>
-      prev.map((t) => {
-        if (!affectedIds.includes(t.id)) return t;
-        if (activeModal === 'hold') return { ...t, transactionStatus: 'Under Review' };
-        if (activeModal === 'fail') return { ...t, transactionStatus: 'Failed', paymentStatus: 'FAILED' };
-        if (activeModal === 'success') return { ...t, transactionStatus: 'Successful', paymentStatus: 'PAID' };
-        return t;
-      })
-    );
-    setAlertBanner(`Successfully updated ${affectedIds.length} transaction(s).`);
-    setTimeout(() => setAlertBanner(null), 4000);
-    setActiveModal(null);
-    setActionNotes('');
-    clearSelection();
-  };
+export default function TransactionsPage() {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const [transactions, setTransactions] = useState(SEED_TRANSACTIONS);
+    const [showFilter, setShowFilter] = useState(false);
+    const [draftFilters, setDraftFilters] = useState(INITIAL_FILTERS);
+    const [appliedFilters, setAppliedFilters] = useState(INITIAL_FILTERS);
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [toastMessage, setToastMessage] = useState(null);
+    const [switchModalOpen, setSwitchModalOpen] = useState(false);
+    const [switchProcessorTarget, setSwitchProcessorTarget] = useState('Flutterwave');
+    const [splitModalOpen, setSplitModalOpen] = useState(false);
+    const [splitChunkAmount, setSplitChunkAmount] = useState('250');
 
-  return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Breadcrumb matching staging_chunk2089.js */}
-      <div className="staging-breadcrumb">
-        <Link to="/dashboard">Home</Link>
-        <span>/</span>
-        <span style={{ color: '#605e5c' }}>Financials</span>
-        <span>/</span>
-        <span style={{ fontWeight: 600, color: '#323130' }}>Transactions</span>
-      </div>
+    const triggerToast = (msg) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 3500);
+    };
 
-      {alertBanner && (
-        <div style={{ marginBottom: 16, padding: '12px 16px', background: '#d1fae5', color: '#065f46', borderRadius: 8, fontWeight: 600 }}>
-          {alertBanner}
-        </div>
-      )}
+    const filteredTransactions = useMemo(() => {
+        return transactions.filter((tx) => {
+            if (appliedFilters.FURPAccountNo && !tx.furpAccountNo.toLowerCase().includes(appliedFilters.FURPAccountNo.toLowerCase())) return false;
+            if (appliedFilters.TransactionRef && !tx.reference.toLowerCase().includes(appliedFilters.TransactionRef.toLowerCase()) && !tx.id.toLowerCase().includes(appliedFilters.TransactionRef.toLowerCase())) return false;
+            if (appliedFilters.MerchantRef && !tx.merchantRef.toLowerCase().includes(appliedFilters.MerchantRef.toLowerCase())) return false;
+            if (appliedFilters.PayerRef && !tx.payerRef.toLowerCase().includes(appliedFilters.PayerRef.toLowerCase())) return false;
+            if (appliedFilters.Recipient && !tx.details.toLowerCase().includes(appliedFilters.Recipient.toLowerCase())) return false;
+            if (appliedFilters.Channel && tx.channel !== appliedFilters.Channel) return false;
+            if (appliedFilters.Type && tx.type !== appliedFilters.Type) return false;
+            if (appliedFilters.Status && tx.status !== appliedFilters.Status) return false;
+            if (appliedFilters.Payer && tx.payer !== appliedFilters.Payer) return false;
+            if (appliedFilters.Provider && tx.provider !== appliedFilters.Provider) return false;
+            if (appliedFilters.Affiliate && tx.affiliate !== appliedFilters.Affiliate) return false;
+            if (appliedFilters.PaymentStatus && tx.paymentStatus !== appliedFilters.PaymentStatus) return false;
+            if (appliedFilters.PaymentMethod && tx.paymentMethod !== appliedFilters.PaymentMethod) return false;
+            if (appliedFilters.Application && tx.application !== appliedFilters.Application) return false;
+            if (appliedFilters.Split && tx.splitTag !== appliedFilters.Split) return false;
+            if (appliedFilters.InitiationRoute && tx.initiationRoute !== appliedFilters.InitiationRoute) return false;
+            return true;
+        });
+    }, [transactions, appliedFilters]);
 
-      {/* Top Panel: Financials Tabs + Title & Filter Toggle */}
-      <div className="panel mb-6 mt-4" style={{ padding: '20px 24px', marginBottom: 20 }}>
-        {/* 5 Financials Tabs from module 97917 */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-          {FINANCIALS_TABS.map((tab) => {
-            const isActive = currentPath === tab.href || (tab.href === '/financials/transactions' && currentPath === '/financials/debits');
-            return isActive ? (
-              <span
-                key={tab.href}
-                className="btn btn-primary btn-sm"
-                style={{
-                  height: 40,
-                  padding: '8px 16px',
-                  background: '#FB4B14',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  borderRadius: 6,
-                  cursor: 'default'
-                }}
-              >
-                {tab.label}
-              </span>
-            ) : (
-              <Link
-                key={tab.href}
-                to={tab.href}
-                className="btn btn-outline-primary btn-sm"
-                style={{
-                  height: 40,
-                  padding: '8px 16px',
-                  background: '#ffffff',
-                  border: '1px solid #FB4B14',
-                  color: '#FB4B14',
-                  fontWeight: 600,
-                  borderRadius: 6,
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center'
-                }}
-              >
-                {tab.label}
-              </Link>
+    const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / rowsPerPage));
+    const paginatedTransactions = useMemo(() => {
+        const start = (currentPage - 1) * rowsPerPage;
+        return filteredTransactions.slice(start, start + rowsPerPage);
+    }, [filteredTransactions, currentPage, rowsPerPage]);
+
+    const allVisibleSelected =
+        paginatedTransactions.length > 0 &&
+        paginatedTransactions.every((tx) => selectedIds.includes(tx.id));
+
+    const toggleSelectAll = () => {
+        if (allVisibleSelected) {
+            setSelectedIds((prev) => prev.filter((id) => !paginatedTransactions.some((r) => r.id === id)));
+        } else {
+            const visibleIds = paginatedTransactions.map((r) => r.id);
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+        }
+    };
+
+    const toggleSelectRow = (id) => {
+        setSelectedIds((prev) =>
+            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        );
+    };
+
+    const handleBulkAction = (actionName) => {
+        if (selectedIds.length === 0) return;
+        if (actionName === 'Clear') {
+            setSelectedIds([]);
+            return;
+        }
+        if (actionName === 'Switch') {
+            setSwitchModalOpen(true);
+            return;
+        }
+        if (actionName === 'Split') {
+            setSplitModalOpen(true);
+            return;
+        }
+
+        const nextStatusMap = {
+            'Pause/Hold': 'Hold',
+            'Bulk Failed': 'ProcessFailed',
+            'Bulk Success': 'Processed',
+            'Abort': 'Cancelled',
+        };
+        if (nextStatusMap[actionName]) {
+            setTransactions((prev) =>
+                prev.map((tx) =>
+                    selectedIds.includes(tx.id) ? { ...tx, status: nextStatusMap[actionName] } : tx
+                )
             );
-          })}
-        </div>
+        }
+        triggerToast(`${actionName} executed on ${selectedIds.length} transaction(s).`);
+        setSelectedIds([]);
+    };
 
-        {/* Title & Filter Trigger */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-          <h5 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: '#323130' }}>
-            Transactions
-          </h5>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setIsFilterOpen(!isFilterOpen)}
-            style={{
-              background: '#FB4B14',
-              color: '#ffffff',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: 6,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: '0.875rem'
-            }}
-          >
-            <FilterIcon />
-            <span>Filter</span>
-          </button>
-        </div>
+    const hasSelect = selectedIds.length > 0;
 
-        {/* Collapsible Filter Section */}
-        {isFilterOpen && (
-          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #edebe9' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
-              <div>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="FURP Account No."
-                  value={filters.senderAccount}
-                  onChange={(e) => handleFilterChange('senderAccount', e.target.value)}
-                />
-              </div>
-              <div>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Transaction Ref"
-                  value={filters.transactionRef}
-                  onChange={(e) => handleFilterChange('transactionRef', e.target.value)}
-                />
-              </div>
-              <div>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Merchant Ref (MTN etc)"
-                  value={filters.merchantRef}
-                  onChange={(e) => handleFilterChange('merchantRef', e.target.value)}
-                />
-              </div>
-              <div>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Payer Ref"
-                  value={filters.payerRef}
-                  onChange={(e) => handleFilterChange('payerRef', e.target.value)}
-                />
-              </div>
-              <div>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Recipient (Mobile, Account)"
-                  value={filters.recipientAccount}
-                  onChange={(e) => handleFilterChange('recipientAccount', e.target.value)}
-                />
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.channel}
-                  onChange={(e) => handleFilterChange('channel', e.target.value)}
-                >
-                  <option value="">Select channel</option>
-                  <option value="Web Portal">Web Portal</option>
-                  <option value="Mobile App">Mobile App</option>
-                  <option value="API Integration">API Integration</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.type}
-                  onChange={(e) => handleFilterChange('type', e.target.value)}
-                >
-                  <option value="">Select type</option>
-                  <option value="Money Transfer">Money Transfer</option>
-                  <option value="Debit">Debit</option>
-                  <option value="Bill Payment">Bill Payment</option>
-                  <option value="Airtime">Airtime</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.status}
-                  onChange={(e) => handleFilterChange('status', e.target.value)}
-                >
-                  <option value="">Select transaction status</option>
-                  <option value="Successful">Successful</option>
-                  <option value="Pending">Pending</option>
-                  <option value="In Progress">In Progress</option>
-                  <option value="Under Review">Under Review</option>
-                  <option value="Failed">Failed</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.paymentStatus}
-                  onChange={(e) => handleFilterChange('paymentStatus', e.target.value)}
-                >
-                  <option value="">Select payment status</option>
-                  <option value="PAID">PAID</option>
-                  <option value="PENDING">PENDING</option>
-                  <option value="FAILED">FAILED</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.provider}
-                  onChange={(e) => handleFilterChange('provider', e.target.value)}
-                >
-                  <option value="">Select provider</option>
-                  <option value="GTBank Nigeria">GTBank Nigeria</option>
-                  <option value="Flutterwave">Flutterwave</option>
-                  <option value="Cellulant Payout">Cellulant Payout</option>
-                  <option value="M-Pesa Kenya">M-Pesa Kenya</option>
-                  <option value="MTN MoMo Ghana">MTN MoMo Ghana</option>
-                  <option value="OnePipe VTU">OnePipe VTU</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.application}
-                  onChange={(e) => handleFilterChange('application', e.target.value)}
-                >
-                  <option value="">Select application</option>
-                  <option value="Mito Web">Mito Web</option>
-                  <option value="Mito App">Mito App</option>
-                  <option value="Mito API">Mito API</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="form-select"
-                  value={filters.splitFilter}
-                  onChange={(e) => handleFilterChange('splitFilter', e.target.value)}
-                >
-                  <option value="">Filter by split</option>
-                  <option value="P">Split (Parent Only)</option>
-                  <option value="C">Split (Child Only)</option>
-                  <option value="N">Non-Split</option>
-                </select>
-              </div>
-            </div>
+    const bulkBtnStyle = (variant = 'default') => {
+        const base = {
+            height: 32,
+            padding: '0 12px',
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: hasSelect ? 'pointer' : 'not-allowed',
+            opacity: hasSelect ? 1 : 0.6,
+            fontFamily: 'inherit',
+            transition: 'all 0.15s',
+        };
+        if (variant === 'danger') {
+            return { ...base, background: '#ffffff', border: '1px solid #ef4444', color: '#dc2626' };
+        }
+        if (variant === 'success') {
+            return { ...base, background: '#ffffff', border: '1px solid #22c55e', color: '#16a34a' };
+        }
+        if (variant === 'primary-outline') {
+            return { ...base, background: '#ffffff', border: '1px solid #FB4B14', color: '#FB4B14' };
+        }
+        if (variant === 'ghost') {
+            return { ...base, background: 'transparent', border: '1px solid transparent', color: '#6b7280' };
+        }
+        return { ...base, background: '#ffffff', border: '1px solid #d1d5db', color: '#374151' };
+    };
 
-            {/* Filter Buttons */}
-            <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-              <button
-                type="button"
-                onClick={handleClearFilter}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 6,
-                  border: '1px solid #d97706',
-                  color: '#d97706',
-                  background: '#ffffff',
-                  fontWeight: 600,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer'
-                }}
-              >
-                Clear filter
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(1)}
-                style={{
-                  padding: '8px 20px',
-                  borderRadius: 6,
-                  border: 'none',
-                  background: '#FB4B14',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8
-                }}
-              >
-                <span>Show transactions</span>
-                <SearchIcon />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Main Table Panel */}
-      <div className="panel" style={{ padding: '20px 24px' }}>
-        {/* Controls row: Bulk Actions + Rows Per Page */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-          {/* Left: Bulk Action Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontSize: '0.875rem', color: '#605E5C', fontWeight: 600 }}>
-              {selectedCount} selected
-            </span>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={selectedCount === 0}
-              onClick={() => handleBulkAction('hold')}
-            >
-              Pause/Hold
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-danger btn-sm"
-              disabled={selectedCount === 0}
-              onClick={() => handleBulkAction('fail')}
-            >
-              Bulk Failed
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              style={{ background: '#FB4B14', color: '#ffffff', border: 'none' }}
-              disabled={selectedCount === 0}
-              onClick={() => handleBulkAction('success')}
-            >
-              Bulk Success
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={selectedCount === 0}
-              onClick={() => handleBulkAction('query')}
-            >
-              Bulk Query
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={selectedCount === 0}
-              onClick={() => handleBulkAction('retry')}
-            >
-              Retry
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-danger btn-sm"
-              disabled={selectedCount === 0}
-              onClick={() => handleBulkAction('abort')}
-            >
-              Abort
-            </button>
-            {selectedCount > 0 && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={clearSelection}
-                style={{ background: '#edebe9', color: '#323130', border: 'none' }}
-              >
-                Clear
-              </button>
+    return (
+        <div style={{ paddingTop: 20 }}>
+            {/* Toast Notification */}
+            {toastMessage && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 24,
+                        right: 24,
+                        zIndex: 9999,
+                        background: '#0e1726',
+                        color: '#ffffff',
+                        padding: '12px 20px',
+                        borderRadius: 8,
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                    }}
+                >
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#62AA32' }} />
+                    {toastMessage}
+                </div>
             )}
-          </div>
 
-          {/* Right: Count + Rows per page */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: '0.875rem', color: '#605E5C' }}>
-              Showing {displayedTransactions.length} of {totalCount} transactions
-            </span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.875rem', color: '#605E5C' }}>
-              <span>Rows</span>
-              <select
-                className="form-select"
-                style={{ width: 'auto', padding: '4px 8px' }}
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        {/* Data Table matching staging_chunk2089.js */}
-        <div style={{ overflowX: 'auto', minHeight: 300 }}>
-          <table className="table-container" style={{ width: '100%', fontSize: '0.875rem' }}>
-            <thead>
-              <tr>
-                <th style={{ width: 36 }}>
-                  <input
-                    type="checkbox"
-                    checked={allCurrentSelected}
-                    onChange={toggleSelectAll}
-                    style={{ accentColor: '#FB4B14', cursor: 'pointer' }}
-                  />
-                </th>
-                <th>Ref</th>
-                <th>Channel</th>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Amount</th>
-                <th>Rate</th>
-                <th>Details</th>
-                <th>Provider</th>
-                <th>Acc Bal.</th>
-                <th>CreatedBy</th>
-                <th style={{ textAlign: 'center' }}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={12} style={{ textAlign: 'center', padding: '32px 16px', color: '#605E5C' }}>
-                    No transactions match the selected filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                displayedTransactions.map((tx) => {
-                  const isChecked = !!selectedIds[tx.id];
-                  const dotColor = getStatusDotColor(tx.transactionStatus);
-                  return (
-                    <tr key={tx.id} style={{ background: isChecked ? '#fff7ed' : '#ffffff' }}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleSelectRow(tx.id)}
-                          style={{ accentColor: '#FB4B14', cursor: 'pointer' }}
-                        />
-                      </td>
-                      <td>
-                        <Link
-                          to={`/financials/transactions/${tx.id || tx.reference}`}
-                          style={{
-                            color: '#FB4B14',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            textDecoration: 'none'
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-                          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+            {/* Module 84192 (N.Qp): User Name Heading + Circular Back Button + Breadcrumb */}
+            <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                    <h4 className="staging-user-title">Mito Admin</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <button
+                            type="button"
+                            onClick={() => navigate(-1)}
+                            title="Go back"
+                            style={{
+                                flexShrink: 0,
+                                cursor: 'pointer',
+                                borderRadius: '9999px',
+                                border: '1px solid #FEC9B8',
+                                background: '#ffffff',
+                                padding: 8,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
                         >
-                          {tx.reference}
-                        </Link>
-                      </td>
-                      <td style={{ color: '#323130' }}>{tx.channel}</td>
-                      <td>
-                        <div style={{ color: '#323130', fontWeight: 500 }}>{tx.date}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#605E5C' }}>{tx.time}</div>
-                      </td>
-                      <td style={{ color: '#323130' }}>{tx.type}</td>
-                      <td>
-                        <div style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>{tx.sendCurrency}</div>
-                        <div style={{ fontWeight: 600, color: '#323130' }}>{tx.amount}</div>
-                      </td>
-                      <td style={{ fontFamily: 'monospace', color: '#323130' }}>{tx.rate}</td>
-                      <td style={{ maxWidth: 200, whiteSpace: 'normal', color: '#323130' }}>{tx.details}</td>
-                      <td>
-                        <span style={{ color: '#323130', fontWeight: 500 }}>{tx.provider}</span>
-                      </td>
-                      <td style={{ color: '#323130', fontWeight: 500 }}>{tx.accBal}</td>
-                      <td>
-                        <div style={{ fontSize: '0.75rem', color: '#605E5C' }}>{tx.createdBy}</div>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
+                            {/* Module 59357 Orange Back Arrow SVG */}
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    d="M9.03092 15.5892C9.35636 15.9147 9.88399 15.9147 10.2094 15.5892C10.5349 15.2638 10.5349 14.7362 10.2094 14.4107L6.63186 10.8333H15.834C16.2942 10.8333 16.6673 10.4602 16.6673 9.99996C16.6673 9.53972 16.2942 9.16663 15.834 9.16663H6.63186L10.2094 5.58922C10.5349 5.26378 10.5349 4.73614 10.2094 4.4107C9.88399 4.08527 9.35636 4.08527 9.03092 4.4107L4.03092 9.4107C3.70548 9.73614 3.70548 10.2638 4.03092 10.5892L9.03092 15.5892Z"
+                                    fill="#FB4B14"
+                                />
+                            </svg>
+                        </button>
+                        <ol
+                            style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                alignItems: 'center',
+                                gap: 6,
+                                color: '#605E5C',
+                                fontSize: 14,
+                                listStyle: 'none',
+                                padding: 0,
+                                margin: 0,
+                            }}
+                        >
+                            <li>
+                                <Link to="/dashboard" style={{ color: '#605E5C', textDecoration: 'none' }}>
+                                    Home
+                                </Link>
+                            </li>
+                            <li>/ <span style={{ textTransform: 'capitalize' }}>Financials</span></li>
+                            <li>/ <span style={{ textTransform: 'capitalize' }}>Transactions</span></li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            {/* First Panel: Financials Switcher Tabs + Transactions Title + Filter Button + Collapsible Filter Grid */}
+            <div className="staging-tx-panel-top">
+                {/* Module 97917 (W.A): Financials Switcher Pills */}
+                <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {FINANCIAL_TABS.map((tab) => {
+                        const isActive = location.pathname.startsWith(tab.href);
+                        return (
+                            <Link
+                                key={tab.href}
+                                to={tab.href}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    height: 40,
+                                    padding: '6px 14px',
+                                    borderRadius: 6,
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    textDecoration: 'none',
+                                    border: '1px solid #FB4B14',
+                                    background: isActive ? '#FB4B14' : '#ffffff',
+                                    color: isActive ? '#ffffff' : '#FB4B14',
+                                    pointerEvents: isActive ? 'none' : 'auto',
+                                    transition: 'all 0.15s',
+                                }}
+                            >
+                                {tab.label}
+                            </Link>
+                        );
+                    })}
+                </div>
+
+                {/* Title & Filter Toggle Row */}
+                <div className="staging-tx-title-row">
+                    <h5 style={{ fontSize: 24, lineHeight: '32px', fontWeight: 700, margin: 0, color: '#0e1726' }}>
+                        Transactions
+                    </h5>
+                    <div>
+                        <button
+                            type="button"
+                            className="staging-tx-filter-toggle-btn"
+                            onClick={() => setShowFilter((prev) => !prev)}
+                        >
+                            {/* Module 63030 Funnel Filter SVG */}
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    fillRule="evenodd"
+                                    clipRule="evenodd"
+                                    d="M3 7C3 6.44772 3.44772 6 4 6H20C20.5523 6 21 6.44772 21 7C21 7.55228 20.5523 8 20 8H4C3.44772 8 3 7.55228 3 7ZM6 12C6 11.4477 6.44772 11 7 11H17C17.5523 11 18 11.4477 18 12C18 12.5523 17.5523 13 17 13H7C6.44772 13 6 12.5523 6 12ZM9 17C9 16.4477 9.44772 16 10 16H14C14.5523 16 15 16.4477 15 17C15 17.5523 14.5523 18 14 18H10C9.44772 18 9 17.5523 9 17Z"
+                                    fill="white"
+                                />
+                            </svg>
+                            Filter
+                        </button>
+                    </div>
+                </div>
+
+                {/* Collapsible 18-Field Filter Form (k in module 62089) */}
+                {showFilter && (
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            setAppliedFilters(draftFilters);
+                            setCurrentPage(1);
+                        }}
+                    >
+                        <div className="staging-tx-filter-grid">
+                            <input
+                                type="text"
+                                placeholder="FURP Account No."
+                                style={inputStyle}
+                                value={draftFilters.FURPAccountNo}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, FURPAccountNo: e.target.value })}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Transaction Ref"
+                                style={inputStyle}
+                                value={draftFilters.TransactionRef}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, TransactionRef: e.target.value })}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Merchant Ref (MTN etc)"
+                                style={inputStyle}
+                                value={draftFilters.MerchantRef}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, MerchantRef: e.target.value })}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Payer Ref"
+                                style={inputStyle}
+                                value={draftFilters.PayerRef}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, PayerRef: e.target.value })}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Recipient (Mobile, Account)"
+                                style={inputStyle}
+                                value={draftFilters.Recipient}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Recipient: e.target.value })}
+                            />
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Channel}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Channel: e.target.value })}
+                            >
+                                <option value="">Select channel</option>
+                                {CHANNEL_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Type}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Type: e.target.value })}
+                            >
+                                <option value="">Select type</option>
+                                {TYPE_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Status}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Status: e.target.value })}
+                            >
+                                <option value="">Select transaction status</option>
+                                {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Payer}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Payer: e.target.value })}
+                            >
+                                <option value="">Select payer</option>
+                                {PAYER_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Provider}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Provider: e.target.value })}
+                            >
+                                <option value="">Select provider</option>
+                                {PROVIDER_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Affiliate}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Affiliate: e.target.value })}
+                            >
+                                <option value="">Select affiliate</option>
+                                {AFFILIATE_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.PaymentStatus}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, PaymentStatus: e.target.value })}
+                            >
+                                <option value="">Select payment status</option>
+                                {PAYMENT_STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.PaymentMethod}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, PaymentMethod: e.target.value })}
+                            >
+                                <option value="">Select payment method</option>
+                                {PAYMENT_METHOD_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Application}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Application: e.target.value })}
+                            >
+                                <option value="">Select application</option>
+                                {APPLICATION_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.Split}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, Split: e.target.value })}
+                            >
+                                <option value="">Filter by split</option>
+                                {SPLIT_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <select
+                                style={inputStyle}
+                                value={draftFilters.InitiationRoute}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, InitiationRoute: e.target.value })}
+                            >
+                                <option value="">Select initiation route</option>
+                                {INITIATION_ROUTE_OPTIONS.filter((o) => o.value).map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                            </select>
+                            <input
+                                type="text"
+                                placeholder="From date"
+                                style={inputStyle}
+                                value={draftFilters.StartDate}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, StartDate: e.target.value })}
+                            />
+                            <input
+                                type="text"
+                                placeholder="To date"
+                                style={inputStyle}
+                                value={draftFilters.EndDate}
+                                onChange={(e) => setDraftFilters({ ...draftFilters, EndDate: e.target.value })}
+                            />
+                        </div>
+
+                        <div
+                            style={{
+                                marginTop: 24,
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                alignItems: 'center',
+                                justifyContent: 'flex-end',
+                                gap: 20,
+                            }}
+                        >
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDraftFilters(INITIAL_FILTERS);
+                                    setAppliedFilters(INITIAL_FILTERS);
+                                    setCurrentPage(1);
+                                }}
+                                style={{
+                                    padding: '10px 20px',
+                                    borderRadius: 6,
+                                    border: '1px solid #dc2626',
+                                    background: '#ffffff',
+                                    color: '#FB4B14',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                }}
+                            >
+                                Clear filter
+                            </button>
+                            <button
+                                type="submit"
+                                style={{
+                                    padding: '10px 20px',
+                                    borderRadius: 6,
+                                    border: '1px solid #FB4B14',
+                                    background: '#FB4B14',
+                                    color: '#ffffff',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                }}
+                            >
+                                Show transactions
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
+
+            {/* Second Panel: Toolbar + Desktop Table + Mobile Card List + Pagination */}
+            <div className="staging-tx-panel-table">
+                {/* Top Toolbar (module 62089) */}
+                <div className="staging-tx-toolbar">
+                    {/* Left: selected count + 9 bulk action buttons */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 14, color: '#605E5C' }}>{selectedIds.length} selected</span>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Pause/Hold')}>
+                            Pause/Hold
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('danger')} onClick={() => handleBulkAction('Bulk Failed')}>
+                            Bulk Failed
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('success')} onClick={() => handleBulkAction('Bulk Success')}>
+                            Bulk Success
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Bulk Query')}>
+                            Bulk Query
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('default')} onClick={() => handleBulkAction('Retry')}>
+                            Retry
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('danger')} onClick={() => handleBulkAction('Abort')}>
+                            Abort
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('primary-outline')} onClick={() => handleBulkAction('Switch')}>
+                            Switch
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('primary-outline')} onClick={() => handleBulkAction('Split')}>
+                            Split
+                        </button>
+                        <button type="button" disabled={!hasSelect} style={bulkBtnStyle('ghost')} onClick={() => handleBulkAction('Clear')}>
+                            Clear
+                        </button>
+                    </div>
+
+                    {/* Right: Count Pill (N.lJ = en) + Rows Selector (V.t = 39459) */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
                         <span
-                          style={{
+                            style={{
+                                borderRadius: 9999,
+                                background: 'rgba(251, 75, 20, 0.1)',
+                                padding: '6px 16px',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                color: '#fb4b14',
+                            }}
+                        >
+                            {filteredTransactions.length} transactions found
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <label htmlFor="tx-rows-select" style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap' }}>
+                                Rows
+                            </label>
+                            <select
+                                id="tx-rows-select"
+                                value={rowsPerPage}
+                                onChange={(e) => {
+                                    setRowsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}
+                                style={{
+                                    height: 36,
+                                    width: 72,
+                                    padding: '4px 8px',
+                                    fontSize: 14,
+                                    borderRadius: 6,
+                                    border: '1px solid #e0e6ed',
+                                    background: '#ffffff',
+                                    color: '#0e1726',
+                                    outline: 'none',
+                                }}
+                            >
+                                <option value={10}>10</option>
+                                <option value={25}>25</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Desktop Table (N.XI = 9117, hidden on mobile < 768px) */}
+                <div className="staging-tx-desktop-table">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, textAlign: 'left' }}>
+                        <thead style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                            <tr>
+                                <th style={{ width: 32, padding: '8px 12px', textAlign: 'left' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={allVisibleSelected}
+                                        onChange={toggleSelectAll}
+                                        style={{ width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
+                                    />
+                                </th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Ref</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Channel</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Date</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Type</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Amount</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Rate</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left', maxWidth: 224 }}>Details</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left', maxWidth: 160 }}>Provider</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>Acc Bal.</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'left' }}>CreatedBy</th>
+                                <th style={{ width: 56, padding: '8px 12px', fontWeight: 600, color: '#374151', textAlign: 'center' }}>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {paginatedTransactions.map((tx) => {
+                                const isSelected = selectedIds.includes(tx.id);
+                                const dotColor = getStagingStatusColor(tx.status);
+                                return (
+                                    <tr
+                                        key={tx.id}
+                                        style={{
+                                            borderBottom: '1px solid #f3f4f6',
+                                            background: isSelected ? 'rgba(251, 75, 20, 0.04)' : '#ffffff',
+                                            transition: 'background 0.15s',
+                                        }}
+                                    >
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => toggleSelectRow(tx.id)}
+                                                style={{ width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
+                                            />
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 160 }}>
+                                            <Link
+                                                to={`/financials/transactions/${tx.id}`}
+                                                style={{ color: '#FB4B14', fontWeight: 500, textDecoration: 'none', wordBreak: 'break-all' }}
+                                            >
+                                                {tx.reference}
+                                            </Link>
+                                            {tx.splitTag && (
+                                                <span
+                                                    style={{
+                                                        marginLeft: 6,
+                                                        display: 'inline-block',
+                                                        borderRadius: 4,
+                                                        background: tx.splitTag === 'SP' ? '#ffedd5' : '#dbeafe',
+                                                        padding: '2px 6px',
+                                                        fontSize: 10,
+                                                        fontWeight: 700,
+                                                        color: tx.splitTag === 'SP' ? '#c2410c' : '#1d4ed8',
+                                                    }}
+                                                >
+                                                    {tx.splitTag}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>{tx.channel}</td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
+                                            <div>{tx.date}</div>
+                                            <div>{tx.time}</div>
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>{tx.type}</td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
+                                            <div>{tx.currency}</div>
+                                            <div>{tx.amount.toFixed(2)}</div>
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', color: '#374151' }}>
+                                            {tx.rate.toFixed(4)}
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 224, wordBreak: 'break-word', color: '#374151' }}>
+                                            {tx.details}
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', maxWidth: 160, wordBreak: 'break-word' }}>
+                                            <Link
+                                                to="/configuration/providers"
+                                                style={{ color: '#FB4B14', textDecoration: 'none' }}
+                                            >
+                                                {tx.provider}
+                                            </Link>
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap', color: '#374151' }}>
+                                            {tx.accountBalance}
+                                        </td>
+                                        <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                                            <Link
+                                                to="/customer/users"
+                                                title={tx.createdByEmail}
+                                                style={{ color: '#FB4B14', textDecoration: 'none' }}
+                                            >
+                                                {tx.createdBy}
+                                            </Link>
+                                        </td>
+                                        <td style={{ width: 56, padding: '8px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                                            {/* Module 45429 Status Dot: ONLY 10px circle dot in Status column */}
+                                            <span
+                                                title={tx.status}
+                                                style={{
+                                                    display: 'inline-block',
+                                                    width: 10,
+                                                    height: 10,
+                                                    borderRadius: '9999px',
+                                                    backgroundColor: dotColor,
+                                                }}
+                                            />
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Mobile Card List (Y in staging_chunk2089.js, visible on mobile < 768px) */}
+                <div className="staging-tx-mobile-list">
+                    {paginatedTransactions.map((tx) => {
+                        const isSelected = selectedIds.includes(tx.id);
+                        const dotColor = getStagingStatusColor(tx.status);
+                        return (
+                            <div
+                                key={tx.id}
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12,
+                                    borderRadius: 8,
+                                    border: '1px solid #f3f4f6',
+                                    background: '#ffffff',
+                                    padding: 16,
+                                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleSelectRow(tx.id)}
+                                            style={{ marginTop: 4, width: 16, height: 16, accentColor: '#FB4B14', cursor: 'pointer' }}
+                                        />
+                                        <div>
+                                            <Link
+                                                to={`/financials/transactions/${tx.id}`}
+                                                style={{ fontWeight: 700, color: '#FB4B14', textDecoration: 'none', fontSize: 14 }}
+                                            >
+                                                {tx.reference}
+                                            </Link>
+                                            {tx.splitTag && (
+                                                <span
+                                                    style={{
+                                                        marginLeft: 6,
+                                                        display: 'inline-block',
+                                                        borderRadius: 4,
+                                                        background: tx.splitTag === 'SP' ? '#ffedd5' : '#dbeafe',
+                                                        padding: '2px 6px',
+                                                        fontSize: 10,
+                                                        fontWeight: 700,
+                                                        color: tx.splitTag === 'SP' ? '#c2410c' : '#1d4ed8',
+                                                    }}
+                                                >
+                                                    {tx.splitTag}
+                                                </span>
+                                            )}
+                                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                                                {tx.date} {tx.time}
+                                            </div>
+                                            <div style={{ fontSize: 12, color: '#4b5563', marginTop: 2 }}>
+                                                {tx.channel} · {tx.type}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span
+                                        title={tx.status}
+                                        style={{
+                                            marginTop: 4,
+                                            display: 'inline-block',
+                                            width: 8,
+                                            height: 8,
+                                            borderRadius: '9999px',
+                                            backgroundColor: dotColor,
+                                        }}
+                                    />
+                                </div>
+
+                                <div style={{ borderTop: '1px solid #f9fafb', paddingTop: 12, fontSize: 14 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                        <span style={{ color: '#6b7280' }}>Amount</span>
+                                        <span style={{ fontWeight: 600, color: '#fb4b14' }}>
+                                            {tx.currency} {tx.amount.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                        <span style={{ color: '#6b7280' }}>Rate</span>
+                                        <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.rate.toFixed(4)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                        <span style={{ color: '#6b7280' }}>Provider</span>
+                                        <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.provider}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', gap: 12 }}>
+                                        <span style={{ color: '#6b7280', flexShrink: 0 }}>Details</span>
+                                        <span style={{ fontWeight: 500, color: '#1f2937', textAlign: 'right' }}>{tx.details}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                        <span style={{ color: '#6b7280' }}>Acc Bal.</span>
+                                        <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.accountBalance}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                                        <span style={{ color: '#6b7280' }}>CreatedBy</span>
+                                        <span style={{ fontWeight: 500, color: '#1f2937' }}>{tx.createdBy}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Pagination (N.dK = 74191 in staging_9147.js) */}
+                <div
+                    style={{
+                        marginBottom: 20,
+                        marginTop: 40,
+                        display: 'flex',
+                        width: '100%',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                    }}
+                >
+                    <ul
+                        style={{
+                            marginLeft: 'auto',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 6,
-                            padding: '4px 10px',
-                            borderRadius: 12,
-                            background: '#f8fafc',
-                            border: '1px solid #e2e8f0',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            color: '#323130'
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: '50%',
-                              background: dotColor,
-                              display: 'inline-block'
-                            }}
-                          />
-                          <span>{tx.transactionStatus}</span>
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination controls matching module 39147 in staging-admin */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid #edebe9' }}>
-          <div style={{ fontSize: '0.875rem', color: '#605E5C' }}>
-            Page {currentPage} of {totalPages}
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage(1)}
-              style={{ padding: '6px 10px' }}
-            >
-              «
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              style={{ padding: '6px 12px' }}
-            >
-              ‹
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
-              <button
-                key={pg}
-                type="button"
-                onClick={() => setCurrentPage(pg)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  border: currentPage === pg ? 'none' : '1px solid #e2e8f0',
-                  background: currentPage === pg ? '#FB4B14' : '#ffffff',
-                  color: currentPage === pg ? '#ffffff' : '#323130',
-                  fontWeight: 600,
-                  fontSize: '0.8125rem',
-                  cursor: 'pointer'
-                }}
-              >
-                {pg}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              style={{ padding: '6px 12px' }}
-            >
-              ›
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(totalPages)}
-              style={{ padding: '6px 10px' }}
-            >
-              »
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Transaction Details Modal */}
-      {activeModal === 'detail' && selectedTx && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-            padding: 16
-          }}
-          onClick={() => setActiveModal(null)}
-        >
-          <div
-            className="panel"
-            style={{ maxWidth: 640, width: '100%', padding: '24px 28px', background: '#ffffff', borderRadius: 8 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#323130' }}>
-                Transaction Details: {selectedTx.reference}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                style={{ background: 'transparent', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#605E5C' }}
-              >
-                ✕
-              </button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Reference</label>
-                <div style={{ fontWeight: 600, color: '#FB4B14' }}>{selectedTx.reference}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Date &amp; Time</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.date} {selectedTx.time}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Type</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.type}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Channel</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.channel}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Amount</label>
-                <div style={{ fontWeight: 700, fontSize: '1.1rem', color: '#323130' }}>
-                  {selectedTx.sendCurrency} {selectedTx.amount}
+                            gap: 8,
+                            listStyle: 'none',
+                            padding: 0,
+                            margin: '0 0 0 auto',
+                        }}
+                    >
+                        <li>
+                            <button
+                                type="button"
+                                disabled={currentPage <= 1}
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 4,
+                                    border: '1px solid #d1d5db',
+                                    padding: '8px 12px',
+                                    background: '#ffffff',
+                                    color: '#6b7280',
+                                    cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                                    opacity: currentPage <= 1 ? 0.5 : 1,
+                                }}
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                    <path d="M15 5L9 12L15 19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </button>
+                        </li>
+                        {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((page) => {
+                            const active = page === currentPage;
+                            return (
+                                <li key={page}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(page)}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            borderRadius: 4,
+                                            border: active ? '1px solid #FB4B14' : '1px solid #d1d5db',
+                                            background: active ? '#FB4B14' : '#ffffff',
+                                            color: active ? '#ffffff' : '#6b7280',
+                                            padding: '8px 14px',
+                                            fontSize: 14,
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        {page}
+                                    </button>
+                                </li>
+                            );
+                        })}
+                        <li>
+                            <button
+                                type="button"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 4,
+                                    border: '1px solid #d1d5db',
+                                    padding: '8px 12px',
+                                    background: '#ffffff',
+                                    color: '#6b7280',
+                                    cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                                    opacity: currentPage >= totalPages ? 0.5 : 1,
+                                }}
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                    <path d="M9 5L15 12L9 19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </button>
+                        </li>
+                    </ul>
                 </div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Exchange Rate</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.rate}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Provider / Gateway</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.provider}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Account Balance</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.accBal}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Sender Account</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.senderAccount}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Recipient Account</label>
-                <div style={{ fontWeight: 600 }}>{selectedTx.recipientAccount}</div>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: '0.75rem', color: '#605E5C', fontWeight: 600 }}>Summary Description</label>
-                <div style={{ fontWeight: 500, color: '#323130', marginTop: 4 }}>{selectedTx.details}</div>
-              </div>
             </div>
-            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                className="btn btn-primary"
-                style={{ background: '#FB4B14', color: '#ffffff', border: 'none', padding: '8px 20px', borderRadius: 6, fontWeight: 600 }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Bulk Action Confirmation Modal */}
-      {['hold', 'fail', 'success', 'query', 'retry', 'abort'].includes(activeModal) && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-            padding: 16
-          }}
-          onClick={() => setActiveModal(null)}
-        >
-          <div
-            className="panel"
-            style={{ maxWidth: 480, width: '100%', padding: '24px 28px', background: '#ffffff', borderRadius: 8 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '1.25rem', fontWeight: 700, color: '#323130' }}>
-              {activeModal === 'hold' && 'Pause / Hold Selected'}
-              {activeModal === 'fail' && 'Fail Selected Transactions'}
-              {activeModal === 'success' && 'Mark Selected as Successful'}
-              {activeModal === 'query' && 'Query Selected Transactions'}
-              {activeModal === 'retry' && 'Retry Selected Transactions'}
-              {activeModal === 'abort' && 'Abort Selected Transactions'}
-            </h3>
-            <p style={{ color: '#605E5C', fontSize: '0.875rem', margin: '0 0 16px 0' }}>
-              Are you sure you want to perform this action on {selectedCount} selected transaction(s)?
-            </p>
-            {(activeModal === 'fail' || activeModal === 'success') && (
-              <textarea
-                className="form-input"
-                rows={3}
-                placeholder="Enter notes or audit reasoning..."
-                value={actionNotes}
-                onChange={(e) => setActionNotes(e.target.value)}
-                style={{ marginBottom: 16 }}
-              />
+            {/* Bulk Switch Processor Modal */}
+            {switchModalOpen && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(14, 23, 38, 0.55)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 999,
+                        padding: 16,
+                    }}
+                >
+                    <div style={{ background: '#ffffff', borderRadius: 12, maxWidth: 440, width: '100%', padding: 24 }}>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: 18, fontWeight: 700, color: '#0e1726' }}>
+                            Switch Processor ({selectedIds.length} selected)
+                        </h3>
+                        <p style={{ margin: '0 0 16px 0', fontSize: 13, color: '#605E5C' }}>
+                            Select the target payout processor for the selected transaction(s):
+                        </p>
+                        <select
+                            style={{ ...inputStyle, marginBottom: 20 }}
+                            value={switchProcessorTarget}
+                            onChange={(e) => setSwitchProcessorTarget(e.target.value)}
+                        >
+                            {PROVIDER_OPTIONS.filter((o) => o.value).map((o) => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                        </select>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                            <button
+                                type="button"
+                                onClick={() => setSwitchModalOpen(false)}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    border: '1px solid #d1d5db',
+                                    background: '#ffffff',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setTransactions((prev) =>
+                                        prev.map((tx) =>
+                                            selectedIds.includes(tx.id) ? { ...tx, provider: switchProcessorTarget } : tx
+                                        )
+                                    );
+                                    setSwitchModalOpen(false);
+                                    triggerToast(`Switched ${selectedIds.length} transaction(s) to ${switchProcessorTarget}.`);
+                                    setSelectedIds([]);
+                                }}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    border: '1px solid #FB4B14',
+                                    background: '#FB4B14',
+                                    color: '#ffffff',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Switch Processor
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setActiveModal(null)}
-                style={{ padding: '8px 16px', borderRadius: 6 }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={activeModal === 'fail' || activeModal === 'abort' ? 'btn btn-outline-danger' : 'btn btn-primary'}
-                onClick={executeBulkAction}
-                style={{
-                  padding: '8px 20px',
-                  borderRadius: 6,
-                  fontWeight: 600,
-                  background: activeModal === 'fail' || activeModal === 'abort' ? '#e11d48' : '#FB4B14',
-                  color: '#ffffff',
-                  border: 'none'
-                }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
-export default TransactionsPage;
+            {/* Bulk Split Modal */}
+            {splitModalOpen && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(14, 23, 38, 0.55)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 999,
+                        padding: 16,
+                    }}
+                >
+                    <div style={{ background: '#ffffff', borderRadius: 12, maxWidth: 440, width: '100%', padding: 24 }}>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: 18, fontWeight: 700, color: '#0e1726' }}>
+                            Split Transaction ({selectedIds.length} selected)
+                        </h3>
+                        <p style={{ margin: '0 0 16px 0', fontSize: 13, color: '#605E5C' }}>
+                            Specify maximum chunk amount to split selected transaction(s):
+                        </p>
+                        <input
+                            type="number"
+                            style={{ ...inputStyle, marginBottom: 20 }}
+                            value={splitChunkAmount}
+                            onChange={(e) => setSplitChunkAmount(e.target.value)}
+                            placeholder="Chunk amount"
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                            <button
+                                type="button"
+                                onClick={() => setSplitModalOpen(false)}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    border: '1px solid #d1d5db',
+                                    background: '#ffffff',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setTransactions((prev) =>
+                                        prev.map((tx) =>
+                                            selectedIds.includes(tx.id) ? { ...tx, splitTag: 'SP' } : tx
+                                        )
+                                    );
+                                    setSplitModalOpen(false);
+                                    triggerToast(`Split ${selectedIds.length} transaction(s) into chunks of ${splitChunkAmount}.`);
+                                    setSelectedIds([]);
+                                }}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    border: '1px solid #FB4B14',
+                                    background: '#FB4B14',
+                                    color: '#ffffff',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Confirm Split
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

@@ -506,3 +506,214 @@ body {
     flex-direction: column;
   }
 }
+
+
+/* ============================================================================
+ * STAGING TRANSACTIONS & TRANSACTION DETAILS (DESKTOP + MOBILE)
+ * Exact match for https://staging-admin.mito.money/financials/transactions
+ * ============================================================================ */
+
+.staging-user-title {
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 700;
+  text-transform: capitalize;
+  margin: 0 0 12px 0;
+  color: #0e1726;
+}
+
+.staging-tx-panel-top {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  margin-top: 48px;
+  margin-bottom: 24px;
+}
+
+.staging-tx-panel-table {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  margin-top: 48px;
+  margin-bottom: 24px;
+}
+
+.staging-tx-title-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.staging-tx-filter-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 8px 20px;
+  border-radius: 6px;
+  background: #FB4B14;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+.staging-tx-filter-toggle-btn:hover {
+  opacity: 0.92;
+}
+
+.staging-tx-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.staging-tx-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px 0 20px;
+  margin-bottom: 12px;
+}
+
+.staging-tx-desktop-table {
+  display: block;
+  min-height: 300px;
+  overflow-x: auto;
+}
+
+.staging-tx-mobile-list {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.staging-summary-card {
+  margin-bottom: 16px;
+  border-radius: 12px;
+  border: 1px solid #EDEBE9;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.staging-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 16px;
+  row-gap: 12px;
+}
+
+.staging-detail-card {
+  border-radius: 12px;
+  border: 1px solid #EDEBE9;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.staging-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 12px;
+}
+
+.staging-switch-split-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.staging-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.staging-underline-tabs {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.staging-underline-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 1279px) {
+  .staging-tx-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1023px) {
+  .staging-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .staging-edit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .staging-tx-panel-table {
+    margin-top: 0;
+  }
+  .staging-tx-title-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .staging-tx-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .staging-tx-desktop-table {
+    display: none !important;
+  }
+  .staging-tx-mobile-list {
+    display: flex !important;
+  }
+  .staging-summary-card,
+  .staging-detail-card {
+    padding: 16px;
+  }
+  .staging-switch-split-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 639px) {
+  .staging-user-title {
+    font-size: 18px;
+    line-height: 28px;
+  }
+  .staging-tx-panel-table {
+    padding: 8px;
+  }
+  .staging-tx-toolbar {
+    padding: 8px 12px 0 12px;
+  }
+  .staging-tx-filter-toggle-btn {
+    width: 100%;
+  }
+  .staging-tx-filter-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  .staging-summary-grid,
+  .staging-detail-grid,
+  .staging-edit-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
