@@ -25,7 +25,7 @@ test.describe('Retail Transaction Details Layout', () => {
             'Receive',
             'Rate',
             'Total paid',
-            'Discount received',
+            'Rewards',
             'Commission / charges',
             'Payment method',
             'Channel',
@@ -70,5 +70,14 @@ test.describe('Retail Transaction Details Layout', () => {
         // 7. Verify Back button points to Retail Transactions
         const backBtn = page.locator('button[title="Back to Retail Submissions"]');
         await expect(backBtn).toBeVisible();
+
+        // 8. Verify Rewards value format on TXN-90840 ([RF]), TXN-90841 ([PC]), and TXN-90838 ([BS])
+        await expect(summaryCard.getByText('EUR 10.00 [RF] (EU-KE Referral Rule)')).toBeVisible();
+
+        await page.goto('/financials/transactions/TXN-90841');
+        await expect(page.locator('.staging-summary-card').getByText('GBP 5.00 [PC] (VIP100)')).toBeVisible();
+
+        await page.goto('/financials/transactions/TXN-90838');
+        await expect(page.locator('.staging-summary-card').getByText('GBP 8.00 [BS] (High Value Threshold Bonus)')).toBeVisible();
     });
 });
