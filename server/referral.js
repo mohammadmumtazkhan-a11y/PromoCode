@@ -105,6 +105,10 @@ async function initSchema(db) {
     await addColumnIfMissing(q, 'referral_rules', 'receive_currency', 'TEXT');
     await addColumnIfMissing(q, 'referral_rules', 'send_country', 'TEXT');
     await addColumnIfMissing(q, 'referral_rules', 'receive_country', 'TEXT');
+    await addColumnIfMissing(q, 'referral_rules', 'send_country_mode', "TEXT DEFAULT 'ALL'");
+    await addColumnIfMissing(q, 'referral_rules', 'send_countries', 'TEXT');
+    await addColumnIfMissing(q, 'referral_rules', 'receive_country_mode', "TEXT DEFAULT 'ALL'");
+    await addColumnIfMissing(q, 'referral_rules', 'receive_countries', 'TEXT');
 
     await q.run(`CREATE TABLE IF NOT EXISTS referral_rule_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER, field TEXT, old_value TEXT, new_value TEXT,
@@ -238,6 +242,10 @@ function validateRule(body, { isNew }) {
         receive_currency: receive || null,
         send_country: blank(body.send_country) ? null : String(body.send_country).trim().toUpperCase(),
         receive_country: blank(body.receive_country) ? null : String(body.receive_country).trim().toUpperCase(),
+        send_country_mode: ['INCLUDE', 'EXCLUDE'].includes(String(body.send_country_mode || '').toUpperCase()) ? String(body.send_country_mode).toUpperCase() : 'ALL',
+        send_countries: Array.isArray(body.send_countries) ? body.send_countries.map((x) => String(x).trim().toUpperCase()).filter(Boolean).join(',') : (blank(body.send_countries) ? null : String(body.send_countries).trim().toUpperCase()),
+        receive_country_mode: ['INCLUDE', 'EXCLUDE'].includes(String(body.receive_country_mode || '').toUpperCase()) ? String(body.receive_country_mode).toUpperCase() : 'ALL',
+        receive_countries: Array.isArray(body.receive_countries) ? body.receive_countries.map((x) => String(x).trim().toUpperCase()).filter(Boolean).join(',') : (blank(body.receive_countries) ? null : String(body.receive_countries).trim().toUpperCase()),
         referrer_reward: type === 'REFEREE' ? 0 : round2(body.referrer_reward),
         referee_reward: type === 'REFERRER' ? 0 : round2(body.referee_reward),
         min_transaction_threshold: round2(floor),
@@ -254,7 +262,7 @@ function validateRule(body, { isNew }) {
     return { errors, clean };
 }
 
-const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'send_country', 'receive_country', 'referrer_reward', 'referee_reward',
+const RULE_FIELDS = ['name', 'is_enabled', 'reward_type', 'base_currency', 'receive_currency', 'send_country', 'receive_country', 'send_country_mode', 'send_countries', 'receive_country_mode', 'receive_countries', 'referrer_reward', 'referee_reward',
     'min_transaction_threshold', 'qualification_window_days', 'bonus_validity_days',
     'max_referrals_cap_type', 'max_referrals_per_referrer', 'max_referrals_amount_per_referrer', 'max_scheme_budget',
     'start_date', 'end_date'];

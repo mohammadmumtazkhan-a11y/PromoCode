@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
-import { CURRENCIES, COUNTRIES, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
+import { CURRENCIES, COUNTRIES, countryByCode, parseCountryList, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
 import StatusPill from './StatusPill';
 import { validateForm } from './referralValidation';
 import './referral.css';
@@ -16,12 +16,15 @@ const CURRENCY_DEFAULTS = {
 
 const EMPTY_FORM = {
     name: '', is_enabled: true, reward_type: 'BOTH', base_currency: 'GBP', receive_currency: '',
-    send_country: '', receive_country: '',
+    send_country_mode: 'ALL', send_countries: [],
+    receive_country_mode: 'ALL', receive_countries: [],
     referrer_reward: '5', referee_reward: '10', min_transaction_threshold: '50',
     qualification_window_days: '30', bonus_validity_days: '90',
     max_referrals_cap_type: 'COUNT', max_referrals_per_referrer: '', max_referrals_amount_per_referrer: '', max_scheme_budget: '',
     start_date: '', end_date: '', notify: true,
 };
+
+const REGIONS = ['Suggested', 'All Regions', 'Europe', 'Africa', 'North America', 'Asia & Middle East', 'Oceania'];
 
 const TYPE_LABELS = { BOTH: 'Both Parties', REFERRER: 'Referrer Only', REFEREE: 'Referee Only' };
 const Field = ({ id, label, required, error, hint, infoTip, children }) => {
@@ -66,6 +69,367 @@ const Toggle = ({ on, onClick, label, disabled }) => (
     </button>
 );
 
+const CountryScopeBar = ({ direction, currencyCode, mode, countries, onConfigure }) => {
+    const list = Array.isArray(countries) ? countries : parseCountryList(countries);
+    const effectiveMode = list.length === 0 ? 'ALL' : (mode === 'INCLUDE' || mode === 'EXCLUDE' ? mode : 'INCLUDE');
+    const barClass = effectiveMode === 'INCLUDE' ? 'mode-include' : effectiveMode === 'EXCLUDE' ? 'mode-exclude' : '';
+    const defaultLabel = direction === 'send'
+        ? `All countries sending ${currencyCode}`
+        : currencyCode
+            ? `All countries receiving ${currencyCode}`
+            : 'All destination countries';
+
+    return (
+        <div className={`rf-country-scope-bar ${barClass}`} data-testid={`${direction}-country-scope-bar`}>
+            <div className="rf-country-scope-info">
+                {effectiveMode === 'ALL' ? (
+                    <span className="rf-scope-badge all">🌐 {defaultLabel}</span>
+                ) : effectiveMode === 'INCLUDE' ? (
+                    <>
+                        <span className="rf-scope-badge include">✓ Include only ({list.length})</span>
+                        <div className="rf-scope-chips">
+                            {list.slice(0, 3).map((code) => {
+                                const c = countryByCode(code);
+                                return <span key={code} className="rf-scope-mini-chip">{c.flag} {c.name}</span>;
+                            })}
+                            {list.length > 3 && <span className="rf-scope-mini-chip">+{list.length - 3} more</span>}
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <span className="rf-scope-badge exclude">⊘ Exclude ({list.length})</span>
+                        <div className="rf-scope-chips">
+                            {list.slice(0, 3).map((code) => {
+                                const c = countryByCode(code);
+                                return <span key={code} className="rf-scope-mini-chip exclude">{c.flag} {c.name}</span>;
+                            })}
+                            {list.length > 3 && <span className="rf-scope-mini-chip">+{list.length - 3} more</span>}
+                        </div>
+                    </>
+                )}
+            </div>
+            <button
+                type="button"
+                className="rf-scope-config-btn"
+                data-testid={`configure-${direction}-countries-btn`}
+                onClick={onConfigure}
+            >
+                <span>{effectiveMode === 'ALL' ? 'Filter Countries' : 'Edit Countries'}</span>
+                <span aria-hidden="true">⚙</span>
+            </button>
+        </div>
+    );
+};
+
+const CountryScopeModal = ({ open, initialTab, form, onApply, onClose }) => {
+    const [tab, setTab] = useState(initialTab || 'send');
+    const [search, setSearch] = useState('');
+    const [region, setRegion] = useState('All Regions');
+    const [draft, setDraft] = useState({
+        send_country_mode: 'ALL',
+        send_countries: [],
+        receive_country_mode: 'ALL',
+        receive_countries: [],
+    });
+
+    useEffect(() => {
+        if (open) {
+            setTab(initialTab || 'send');
+            setSearch('');
+            setRegion('All Regions');
+            const sendList = parseCountryList(form.send_countries);
+            const rcvList = parseCountryList(form.receive_countries);
+            setDraft({
+                send_country_mode: sendList.length ? (form.send_country_mode === 'EXCLUDE' ? 'EXCLUDE' : 'INCLUDE') : (form.send_country_mode || 'ALL'),
+                send_countries: sendList,
+                receive_country_mode: rcvList.length ? (form.receive_country_mode === 'EXCLUDE' ? 'EXCLUDE' : 'INCLUDE') : (form.receive_country_mode || 'ALL'),
+                receive_countries: rcvList,
+            });
+        }
+    }, [open, initialTab, form.send_country_mode, form.send_countries, form.receive_country_mode, form.receive_countries]);
+
+    if (!open) return null;
+
+    const isSend = tab === 'send';
+    const activeCurrency = isSend ? form.base_currency : (form.receive_currency || '');
+    const modeKey = isSend ? 'send_country_mode' : 'receive_country_mode';
+    const listKey = isSend ? 'send_countries' : 'receive_countries';
+    const currentMode = draft[modeKey] || 'ALL';
+    const currentList = draft[listKey] || [];
+
+    const setMode = (nextMode) => {
+        setDraft((d) => ({
+            ...d,
+            [modeKey]: nextMode,
+            [listKey]: nextMode === 'ALL' ? [] : d[listKey],
+        }));
+    };
+
+    const toggleCountry = (code) => {
+        setDraft((d) => {
+            const existing = d[listKey] || [];
+            const exists = existing.includes(code);
+            const nextList = exists ? existing.filter((c) => c !== code) : [...existing, code];
+            const nextMode = d[modeKey] === 'ALL' && nextList.length > 0 ? 'INCLUDE' : d[modeKey];
+            return {
+                ...d,
+                [modeKey]: nextMode,
+                [listKey]: nextList,
+            };
+        });
+    };
+
+    const filteredCountries = COUNTRIES.filter((c) => {
+        if (region === 'Suggested') {
+            if (activeCurrency && !c.currencies.includes(activeCurrency)) return false;
+        } else if (region !== 'All Regions' && c.region !== region) {
+            return false;
+        }
+        if (search.trim()) {
+            const q = search.trim().toLowerCase();
+            return c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q) || c.region.toLowerCase().includes(q);
+        }
+        return true;
+    });
+
+    const selectAllVisible = () => {
+        const codes = filteredCountries.map((c) => c.code);
+        setDraft((d) => {
+            const merged = Array.from(new Set([...(d[listKey] || []), ...codes]));
+            return {
+                ...d,
+                [modeKey]: d[modeKey] === 'ALL' ? 'INCLUDE' : d[modeKey],
+                [listKey]: merged,
+            };
+        });
+    };
+
+    const clearCurrentSelection = () => {
+        setDraft((d) => ({
+            ...d,
+            [listKey]: [],
+        }));
+    };
+
+    const handleSave = () => {
+        const sendClean = draft.send_country_mode === 'ALL' || draft.send_countries.length === 0 ? [] : draft.send_countries;
+        const rcvClean = draft.receive_country_mode === 'ALL' || draft.receive_countries.length === 0 ? [] : draft.receive_countries;
+        onApply({
+            send_country_mode: sendClean.length === 0 ? 'ALL' : draft.send_country_mode,
+            send_countries: sendClean,
+            receive_country_mode: rcvClean.length === 0 ? 'ALL' : draft.receive_country_mode,
+            receive_countries: rcvClean,
+        });
+    };
+
+    const sendSummaryBadge = draft.send_country_mode === 'ALL' || draft.send_countries.length === 0
+        ? 'All countries'
+        : `${draft.send_country_mode === 'INCLUDE' ? 'Include' : 'Exclude'} (${draft.send_countries.length})`;
+
+    const rcvSummaryBadge = draft.receive_country_mode === 'ALL' || draft.receive_countries.length === 0
+        ? 'All countries'
+        : `${draft.receive_country_mode === 'INCLUDE' ? 'Include' : 'Exclude'} (${draft.receive_countries.length})`;
+
+    return (
+        <div className="rf-cmodal-backdrop" onClick={onClose} data-testid="country-scope-modal">
+            <div className="rf-cmodal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="rf-cmodal-title">
+                <div className="rf-cmodal-header">
+                    <div>
+                        <h3 id="rf-cmodal-title">Configure Corridor Country Scope</h3>
+                        <p>Include or exclude specific countries for multi-country currencies (such as {form.base_currency}, EUR, or USD) on either side of the transfer corridor.</p>
+                    </div>
+                    <button type="button" className="rf-cmodal-close" aria-label="Close country configurator" onClick={onClose}>&times;</button>
+                </div>
+
+                <div className="rf-cmodal-tabs" role="tablist">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={isSend}
+                        className={`rf-cmodal-tab ${isSend ? 'active' : ''}`}
+                        data-testid="modal-tab-send-countries"
+                        onClick={() => { setTab('send'); setSearch(''); }}
+                    >
+                        <div>
+                            <span className="rf-cmodal-tab-title">1. Send Countries ({form.base_currency})</span>
+                            <span className="rf-cmodal-tab-sub">Sender&apos;s country of residence</span>
+                        </div>
+                        <span className={`rf-scope-badge ${draft.send_countries.length === 0 || draft.send_country_mode === 'ALL' ? 'all' : draft.send_country_mode === 'INCLUDE' ? 'include' : 'exclude'}`}>
+                            {sendSummaryBadge}
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={!isSend}
+                        className={`rf-cmodal-tab ${!isSend ? 'active' : ''}`}
+                        data-testid="modal-tab-receive-countries"
+                        onClick={() => { setTab('receive'); setSearch(''); }}
+                    >
+                        <div>
+                            <span className="rf-cmodal-tab-title">2. Receive Countries ({form.receive_currency || 'All Currencies'})</span>
+                            <span className="rf-cmodal-tab-sub">Recipient&apos;s destination country</span>
+                        </div>
+                        <span className={`rf-scope-badge ${draft.receive_countries.length === 0 || draft.receive_country_mode === 'ALL' ? 'all' : draft.receive_country_mode === 'INCLUDE' ? 'include' : 'exclude'}`}>
+                            {rcvSummaryBadge}
+                        </span>
+                    </button>
+                </div>
+
+                <div className="rf-cmodal-body">
+                    <div className="rf-mode-cards" role="radiogroup" aria-label="Country rule mode">
+                        <button
+                            type="button"
+                            className={`rf-mode-card ${currentMode === 'ALL' ? 'active-all' : ''}`}
+                            data-testid="mode-card-ALL"
+                            onClick={() => setMode('ALL')}
+                        >
+                            <div className="rf-mode-card-head">
+                                <span>🌐 All Eligible Countries</span>
+                                <input type="radio" readOnly checked={currentMode === 'ALL'} />
+                            </div>
+                            <span className="rf-mode-card-desc">
+                                Every country supporting {activeCurrency || 'the selected currency'} is automatically eligible.
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            className={`rf-mode-card ${currentMode === 'INCLUDE' ? 'active-include' : ''}`}
+                            data-testid="mode-card-INCLUDE"
+                            onClick={() => setMode('INCLUDE')}
+                        >
+                            <div className="rf-mode-card-head">
+                                <span>✓ Include Only (Whitelist)</span>
+                                <input type="radio" readOnly checked={currentMode === 'INCLUDE'} />
+                            </div>
+                            <span className="rf-mode-card-desc">
+                                Restrict this rule strictly to the countries you select below.
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            className={`rf-mode-card ${currentMode === 'EXCLUDE' ? 'active-exclude' : ''}`}
+                            data-testid="mode-card-EXCLUDE"
+                            onClick={() => setMode('EXCLUDE')}
+                        >
+                            <div className="rf-mode-card-head">
+                                <span>⊘ Exclude Selected (Blacklist)</span>
+                                <input type="radio" readOnly checked={currentMode === 'EXCLUDE'} />
+                            </div>
+                            <span className="rf-mode-card-desc">
+                                Allow all countries EXCEPT the specific countries you exclude below.
+                            </span>
+                        </button>
+                    </div>
+
+                    <div className="rf-cmodal-toolbar">
+                        <input
+                            type="search"
+                            className="rf-cmodal-search"
+                            placeholder={`Search ${isSend ? 'send' : 'receive'} countries by name or ISO code (e.g. United Kingdom, GB, Nigeria)...`}
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            data-testid="country-modal-search"
+                        />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" className="rf-btn-sm" onClick={selectAllVisible} data-testid="country-select-all-visible">
+                                {currentMode === 'EXCLUDE' ? 'Exclude Visible' : 'Select Visible'} ({filteredCountries.length})
+                            </button>
+                            {currentList.length > 0 && (
+                                <button type="button" className="rf-btn-sm rf-warn" onClick={clearCurrentSelection} data-testid="country-clear-selection">
+                                    Clear ({currentList.length})
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="rf-region-pills">
+                        {REGIONS.map((r) => {
+                            const label = r === 'Suggested' ? (activeCurrency ? `Suggested for ${activeCurrency}` : 'Suggested') : r;
+                            return (
+                                <button
+                                    key={r}
+                                    type="button"
+                                    className={`rf-region-pill ${region === r ? 'active' : ''}`}
+                                    onClick={() => setRegion(r)}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <div className="rf-country-grid" data-testid="country-modal-grid">
+                        {filteredCountries.map((c) => {
+                            const selected = currentList.includes(c.code);
+                            const selClass = selected
+                                ? (currentMode === 'EXCLUDE' ? 'selected-exclude' : 'selected-include')
+                                : '';
+                            return (
+                                <button
+                                    key={c.code}
+                                    type="button"
+                                    className={`rf-country-item ${selClass}`}
+                                    data-testid={`country-option-${c.code}`}
+                                    onClick={() => toggleCountry(c.code)}
+                                >
+                                    <div className="rf-country-item-left">
+                                        <span className="rf-country-flag">{c.flag}</span>
+                                        <div style={{ minWidth: 0 }}>
+                                            <span className="rf-country-name">{c.name}</span>
+                                            <span className="rf-country-meta">{c.code} • {c.currencies.slice(0, 3).join(', ')}</span>
+                                        </div>
+                                    </div>
+                                    <span className="rf-country-check">
+                                        {selected ? (currentMode === 'EXCLUDE' ? '−' : '✓') : ''}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="rf-cmodal-footer">
+                    <div className="rf-cmodal-selected-list">
+                        {currentMode === 'ALL' || currentList.length === 0 ? (
+                            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                Currently allowing <strong>all eligible {isSend ? 'send' : 'receive'} countries</strong>. Click any country above to {currentMode === 'EXCLUDE' ? 'exclude' : 'include'} it.
+                            </span>
+                        ) : (
+                            <>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: currentMode === 'EXCLUDE' ? '#be123c' : '#15803d' }}>
+                                    {currentMode === 'EXCLUDE' ? 'Excluded:' : 'Included:'}
+                                </span>
+                                {currentList.map((code) => {
+                                    const c = countryByCode(code);
+                                    return (
+                                        <button
+                                            key={code}
+                                            type="button"
+                                            className={`rf-cmodal-chip-remove ${currentMode === 'EXCLUDE' ? 'exclude' : 'include'}`}
+                                            onClick={() => toggleCountry(code)}
+                                            title="Click to remove"
+                                        >
+                                            <span>{c.flag} {c.name} ({c.code})</span>
+                                            <span>&times;</span>
+                                        </button>
+                                    );
+                                })}
+                            </>
+                        )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+                        <button type="button" className="btn-primary" data-testid="apply-country-scope-btn" onClick={handleSave}>
+                            Apply Country Scope
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const ReferralSettings = () => {
     const [rules, setRules] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -78,6 +442,7 @@ const ReferralSettings = () => {
     const [dialog, setDialog] = useState(null);
     const [dialogNotify, setDialogNotify] = useState(true);
     const [showValiditySummary, setShowValiditySummary] = useState(true);
+    const [countryModal, setCountryModal] = useState({ open: false, tab: 'send' });
     const { toasts, push, dismiss } = useToasts();
 
     const fetchRules = useCallback(async () => {
@@ -125,17 +490,27 @@ const ReferralSettings = () => {
 
     const resetForm = () => { setForm(EMPTY_FORM); setEditingId(null); setErrors({}); };
 
-    const payload = () => ({
-        ...form,
-        name: form.name.trim(),
-        qualification_window_days: form.bonus_validity_days,
-        referrer_reward: form.reward_type === 'REFEREE' ? 0 : form.referrer_reward,
-        referee_reward: form.reward_type === 'REFERRER' ? 0 : form.referee_reward,
-        max_referrals_cap_type: form.max_referrals_cap_type === 'AMOUNT' ? 'AMOUNT' : 'COUNT',
-        max_referrals_per_referrer: form.max_referrals_cap_type === 'AMOUNT' ? null : (form.max_referrals_per_referrer || null),
-        max_referrals_amount_per_referrer: form.max_referrals_cap_type === 'AMOUNT' ? (form.max_referrals_amount_per_referrer || null) : null,
-        max_scheme_budget: form.max_scheme_budget || null,
-    });
+    const payload = () => {
+        const sendList = parseCountryList(form.send_countries);
+        const rcvList = parseCountryList(form.receive_countries);
+        return {
+            ...form,
+            name: form.name.trim(),
+            send_country_mode: sendList.length === 0 ? 'ALL' : (form.send_country_mode || 'INCLUDE'),
+            send_countries: sendList,
+            send_country: sendList[0] || null,
+            receive_country_mode: rcvList.length === 0 ? 'ALL' : (form.receive_country_mode || 'INCLUDE'),
+            receive_countries: rcvList,
+            receive_country: rcvList[0] || null,
+            qualification_window_days: form.bonus_validity_days,
+            referrer_reward: form.reward_type === 'REFEREE' ? 0 : form.referrer_reward,
+            referee_reward: form.reward_type === 'REFERRER' ? 0 : form.referee_reward,
+            max_referrals_cap_type: form.max_referrals_cap_type === 'AMOUNT' ? 'AMOUNT' : 'COUNT',
+            max_referrals_per_referrer: form.max_referrals_cap_type === 'AMOUNT' ? null : (form.max_referrals_per_referrer || null),
+            max_referrals_amount_per_referrer: form.max_referrals_cap_type === 'AMOUNT' ? (form.max_referrals_amount_per_referrer || null) : null,
+            max_scheme_budget: form.max_scheme_budget || null,
+        };
+    };
 
     const save = async (notify) => {
         setSaving(true);
@@ -203,10 +578,15 @@ const ReferralSettings = () => {
     };
 
     const handleEdit = (rule) => {
+        const sendList = parseCountryList(rule.send_countries || rule.send_country);
+        const rcvList = parseCountryList(rule.receive_countries || rule.receive_country);
         setForm({
             name: rule.name, is_enabled: !!rule.is_enabled, reward_type: rule.reward_type, base_currency: rule.base_currency,
             receive_currency: rule.receive_currency || '', // blank = send-currency-only rule
-            send_country: rule.send_country || '', receive_country: rule.receive_country || '',
+            send_country_mode: sendList.length ? (rule.send_country_mode === 'EXCLUDE' ? 'EXCLUDE' : 'INCLUDE') : 'ALL',
+            send_countries: sendList,
+            receive_country_mode: rcvList.length ? (rule.receive_country_mode === 'EXCLUDE' ? 'EXCLUDE' : 'INCLUDE') : 'ALL',
+            receive_countries: rcvList,
             referrer_reward: String(rule.referrer_reward), referee_reward: String(rule.referee_reward),
             min_transaction_threshold: String(rule.min_transaction_threshold),
             qualification_window_days: String(rule.qualification_window_days ?? 30), bonus_validity_days: String(rule.bonus_validity_days ?? 90),
@@ -315,6 +695,13 @@ const ReferralSettings = () => {
                             <select id="rf-base_currency" className="rf-select" value={form.base_currency} onChange={(e) => onCurrencyChange(e.target.value)}>
                                 {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.currencyName} ({c.symbol.trim()})</option>)}
                             </select>
+                            <CountryScopeBar
+                                direction="send"
+                                currencyCode={form.base_currency}
+                                mode={form.send_country_mode}
+                                countries={form.send_countries}
+                                onConfigure={() => setCountryModal({ open: true, tab: 'send' })}
+                            />
                         </Field>
                         <Field id="rf-receive_currency" label="Receive Currency" error={err('receive_currency')}
                             hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to every ${form.base_currency} transfer, unless a specific corridor has its own rule.`}>
@@ -322,21 +709,13 @@ const ReferralSettings = () => {
                                 <option value="">All currencies (all receive currencies from {form.base_currency})</option>
                                 {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} — {c.currencyName} ({c.symbol.trim()})</option>)}
                             </select>
-                        </Field>
-                    </div>
-
-                    <div className="rf-grid rf-grid-2">
-                        <Field id="rf-send_country" label="Send Country (Optional)" hint="Filter by sender's country of residence, or leave as All send countries.">
-                            <select id="rf-send_country" className="rf-select" value={form.send_country || ''} onChange={(e) => set({ send_country: e.target.value })}>
-                                <option value="">All send countries</option>
-                                {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                            </select>
-                        </Field>
-                        <Field id="rf-receive_country" label="Receive Country (Optional)" hint="Filter by recipient destination country, or leave as All receive countries.">
-                            <select id="rf-receive_country" className="rf-select" value={form.receive_country || ''} onChange={(e) => set({ receive_country: e.target.value })}>
-                                <option value="">All receive countries</option>
-                                {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-                            </select>
+                            <CountryScopeBar
+                                direction="receive"
+                                currencyCode={form.receive_currency}
+                                mode={form.receive_country_mode}
+                                countries={form.receive_countries}
+                                onConfigure={() => setCountryModal({ open: true, tab: 'receive' })}
+                            />
                         </Field>
                     </div>
 
@@ -488,6 +867,8 @@ const ReferralSettings = () => {
                             ) : rules.map((rule) => {
                                 const archived = rule.status === 'ARCHIVED';
                                 const c = rule.base_currency;
+                                const sendCountries = parseCountryList(rule.send_countries || rule.send_country);
+                                const rcvCountries = parseCountryList(rule.receive_countries || rule.receive_country);
                                 const dates = rule.start_date || rule.end_date
                                     ? `${formatUkDate(rule.start_date) === '—' ? 'Now' : formatUkDate(rule.start_date)} – ${rule.end_date ? formatUkDate(rule.end_date) : 'No end'}`
                                     : 'Always on';
@@ -500,6 +881,16 @@ const ReferralSettings = () => {
                                         <td style={{ whiteSpace: 'nowrap' }}>
                                             <span className="rf-chip">{corridorLabel(c, rule.receive_currency)}</span>
                                             {!rule.receive_currency && <span className="rf-sub">Any destination</span>}
+                                            {sendCountries.length > 0 && (
+                                                <span className="rf-sub">
+                                                    Send {rule.send_country_mode === 'EXCLUDE' ? 'excl.' : 'incl.'}: {sendCountries.join(', ')}
+                                                </span>
+                                            )}
+                                            {rcvCountries.length > 0 && (
+                                                <span className="rf-sub">
+                                                    Rcv {rule.receive_country_mode === 'EXCLUDE' ? 'excl.' : 'incl.'}: {rcvCountries.join(', ')}
+                                                </span>
+                                            )}
                                         </td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -539,6 +930,17 @@ const ReferralSettings = () => {
                     </table>
                 </div>
             </div>
+
+            <CountryScopeModal
+                open={countryModal.open}
+                initialTab={countryModal.tab}
+                form={form}
+                onClose={() => setCountryModal({ open: false, tab: 'send' })}
+                onApply={(patch) => {
+                    set(patch);
+                    setCountryModal({ open: false, tab: 'send' });
+                }}
+            />
 
             <ConfirmDialog
                 open={!!dialog}

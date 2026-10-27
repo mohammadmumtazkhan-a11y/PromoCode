@@ -16,22 +16,49 @@ export const CURRENCIES = [
 ];
 
 export const COUNTRIES = [
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'US', name: 'United States' },
-    { code: 'NG', name: 'Nigeria' },
-    { code: 'CA', name: 'Canada' },
-    { code: 'GH', name: 'Ghana' },
-    { code: 'KE', name: 'Kenya' },
-    { code: 'ZA', name: 'South Africa' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'FR', name: 'France' },
-    { code: 'IN', name: 'India' },
-    { code: 'CN', name: 'China' },
-    { code: 'AE', name: 'United Arab Emirates' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'JP', name: 'Japan' },
-    { code: 'EU', name: 'Eurozone' },
+    { code: 'GB', name: 'United Kingdom', flag: '🇬🇧', region: 'Europe', currencies: ['GBP', 'EUR', 'USD'] },
+    { code: 'US', name: 'United States', flag: '🇺🇸', region: 'North America', currencies: ['USD', 'GBP', 'EUR'] },
+    { code: 'NG', name: 'Nigeria', flag: '🇳🇬', region: 'Africa', currencies: ['NGN', 'USD', 'GBP', 'EUR'] },
+    { code: 'GH', name: 'Ghana', flag: '🇬🇭', region: 'Africa', currencies: ['GHS', 'USD', 'GBP'] },
+    { code: 'KE', name: 'Kenya', flag: '🇰🇪', region: 'Africa', currencies: ['KES', 'USD', 'GBP'] },
+    { code: 'ZA', name: 'South Africa', flag: '🇿🇦', region: 'Africa', currencies: ['ZAR', 'USD', 'GBP'] },
+    { code: 'CA', name: 'Canada', flag: '🇨🇦', region: 'North America', currencies: ['CAD', 'USD', 'GBP'] },
+    { code: 'DE', name: 'Germany', flag: '🇩🇪', region: 'Europe', currencies: ['EUR', 'GBP', 'USD'] },
+    { code: 'FR', name: 'France', flag: '🇫🇷', region: 'Europe', currencies: ['EUR', 'GBP', 'USD'] },
+    { code: 'IE', name: 'Ireland', flag: '🇮🇪', region: 'Europe', currencies: ['EUR', 'GBP', 'USD'] },
+    { code: 'ES', name: 'Spain', flag: '🇪🇸', region: 'Europe', currencies: ['EUR', 'USD'] },
+    { code: 'IT', name: 'Italy', flag: '🇮🇹', region: 'Europe', currencies: ['EUR', 'USD'] },
+    { code: 'NL', name: 'Netherlands', flag: '🇳🇱', region: 'Europe', currencies: ['EUR', 'USD'] },
+    { code: 'BE', name: 'Belgium', flag: '🇧🇪', region: 'Europe', currencies: ['EUR', 'USD'] },
+    { code: 'PT', name: 'Portugal', flag: '🇵🇹', region: 'Europe', currencies: ['EUR', 'USD'] },
+    { code: 'IN', name: 'India', flag: '🇮🇳', region: 'Asia & Middle East', currencies: ['INR', 'USD', 'GBP', 'EUR'] },
+    { code: 'CN', name: 'China', flag: '🇨🇳', region: 'Asia & Middle East', currencies: ['CNY', 'USD'] },
+    { code: 'AE', name: 'United Arab Emirates', flag: '🇦🇪', region: 'Asia & Middle East', currencies: ['AED', 'USD', 'GBP'] },
+    { code: 'AU', name: 'Australia', flag: '🇦🇺', region: 'Oceania', currencies: ['AUD', 'USD', 'GBP'] },
+    { code: 'JP', name: 'Japan', flag: '🇯🇵', region: 'Asia & Middle East', currencies: ['JPY', 'USD'] },
+    { code: 'UG', name: 'Uganda', flag: '🇺🇬', region: 'Africa', currencies: ['USD', 'GBP', 'KES'] },
+    { code: 'TZ', name: 'Tanzania', flag: '🇹🇿', region: 'Africa', currencies: ['USD', 'GBP', 'KES'] },
+    { code: 'CM', name: 'Cameroon', flag: '🇨🇲', region: 'Africa', currencies: ['EUR', 'USD'] },
+    { code: 'SN', name: 'Senegal', flag: '🇸🇳', region: 'Africa', currencies: ['EUR', 'USD'] },
 ];
+
+export const countryByCode = (code) => COUNTRIES.find((c) => c.code === code) || { code, name: code, flag: '🏳️', region: 'Other', currencies: [] };
+
+export const parseCountryList = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map((x) => String(x).trim().toUpperCase()).filter(Boolean);
+    const s = String(val).trim();
+    if (!s) return [];
+    if (s.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(s);
+            if (Array.isArray(parsed)) return parsed.map((x) => String(x).trim().toUpperCase()).filter(Boolean);
+        } catch {
+            // fallback to CSV
+        }
+    }
+    return s.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
+};
 
 // "GBP → NGN". A rule with no receive currency covers every destination, so it shows the fallback ("All").
 export const corridorLabel = (send, receive, fallback = 'All') => `${send} → ${receive || fallback}`;
