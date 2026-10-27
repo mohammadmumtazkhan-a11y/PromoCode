@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 
-const DATE_FILTERS = [
+const DATE_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'today', label: 'Today' },
   { value: '7_days', label: 'Past 7 days' },
@@ -9,358 +9,403 @@ const DATE_FILTERS = [
   { value: 'custom', label: 'Custom' },
 ];
 
-const CURRENCY_OPTIONS = ['GBP', 'EUR', 'USD', 'NGN'];
+const CURRENCY_OPTIONS = [
+  { value: 'GBP', label: 'GBP', symbol: '£', bg: '#012169', text: 'GB' },
+  { value: 'EUR', label: 'EUR', symbol: '€', bg: '#003399', text: 'EU' },
+  { value: 'USD', label: 'USD', symbol: '$', bg: '#3C3B6E', text: 'US' },
+  { value: 'NGN', label: 'NGN', symbol: '₦', bg: '#008751', text: 'NG' },
+];
 
-const CURRENCY_SYMBOLS = {
-  GBP: '£',
-  EUR: '€',
-  USD: '$',
-  NGN: '₦'
+const QUICK_ACTIONS = [
+  { title: 'Rates', linkText: 'Check Rates Today', href: '/configuration/rate-manager', hint: 'Corridors & factors' },
+  { title: 'Balances', linkText: 'Check balances', href: '/financials/payouts', hint: 'Wallets & payouts' },
+  { title: 'Customisation', linkText: 'Customisation', href: '/configuration/rewards', hint: 'Branding & services' },
+  { title: 'Support', linkText: 'Contact Us', href: '/support/help-tickets', hint: 'Get help' },
+];
+
+const CalendarIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z" stroke="currentColor" strokeWidth="1.5" />
+    <path opacity="0.5" d="M7 4V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path opacity="0.5" d="M17 4V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path opacity="0.5" d="M2 9H22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+const ExternalLinkIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <path d="M10 4H6C4.89543 4 4 4.89543 4 6V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M14 4H20V10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M20 4L11 13" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const BalanceCard = ({ title, bgColor, label, value, topLinkHref, topLinkText }) => (
+  <div style={{
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    borderRadius: 8,
+    padding: 16,
+    background: bgColor,
+    boxShadow: '0px 4px 8px 0px #faf9f8'
+  }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color: '#605e5c' }}>{title}</div>
+      {topLinkHref && topLinkText && (
+        <Link
+          to={topLinkHref}
+          style={{ whiteSpace: 'nowrap', fontSize: '13px', color: '#fb4b14', textDecoration: 'none' }}
+          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+        >
+          {topLinkText}
+        </Link>
+      )}
+    </div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+      <p style={{ margin: 0, fontSize: '10px', color: '#605e5c' }}>{label}</p>
+      <div style={{ fontSize: '24px', fontWeight: 700, color: '#323130', lineHeight: 1.3 }}>{value}</div>
+    </div>
+  </div>
+);
+
+const statusDotColor = (status) => {
+  switch (status) {
+    case 'Successful':
+    case 'Processed':
+    case 'Paid Out':
+    case 'PAID':
+      return '#62AA32';
+    case 'Failed':
+    case 'Aborted':
+    case 'Cancelled':
+    case 'Timeout':
+      return '#8F0404';
+    case 'In Progress':
+    case 'Under Review':
+    case 'Ready To Process':
+    case 'Awaiting Payment':
+      return '#FED217';
+    default:
+      return '#9658F7';
+  }
 };
 
 const Dashboard = () => {
-  const [dateFilter, setDateFilter] = useState('30_days');
-  const [currency, setCurrency] = useState('GBP');
+  const navigate = useNavigate();
+  const [selectedRange, setSelectedRange] = useState('all');
+  const [selectedCurrency, setSelectedCurrency] = useState('GBP');
+  const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
+  const currencyRef = useRef(null);
 
-  const symbol = CURRENCY_SYMBOLS[currency] || '£';
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (currencyRef.current && !currencyRef.current.contains(e.target)) {
+        setCurrencyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const currentCurrObj = CURRENCY_OPTIONS.find((c) => c.value === selectedCurrency) || CURRENCY_OPTIONS[0];
+  const sym = currentCurrObj.symbol;
+
+  const recentTransactions = [
+    { reference: 'TXN-984210', date: '27 Oct 2026, 14:22', recipientFullName: 'Tola Bello', amount: '250.00', sendCurrency: selectedCurrency, transactionStatus: 'Processed' },
+    { reference: 'TXN-984209', date: '27 Oct 2026, 13:45', recipientFullName: 'Amina Yusuf', amount: '500.00', sendCurrency: selectedCurrency, transactionStatus: 'Processed' },
+    { reference: 'TXN-984208', date: '27 Oct 2026, 12:10', recipientFullName: 'David Miller', amount: '180.00', sendCurrency: selectedCurrency, transactionStatus: 'Under Review' },
+    { reference: 'TXN-984207', date: '27 Oct 2026, 10:15', recipientFullName: 'Sarah Jenkins', amount: '1200.00', sendCurrency: selectedCurrency, transactionStatus: 'Processed' },
+    { reference: 'TXN-984206', date: '27 Oct 2026, 08:30', recipientFullName: 'Emmanuel Okafor', amount: '350.00', sendCurrency: selectedCurrency, transactionStatus: 'Processed' },
+  ];
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Top Banner Notice */}
-      <div style={{
-        background: '#dcfce7',
-        color: '#166534',
-        padding: '10px 20px',
-        fontSize: '0.85rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 24,
-        borderRadius: 6,
-        border: '1px solid #bbf7d0'
-      }}>
-        <span>Mito.Money staging environment active. Connected to real working prototype APIs.</span>
-        <span style={{ fontWeight: 600 }}>v2.4 Live</span>
-      </div>
-
-      {/* Date & Currency Filters matching staging-admin */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-        {/* Date Filter Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {DATE_FILTERS.map(f => {
-            const isSelected = dateFilter === f.value;
+    <div style={{ paddingTop: 20 }}>
+      {/* Top Filter Row: Date Pills & Currency Dropdown */}
+      <div style={{ marginBottom: 24, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        {/* Date Pills */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          {DATE_OPTIONS.map((opt) => {
+            const active = opt.value === selectedRange;
+            const isCustom = opt.value === 'custom';
             return (
               <button
-                key={f.value}
+                key={opt.value}
                 type="button"
-                onClick={() => setDateFilter(f.value)}
+                onClick={() => setSelectedRange(opt.value)}
                 style={{
-                  padding: '7px 16px',
-                  borderRadius: 999,
-                  border: isSelected ? 'none' : '1px solid #edebe9',
-                  background: isSelected ? '#ffede7' : '#ffffff',
-                  color: isSelected ? '#323130' : '#605e5c',
-                  fontWeight: isSelected ? 700 : 500,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s'
+                  display: 'flex',
+                  minWidth: 100,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  whiteSpace: 'nowrap',
+                  borderRadius: 9999,
+                  padding: '8px 16px',
+                  fontSize: '16px',
+                  background: active ? '#ffede7' : '#ffffff',
+                  border: active ? '1px solid transparent' : '1px solid #e1dfdd',
+                  fontWeight: active ? 700 : 400,
+                  color: '#605e5c',
+                  cursor: 'pointer'
                 }}
               >
-                {f.label}
+                {opt.label}
+                {isCustom && <CalendarIcon />}
               </button>
             );
           })}
         </div>
 
-        {/* Currency Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.85rem', color: '#605e5c', fontWeight: 600 }}>Currency:</span>
-          <select
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+        {/* Currency Selector Dropdown matching staging_dashboard.js */}
+        <div ref={currencyRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setCurrencyDropdownOpen((o) => !o)}
             style={{
-              padding: '7px 14px',
+              display: 'flex',
+              width: 200,
+              alignItems: 'center',
+              justifyContent: 'space-between',
               borderRadius: 8,
-              border: '1px solid #edebe9',
+              border: '1px solid #e1dfdd',
               background: '#ffffff',
-              fontWeight: 700,
-              color: '#323130',
-              outline: 'none',
+              padding: 8,
               cursor: 'pointer'
             }}
           >
-            {CURRENCY_OPTIONS.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                display: 'flex',
+                height: 24,
+                width: 24,
+                flexShrink: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                borderRadius: '50%',
+                background: currentCurrObj.bg,
+                color: '#ffffff',
+                fontSize: '10px',
+                fontWeight: 700
+              }}>
+                {currentCurrObj.text}
+              </span>
+              <span style={{ color: '#605e5c', fontSize: '14px' }}>{selectedCurrency}</span>
+            </div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#605e5c" strokeWidth="1.5">
+              <path d="M19 9L12 15L5 9" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+
+          {currencyDropdownOpen && (
+            <ul style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: 4,
+              minWidth: 200,
+              listStyle: 'none',
+              padding: '4px 0',
+              margin: '4px 0 0 0',
+              background: '#ffffff',
+              border: '1px solid #e1dfdd',
+              borderRadius: 6,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+              zIndex: 40
+            }}>
+              {CURRENCY_OPTIONS.map((c) => (
+                <li key={c.value}>
+                  <span
+                    onClick={() => {
+                      setSelectedCurrency(c.value);
+                      setCurrencyDropdownOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      width: '100%',
+                      cursor: 'pointer',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      fontSize: '14px',
+                      color: '#323130'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#ffede7')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{
+                      display: 'flex',
+                      height: 24,
+                      width: 24,
+                      flexShrink: 0,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%',
+                      background: c.bg,
+                      color: '#ffffff',
+                      fontSize: '10px',
+                      fontWeight: 700
+                    }}>
+                      {c.text}
+                    </span>
+                    {c.label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
-      <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#323130', margin: '0 0 16px 0' }}>
+      {/* Balances Section */}
+      <h4 style={{ margin: '0 0 16px 0', fontSize: '24px', fontWeight: 700, color: '#323130' }}>
         Balances
-      </h3>
+      </h4>
 
-      {/* 6 Pastel Stat Cards matching staging-admin.mito.money */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 28 }}>
-        {/* Transactions Card */}
-        <div style={{
-          background: '#e0eed6',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0px 2px 6px rgba(0,0,0,0.02)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 120
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#605e5c' }}>Transactions</span>
-            <Link to="/financials/debits" style={{ fontSize: '0.85rem', color: '#FB4B14', textDecoration: 'none', fontWeight: 600 }}>
-              View history
-            </Link>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#605e5c', marginBottom: 2 }}>Total transaction</div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#323130' }}>
-              {symbol}48,250.00
-            </div>
-          </div>
+      <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Row 1 */}
+        <div className="staging-balance-row">
+          <BalanceCard
+            title="Transactions"
+            bgColor="#e0eed6"
+            label="Total transaction"
+            value={`${sym}48,250`}
+            topLinkHref="/financials/debits"
+            topLinkText="View history"
+          />
+          <BalanceCard
+            title="Collections"
+            bgColor="#fff6d1"
+            label="Balances"
+            value={`${sym}14,800`}
+            topLinkHref="/financials/payouts"
+            topLinkText="View history"
+          />
+          <BalanceCard
+            title="Commissions"
+            bgColor="#e5f1fe"
+            label="Total commission earned"
+            value={`${sym}2,410`}
+            topLinkHref="/financials/commissions"
+            topLinkText="View history"
+          />
         </div>
 
-        {/* Collections Card */}
-        <div style={{
-          background: '#fff6d1',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0px 2px 6px rgba(0,0,0,0.02)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 120
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#605e5c' }}>Collections</span>
-            <Link to="/financials/payouts" style={{ fontSize: '0.85rem', color: '#FB4B14', textDecoration: 'none', fontWeight: 600 }}>
-              View history
-            </Link>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#605e5c', marginBottom: 2 }}>Balances</div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#323130' }}>
-              {symbol}14,800.00
-            </div>
-          </div>
-        </div>
-
-        {/* Commissions Card */}
-        <div style={{
-          background: '#e5f1fe',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0px 2px 6px rgba(0,0,0,0.02)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 120
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#605e5c' }}>Commissions</span>
-            <Link to="/financials/commissions" style={{ fontSize: '0.85rem', color: '#FB4B14', textDecoration: 'none', fontWeight: 600 }}>
-              View history
-            </Link>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#605e5c', marginBottom: 2 }}>Total commission earned</div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#323130' }}>
-              {symbol}2,410.50
-            </div>
-          </div>
-        </div>
-
-        {/* Payouts Card */}
-        <div style={{
-          background: '#f3f2f1',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0px 2px 6px rgba(0,0,0,0.02)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 120
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#605e5c' }}>Payouts</span>
-            <Link to="/financials/payouts" style={{ fontSize: '0.85rem', color: '#FB4B14', textDecoration: 'none', fontWeight: 600 }}>
-              View all
-            </Link>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#605e5c', marginBottom: 2 }}>Completed payouts</div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#323130' }}>
-              142
-            </div>
-          </div>
-        </div>
-
-        {/* Tickets Card */}
-        <div style={{
-          background: '#f5ffcc',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0px 2px 6px rgba(0,0,0,0.02)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 120
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#605e5c' }}>Tickets</span>
-            <Link to="/support/help-tickets" style={{ fontSize: '0.85rem', color: '#FB4B14', textDecoration: 'none', fontWeight: 600 }}>
-              View all
-            </Link>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#605e5c', marginBottom: 2 }}>Pending tickets</div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#323130' }}>
-              15
-            </div>
-          </div>
-        </div>
-
-        {/* Customers / Users Card */}
-        <div style={{
-          background: '#fee2e2',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0px 2px 6px rgba(0,0,0,0.02)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 120
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#605e5c' }}>Users / Customers</span>
-            <Link to="/merchants" style={{ fontSize: '0.85rem', color: '#FB4B14', textDecoration: 'none', fontWeight: 600 }}>
-              View all
-            </Link>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#605e5c', marginBottom: 2 }}>Total active customers</div>
-            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#323130' }}>
-              84
-            </div>
-          </div>
+        {/* Row 2 */}
+        <div className="staging-balance-row">
+          <BalanceCard
+            title="Payouts"
+            bgColor="#f3f2f1"
+            label="Completed payouts"
+            value="142"
+            topLinkHref="/financials/payouts"
+            topLinkText="View all"
+          />
+          <BalanceCard
+            title="Tickets"
+            bgColor="#f5ffcc"
+            label="Pending tickets"
+            value="15"
+            topLinkHref="/support/help-tickets"
+            topLinkText="View all"
+          />
+          <BalanceCard
+            title="Users"
+            bgColor="#fee2e2"
+            label="Total users"
+            value="84"
+            topLinkHref="/merchants"
+            topLinkText="View all"
+          />
         </div>
       </div>
 
-      {/* Quick Actions Panel matching staging-admin */}
-      <div className="panel" style={{ padding: '20px 24px', marginBottom: 24 }}>
-        <h4 style={{ margin: '0 0 16px 0', fontSize: '1.05rem', fontWeight: 700, color: '#323130' }}>
+      {/* Quick actions panel matching staging_dashboard.js */}
+      <div className="panel" style={{ marginBottom: 24, padding: 16 }}>
+        <div style={{ marginBottom: 12, fontSize: '18px', fontWeight: 700, color: '#323130' }}>
           Quick actions
-        </h4>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-          <div style={{ border: '1px solid #edebe9', borderRadius: 8, padding: '14px 16px', background: '#ffffff' }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#323130' }}>Rates</div>
-            <div style={{ fontSize: '0.78rem', color: '#605e5c', margin: '4px 0 10px 0' }}>Corridors &amp; FX factors</div>
-            <Link to="/configuration/rate-manager" style={{ color: '#FB4B14', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none' }}>
-              Check Rates Today &rarr;
-            </Link>
-          </div>
-
-          <div style={{ border: '1px solid #edebe9', borderRadius: 8, padding: '14px 16px', background: '#ffffff' }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#323130' }}>Balances</div>
-            <div style={{ fontSize: '0.78rem', color: '#605e5c', margin: '4px 0 10px 0' }}>Wallets &amp; settlements</div>
-            <Link to="/financials/payouts" style={{ color: '#FB4B14', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none' }}>
-              Check balances &rarr;
-            </Link>
-          </div>
-
-          <div style={{ border: '1px solid #edebe9', borderRadius: 8, padding: '14px 16px', background: '#ffffff' }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#323130' }}>Reward$ Engine</div>
-            <div style={{ fontSize: '0.78rem', color: '#605e5c', margin: '4px 0 10px 0' }}>Promos, schemes &amp; referrals</div>
-            <Link to="/configuration/rewards" style={{ color: '#FB4B14', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none' }}>
-              Open Reward$ Hub &rarr;
-            </Link>
-          </div>
-
-          <div style={{ border: '1px solid #edebe9', borderRadius: 8, padding: '14px 16px', background: '#ffffff' }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#323130' }}>Support</div>
-            <div style={{ fontSize: '0.78rem', color: '#605e5c', margin: '4px 0 10px 0' }}>Tickets &amp; customer care</div>
-            <Link to="/support/dashboard" style={{ color: '#FB4B14', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none' }}>
-              Support overview &rarr;
-            </Link>
-          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+          {QUICK_ACTIONS.map((item) => (
+            <div
+              key={item.href}
+              style={{
+                borderRadius: 6,
+                border: '1px solid #e2e8f0',
+                background: '#ffffff',
+                padding: '10px 12px'
+              }}
+            >
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#323130' }}>{item.title}</div>
+              <div style={{ marginTop: 2, fontSize: '12px', color: 'rgba(50, 49, 48, 0.7)' }}>{item.hint}</div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', fontSize: '14px', fontWeight: 600 }}>
+                <Link
+                  to={item.href}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#323130', textDecoration: 'none' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                  onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                >
+                  <ExternalLinkIcon />
+                  <span>{item.linkText}</span>
+                </Link>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Recent Transactions Table Panel */}
-      <div className="panel" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h4 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#323130' }}>
+      {/* Recent transactions panel matching staging_dashboard.js */}
+      <div className="panel">
+        <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: '#605e5c' }}>
             Recent transactions
-          </h4>
-          <Link to="/financials/debits" style={{ color: '#FB4B14', fontWeight: 600, fontSize: '0.875rem', textDecoration: 'none' }}>
+          </div>
+          <span
+            onClick={() => navigate('/financials/debits')}
+            style={{ cursor: 'pointer', color: '#fb4b14', fontSize: '14px' }}
+            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          >
             View all
-          </Link>
+          </span>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table-container">
+        <div style={{ minHeight: 300, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px', textAlign: 'left' }}>
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Date (UTC)</th>
-                <th>Sender / Recipient</th>
-                <th>Amount</th>
-                <th>Status</th>
+                <th style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#605e5c', background: '#ffffff' }}>ID</th>
+                <th style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#605e5c', background: '#ffffff' }}>DATE &amp; TIME (UTC)</th>
+                <th style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#605e5c', background: '#ffffff' }}>NAME</th>
+                <th style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#605e5c', background: '#ffffff' }}>AMOUNT</th>
+                <th style={{ padding: '8px', fontSize: '13px', fontWeight: 700, color: '#605e5c', background: '#ffffff' }}>STATUS</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td style={{ fontWeight: 600, color: '#323130' }}>TXN-984210</td>
-                <td style={{ fontSize: '0.8rem', color: '#605e5c' }}>27 Oct 2026, 14:22</td>
-                <td>Tola Bello &rarr; Chidi Eze</td>
-                <td style={{ fontWeight: 700, color: '#323130' }}>GBP 250.00</td>
-                <td>
-                  <span className="badge badge-active">Processed</span>
-                </td>
-              </tr>
-              <tr>
-                <td style={{ fontWeight: 600, color: '#323130' }}>TXN-984209</td>
-                <td style={{ fontSize: '0.8rem', color: '#605e5c' }}>27 Oct 2026, 13:45</td>
-                <td>Amina Yusuf &rarr; Kwesi Appiah</td>
-                <td style={{ fontWeight: 700, color: '#323130' }}>GBP 500.00</td>
-                <td>
-                  <span className="badge badge-active">Processed</span>
-                </td>
-              </tr>
-              <tr>
-                <td style={{ fontWeight: 600, color: '#323130' }}>TXN-984208</td>
-                <td style={{ fontSize: '0.8rem', color: '#605e5c' }}>27 Oct 2026, 12:10</td>
-                <td>David Miller &rarr; Samuel Mensah</td>
-                <td style={{ fontWeight: 700, color: '#323130' }}>EUR 180.00</td>
-                <td>
-                  <span className="badge badge-pending">Under Review</span>
-                </td>
-              </tr>
-              <tr>
-                <td style={{ fontWeight: 600, color: '#323130' }}>TXN-984207</td>
-                <td style={{ fontSize: '0.8rem', color: '#605e5c' }}>27 Oct 2026, 10:15</td>
-                <td>Sarah Jenkins &rarr; Kofi Boateng</td>
-                <td style={{ fontWeight: 700, color: '#323130' }}>GBP 1,200.00</td>
-                <td>
-                  <span className="badge badge-active">Processed</span>
-                </td>
-              </tr>
-              <tr>
-                <td style={{ fontWeight: 600, color: '#323130' }}>TXN-984206</td>
-                <td style={{ fontSize: '0.8rem', color: '#605e5c' }}>27 Oct 2026, 08:30</td>
-                <td>Emmanuel Okafor &rarr; Ngozi Okafor</td>
-                <td style={{ fontWeight: 700, color: '#323130' }}>GBP 350.00</td>
-                <td>
-                  <span className="badge badge-active">Processed</span>
-                </td>
-              </tr>
+              {recentTransactions.map((row) => (
+                <tr
+                  key={row.reference}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: 4,
+                    boxShadow: '0 0 1px 0 rgba(0,0,0,0.25)'
+                  }}
+                >
+                  <td style={{ padding: '10px 8px', fontSize: '14px', color: '#323130' }}>{row.reference}</td>
+                  <td style={{ padding: '10px 8px', fontSize: '14px', color: '#323130' }}>{row.date}</td>
+                  <td style={{ padding: '10px 8px', fontSize: '14px', color: '#323130' }}>{row.recipientFullName}</td>
+                  <td style={{ padding: '10px 8px', fontSize: '14px', color: '#323130' }}>{sym}{row.amount}</td>
+                  <td style={{ padding: '10px 8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ height: 10, width: 10, borderRadius: '50%', background: statusDotColor(row.transactionStatus) }} />
+                      <span style={{ fontSize: '14px', fontWeight: 500, color: '#323130' }}>{row.transactionStatus}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

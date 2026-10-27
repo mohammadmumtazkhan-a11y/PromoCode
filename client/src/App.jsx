@@ -114,7 +114,11 @@ function App() {
       {/* Main Column */}
       <div className="staging-main">
         {/* Sticky Header */}
-        <StagingHeader onMobileToggle={() => setMobileOpen(true)} />
+        <StagingHeader
+          onMobileToggle={() => setMobileOpen(true)}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed(c => !c)}
+        />
 
         {/* Page Body */}
         <main className="staging-page-content">
