@@ -316,6 +316,116 @@ Promise.resolve(referralModule && referralModule.ready)
     ]));
 
 
+// --- Transaction Rewards Lookup API (PC / RF / BS) ---
+const SEEDED_TX_REWARDS = {
+    'MITO-99482709': { tag: 'PC', type: 'Promo Code', name: 'VIP100', amount: 5.00, currency: 'GBP' },
+    'TXN-90841': { tag: 'PC', type: 'Promo Code', name: 'VIP100', amount: 5.00, currency: 'GBP' },
+    'MITO-99482708': { tag: 'RF', type: 'Referral', name: 'EU-KE Referral Rule', amount: 10.00, currency: 'EUR' },
+    'TXN-90840': { tag: 'RF', type: 'Referral', name: 'EU-KE Referral Rule', amount: 10.00, currency: 'EUR' },
+    'MITO-99482707': { tag: 'PC', type: 'Promo Code', name: 'GHANA3', amount: 3.00, currency: 'GBP' },
+    'TXN-90839': { tag: 'PC', type: 'Promo Code', name: 'GHANA3', amount: 3.00, currency: 'GBP' },
+    'MITO-99482706': { tag: 'BS', type: 'Bonus Scheme', name: 'High Value Threshold Bonus', amount: 8.00, currency: 'GBP' },
+    'TXN-90838': { tag: 'BS', type: 'Bonus Scheme', name: 'High Value Threshold Bonus', amount: 8.00, currency: 'GBP' },
+    '22505502': { tag: 'PC', type: 'Promo Code', name: 'SAVE55', amount: 55.00, currency: 'GBP' },
+    'MITO-7721003': { tag: 'PC', type: 'Promo Code', name: 'WELCOME5', amount: 5.00, currency: 'GBP' },
+    'MITO-8812044': { tag: 'RF', type: 'Referral', name: 'EU-NG Referral Scheme (REF-BONUS)', amount: 2.00, currency: 'EUR' },
+    'MITO-9904112': { tag: 'BS', type: 'Bonus Scheme', name: 'Request Money 10% Credit (REQ-CREDIT-10)', amount: 25.00, currency: 'GBP' },
+};
+
+function formatRewardEntry({ currency = 'GBP', amount = 0, tag = 'PC', name = '', type = '' }) {
+    const numAmount = Math.abs(Number(amount) || 0);
+    if (!numAmount || !name) return null;
+    const normalizedTag = ['PC', 'RF', 'BS'].includes(tag) ? tag : 'BS';
+    return {
+        tag: normalizedTag,
+        type: type || (normalizedTag === 'PC' ? 'Promo Code' : normalizedTag === 'RF' ? 'Referral' : 'Bonus Scheme'),
+        name,
+        amount: numAmount,
+        currency,
+        display: `${currency} ${numAmount.toFixed(2)} [${normalizedTag}] (${name})`,
+    };
+}
+
+async function resolveTransactionRewards(reference) {
+    const ref = String(reference || '').trim();
+    if (!ref) return [];
+    const rewards = [];
+
+    // 1. Check Promo Code redemptions (PC)
+    try {
+        const redemptions = await promo.listRedemptions({});
+        for (const r of redemptions) {
+            if (String(r.transaction_id || '').toLowerCase() === ref.toLowerCase()) {
+                const entry = formatRewardEntry({
+                    currency: r.currency || 'GBP',
+                    amount: r.discount_amount,
+                    tag: 'PC',
+                    name: r.code || 'Promo Code',
+                    type: 'Promo Code',
+                });
+                if (entry) rewards.push(entry);
+            }
+        }
+    } catch { /* ignore if table not ready */ }
+
+    // 2. Check Bonus / Referral credit applications in credit_ledger (RF / BS)
+    try {
+        const appliedRows = await dbq.all(
+            `SELECT cl.*, COALESCE(cl.currency, 'GBP') AS eff_currency,
+                    COALESCE(cl.credit_source, src.credit_source) AS eff_source,
+                    COALESCE(bs.name, src_bs.name) AS bonus_scheme_name,
+                    COALESCE(rr.name, src_rr.name) AS referral_rule_name
+             FROM credit_ledger cl
+             LEFT JOIN credit_ledger src ON src.id = cl.source_credit_id
+             LEFT JOIN bonus_schemes bs ON bs.id = cl.scheme_id
+             LEFT JOIN bonus_schemes src_bs ON src_bs.id = src.scheme_id
+             LEFT JOIN referral_rules rr ON rr.id = cl.referral_rule_id
+             LEFT JOIN referral_rules src_rr ON src_rr.id = src.referral_rule_id
+             WHERE cl.type = 'APPLIED'
+               AND (LOWER(COALESCE(cl.transfer_id, '')) = LOWER(?) OR LOWER(COALESCE(cl.reference_id, '')) = LOWER(?))`,
+            [ref, ref]
+        );
+        for (const row of appliedRows) {
+            const isReferral = row.eff_source === 'REFERRAL' || !!row.referral_rule_name;
+            const tag = isReferral ? 'RF' : 'BS';
+            const name = isReferral
+                ? (row.referral_rule_name || 'Referral Program')
+                : (row.bonus_scheme_name || 'Bonus Scheme');
+            const entry = formatRewardEntry({
+                currency: row.eff_currency || 'GBP',
+                amount: Math.abs(Number(row.amount) || 0),
+                tag,
+                name,
+                type: isReferral ? 'Referral' : 'Bonus Scheme',
+            });
+            if (entry) rewards.push(entry);
+        }
+    } catch { /* ignore if table not ready */ }
+
+    // 3. Fallback to seeded transaction reward metadata if no live DB records matched
+    if (rewards.length === 0 && SEEDED_TX_REWARDS[ref]) {
+        const seeded = formatRewardEntry(SEEDED_TX_REWARDS[ref]);
+        if (seeded) rewards.push(seeded);
+    }
+
+    return rewards;
+}
+
+app.get('/api/transactions/:reference/rewards', async (req, res) => {
+    try {
+        const rewards = await resolveTransactionRewards(req.params.reference);
+        const primary = rewards[0] || null;
+        res.json({
+            reference: req.params.reference,
+            rewards,
+            reward: primary,
+            display: primary ? rewards.map((r) => r.display).join(' + ') : '—',
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- Rate Audit Log API ---
 
 // 1. Get Audit Log Entries

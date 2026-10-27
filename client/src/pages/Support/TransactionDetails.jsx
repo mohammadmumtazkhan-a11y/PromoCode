@@ -179,7 +179,7 @@ const TransactionDetails = () => {
                                 background: '#dcfce7', color: '#166534', border: '1px solid #86efac',
                                 padding: '4px 10px', borderRadius: 999, fontSize: '0.82rem', fontWeight: 700
                             }}>
-                                🏷️ {rewardInfo ? rewardInfo.display : `-${transaction.discountAmount} [PC] (${transaction.promoCode})`}
+                                🏷️ {rewardInfo ? rewardInfo.display : `${transaction.discountAmount} [PC] (${transaction.promoCode})`}
                             </span>
                         ) : (
                             <span style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8' }}>-</span>

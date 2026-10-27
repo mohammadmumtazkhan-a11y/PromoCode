@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { SEED_TRANSACTIONS, getStagingStatusColor } from './TransactionsPage';
+import { SEED_TRANSACTIONS, getStagingStatusColor, formatMitoAdminReward } from './TransactionsPage';
 
 // Exact 17 Admin Actions from module 37177 in staging_7339.js
 const ADMIN_ACTION_ITEMS = [
@@ -288,6 +288,26 @@ export default function TransactionDetailPage({ type: propType }) {
     }, [id]);
 
     const [tx, setTx] = useState(baseTx);
+    const [serverRewardDisplay, setServerRewardDisplay] = useState(null);
+
+    useEffect(() => {
+        setTx(baseTx);
+        setServerRewardDisplay(null);
+        const ref = baseTx?.reference || id;
+        if (!ref) return;
+        let cancelled = false;
+        fetch(`/api/transactions/${encodeURIComponent(ref)}/rewards`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (!cancelled && data && data.display && data.display !== '—') {
+                    setServerRewardDisplay(data.display);
+                }
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [baseTx, id]);
     const [activeTab, setActiveTab] = useState('details');
     const [toastMessage, setToastMessage] = useState(null);
     const [retailNextStatus, setRetailNextStatus] = useState('');
@@ -409,9 +429,9 @@ export default function TransactionDetailPage({ type: propType }) {
         },
         { label: 'Total paid', value: `${tx.currency} ${tx.amount.toFixed(2)}` },
         {
-            label: 'Discount received',
+            label: 'Rewards',
             value:
-                tx.discountDisplay ||
+                serverRewardDisplay || formatMitoAdminReward(tx) || tx.discountDisplay ||
                 (tx.discount && tx.discount > 0
                     ? `${tx.currency} ${tx.discount.toFixed(2)}${tx.promoCode ? ` (${tx.promoCode})` : ''}`
                     : '—'),

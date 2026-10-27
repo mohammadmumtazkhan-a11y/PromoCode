@@ -181,6 +181,31 @@ export function getStagingStatusColor(status = '') {
 }
 
 // Seed transactions including exact sample ID a4452812-9c03-41a6-8da9-430167c0d976 from staging screenshot
+export function formatMitoAdminReward(tx) {
+    if (!tx) return '—';
+    if (tx.rewardDisplay) return tx.rewardDisplay;
+    const amount = Number(tx.rewardAmount ?? tx.discount ?? 0);
+    const name = tx.rewardName || tx.rewardRuleName || tx.promoCode || tx.schemeName || '';
+    if (amount > 0 && name) {
+        const rawTag = String(tx.rewardTag || '').toUpperCase();
+        const tag = ['PC', 'RF', 'BS'].includes(rawTag)
+            ? rawTag
+            : tx.rewardType === 'Referral'
+            ? 'RF'
+            : tx.rewardType === 'Bonus Scheme'
+            ? 'BS'
+            : 'PC';
+        const cur = tx.currency || tx.sendCurrency || 'GBP';
+        return `${cur} ${amount.toFixed(2)} [${tag}] (${name})`;
+    }
+    if (tx.discountDisplay && tx.discountDisplay !== '—') return tx.discountDisplay;
+    if (amount > 0) {
+        const cur = tx.currency || tx.sendCurrency || 'GBP';
+        return `${cur} ${amount.toFixed(2)}`;
+    }
+    return '—';
+}
+
 export const SEED_TRANSACTIONS = [
     {
         id: 'a4452812-9c03-41a6-8da9-430167c0d976',
@@ -280,6 +305,9 @@ export const SEED_TRANSACTIONS = [
         agentFee: 6.50,
         discount: 5.00,
         promoCode: 'VIP100',
+        rewardTag: 'PC',
+        rewardName: 'VIP100',
+        rewardType: 'Promo Code',
         details: 'Ngozi Okonkwo · Zenith Bank PLC (2099481723) · Property Investment',
         beneficiaryName: 'Ngozi Okonkwo',
         beneficiaryBank: 'Zenith Bank PLC',
@@ -346,6 +374,12 @@ export const SEED_TRANSACTIONS = [
         rate: 140.5,
         commission: 10.00,
         agentFee: 3.00,
+
+
+        rewardTag: 'RF',
+        rewardName: 'EU-KE Referral Rule',
+        rewardType: 'Referral',
+        rewardAmount: 10.00,
         discount: 0.00,
         promoCode: null,
         details: 'Kamau Wanjiru · MPESA Kenya (+254712345678) · Medical Expenses',
@@ -416,6 +450,9 @@ export const SEED_TRANSACTIONS = [
         agentFee: 2.20,
         discount: 3.00,
         promoCode: 'GHANA3',
+        rewardTag: 'PC',
+        rewardName: 'GHANA3',
+        rewardType: 'Promo Code',
         details: 'Kwame Mensah · MTN Mobile Money Ghana (0244881920) · Education Fees',
         beneficiaryName: 'Kwame Mensah',
         beneficiaryBank: 'MTN Mobile Money Ghana',
@@ -482,6 +519,12 @@ export const SEED_TRANSACTIONS = [
         rate: 2050.0,
         commission: 3.00,
         agentFee: 1.50,
+
+
+        rewardTag: 'BS',
+        rewardName: 'High Value Threshold Bonus',
+        rewardType: 'Bonus Scheme',
+        rewardAmount: 8.00,
         discount: 0.00,
         promoCode: null,
         details: 'IKEDC Prepaid Meter · GTBank PLC (0129384756) · Utility Bill Payment',

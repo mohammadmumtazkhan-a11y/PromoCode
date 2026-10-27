@@ -259,7 +259,7 @@ export const MOCK_TRANSACTIONS = [
         amountSent: 'GBP 250.00',
         feeAmount: 'GBP 0.00',
         promoCode: 'REQ-CREDIT-10',
-        rewardTag: 'RW',
+        rewardTag: 'BS',
         rewardRuleName: 'Request Money 10% Credit (REQ-CREDIT-10)',
         rewardBonusAmount: 'GBP 25.00',
         rewardDirection: '+',
@@ -273,13 +273,13 @@ export const MOCK_TRANSACTIONS = [
         total: 'GBP 250.00',
         messageHistory: [
             { timestamp: '12 Mar 2026, 15:35', user: 'System', message: 'Unified Receive Money Lifecycle created: Request REQ-2026-9904112 linked to Retail Submission RSL-2026-9904112 and Transaction MITO-9904112 (Status: Awaiting Confirmation)', type: 'system' },
-            { timestamp: '12 Mar 2026, 15:36', user: 'System', message: 'Reward scheme [RW] Request Money 10% Credit (REQ-CREDIT-10) applied (+GBP 25.00 bonus credit)', type: 'system' },
+            { timestamp: '12 Mar 2026, 15:36', user: 'System', message: 'Bonus scheme [BS] Request Money 10% Credit (REQ-CREDIT-10) applied (+GBP 25.00 bonus credit)', type: 'system' },
             { timestamp: '12 Mar 2026, 15:40', user: 'System', message: 'Payment confirmed & paid out under single linked record UETR-8f91c2a0-4b12-49d8-9904-112000778899', type: 'system' }
         ],
         notes: '',
         auditTrail: [
             { time: '03:35 PM', event: 'Receive Money Request Created — Simultaneous Log in Retail Submissions (RSL-2026-9904112) & Transactions (MITO-9904112) as Awaiting Confirmation [Req: REQ-2026-9904112]', status: 'complete' },
-            { time: '03:36 PM', event: '[RW] Reward rule Request Money 10% Credit (REQ-CREDIT-10) applied. Bonus credit given: +GBP 25.00', status: 'complete' },
+            { time: '03:36 PM', event: '[BS] Bonus scheme Request Money 10% Credit (REQ-CREDIT-10) applied. Bonus credit given: +GBP 25.00', status: 'complete' },
             { time: '03:38 PM', event: 'Payer Email Link Verified & Open Banking Payment Received (GBP 250.00)', status: 'complete' },
             { time: '03:40 PM', event: 'Unified Record Confirmed & Paid Out (NGN 563,750) — UETR-8f91c2a0-4b12-49d8-9904-112000778899', status: 'complete' }
         ],
@@ -353,7 +353,8 @@ export const formatTransactionRewards = (tx) => {
     const hasReward = !!(tx.promoCode && tx.discountAmount);
     if (!hasReward) return null;
 
-    const tag = tx.rewardTag || (tx.rewardType === 'Referral / Bonus' ? (String(tx.promoCode || '').startsWith('REF') ? 'RF' : 'RW') : 'PC');
+    const rawTag = tx.rewardTag || (tx.rewardType === 'Referral / Bonus' ? (String(tx.promoCode || '').startsWith('REF') ? 'RF' : 'BS') : 'PC');
+    const tag = rawTag === 'RW' ? 'BS' : rawTag;
     const sign = tx.rewardDirection || (tag === 'PC' ? '-' : '+');
     const amount = tx.rewardBonusAmount || tx.discountAmount;
     const ruleOrCode = tx.rewardRuleName || tx.promoCode;
@@ -363,7 +364,7 @@ export const formatTransactionRewards = (tx) => {
         amount,
         ruleOrCode,
         isBonus: sign === '+',
-        display: `${sign}${amount} [${tag}] (${ruleOrCode})`
+        display: `${amount} [${tag}] (${ruleOrCode})`
     };
 };
 
