@@ -272,8 +272,9 @@ export default function TransactionDetailPage({ type: propType }) {
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
-    const isRetail =
+    const isRetailRoute =
         propType === 'retail' || location.pathname.startsWith('/financials/retail');
+    const isRetail = false;
 
     const baseTx = useMemo(() => {
         const found = SEED_TRANSACTIONS.find(
@@ -531,16 +532,16 @@ export default function TransactionDetailPage({ type: propType }) {
                             <li>
                                 /{' '}
                                 <Link
-                                    to={isRetail ? '/financials/retail-transactions' : '/financials/transactions'}
+                                    to={isRetailRoute ? '/financials/retail-transactions' : '/financials/transactions'}
                                     style={{ color: '#605E5C', textDecoration: 'none', textTransform: 'capitalize' }}
                                 >
-                                    {isRetail ? 'Retail-transactions' : 'Transactions'}
+                                    {isRetailRoute ? 'Retail-transactions' : 'Transactions'}
                                 </Link>
                             </li>
                             <li>
                                 /{' '}
                                 <span style={{ textTransform: 'capitalize' }}>
-                                    {isRetail ? 'Retail Submission Details' : 'Transaction Details'}
+                                    {isRetailRoute ? 'Retail Submission Details' : 'Transaction Details'}
                                 </span>
                             </li>
                         </ol>
@@ -564,9 +565,9 @@ export default function TransactionDetailPage({ type: propType }) {
                         <button
                             type="button"
                             onClick={() =>
-                                navigate(isRetail ? '/financials/retail-transactions' : '/financials/transactions')
+                                navigate(isRetailRoute ? '/financials/retail-transactions' : '/financials/transactions')
                             }
-                            title={isRetail ? 'Back to Retail Submissions' : 'Back to Transactions'}
+                            title={isRetailRoute ? 'Back to Retail Submissions' : 'Back to Transactions'}
                             style={{
                                 flexShrink: 0,
                                 cursor: 'pointer',
@@ -596,7 +597,7 @@ export default function TransactionDetailPage({ type: propType }) {
                                 color: '#605E5C',
                             }}
                         >
-                            {isRetail ? 'Retail Submission Details' : 'Transaction Details'}
+                            {isRetailRoute ? 'Retail Submission Details' : 'Transaction Details'}
                         </h1>
                     </div>
 
