@@ -128,15 +128,27 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
 
             {/* Staging Reward$ Unified 9-tab Hub */}
-            <Route path="/configuration/rewards" element={<RewardsHub />} />
+            <Route path="/configuration/rewards" element={<RewardsHub defaultTab="sites" />} />
+            <Route path="/configuration/rate-audit-log" element={<RewardsHub defaultTab="audit" />} />
+            <Route path="/financials/promocodes" element={<RewardsHub defaultTab="promos" />} />
+            <Route path="/growth/referral-settings" element={<RewardsHub defaultTab="referral" />} />
+            <Route path="/growth/referral-performance" element={<RewardsHub defaultTab="performance" />} />
+            <Route path="/growth/referral-tracking" element={<RewardsHub defaultTab="tracking" />} />
+            <Route path="/growth/credit-ledger" element={<RewardsHub defaultTab="ledger" />} />
+            <Route path="/growth/bonus-blocks" element={<RewardsHub defaultTab="blocked" />} />
+            <Route path="/growth/bonus-schemes" element={<RewardsHub defaultTab="bonus" />} />
 
-            {/* Financials */}
-            <Route path="/financials/debits" element={<DebitLogs />} />
+            {/* Financials (matching staging-admin Financials sub-menu) */}
+            <Route path="/financials/rate-threshold" element={<RateManager />} />
+            <Route path="/financials/transactions" element={<DebitLogs />} />
+            <Route path="/financials/mto-submissions" element={<DebitLogs />} />
+            <Route path="/financials/retail-transactions" element={<DebitLogs />} />
+            <Route path="/financials/biller-transactions" element={<DebitLogs />} />
             <Route path="/financials/receive-money" element={<ReceiveMoneyPage />} />
+            <Route path="/financials/debits" element={<DebitLogs />} />
             <Route path="/financials/payouts" element={<Payouts />} />
             <Route path="/financials/account-balance" element={<Payouts />} />
             <Route path="/financials/commissions" element={<Commissions />} />
-            <Route path="/financials/promocodes" element={<PromoCodes />} />
 
             {/* Customers / Merchants */}
             <Route path="/merchants" element={<MerchantList />} />
@@ -146,21 +158,17 @@ function App() {
             <Route path="/admin/on-behalf-of-customer" element={<OnBehalfOfCustomer />} />
             <Route path="/customer/obo-customer" element={<OnBehalfOfCustomer />} />
 
-            {/* Growth Engine Standalone Routes (100% Backwards-Compatible for Tests & Deep Links) */}
-            <Route path="/growth/referral-settings" element={<ReferralSettings />} />
-            <Route path="/growth/referral-performance" element={<ReferralPerformance />} />
-            <Route path="/growth/referral-tracking" element={<ReferralTracking />} />
-            <Route path="/growth/credit-ledger" element={<UserCreditLedger />} />
-            <Route path="/growth/bonus-blocks" element={<BonusBlocks />} />
-            <Route path="/growth/bonus-schemes" element={<BonusSchemeManager />} />
-
             {/* Configuration */}
             <Route path="/configuration/rate-manager" element={<RateManager />} />
             <Route path="/configuration/rates-manager" element={<RateManager />} />
             <Route path="/configuration/rate-manager/:id" element={<RateSettings />} />
             <Route path="/configuration/rates-manager/:id" element={<RateSettings />} />
-            <Route path="/configuration/rate-audit-log" element={<RateAuditLog />} />
             <Route path="/configuration/portal-admins" element={<MerchantList />} />
+            <Route path="/configuration/lookup-data" element={<RateManager />} />
+            <Route path="/configuration/providers" element={<MerchantList />} />
+            <Route path="/configuration/payers" element={<MerchantList />} />
+            <Route path="/configuration/website-configuration" element={<SettingsPage />} />
+            <Route path="/configuration/email-templates" element={<SettingsPage />} />
 
             {/* Developer & Tools */}
             <Route path="/api-keys" element={<ApiKeys />} />

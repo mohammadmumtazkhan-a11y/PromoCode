@@ -69,6 +69,22 @@ const CaretDown = ({ className = '', style = {} }) => (
   </svg>
 );
 
+// Routes that live as tabs inside Configuration -> Reward$
+const REWARD_TAB_PATHS = [
+  '/configuration/rewards',
+  '/configuration/rate-audit-log',
+  '/financials/promocodes',
+  '/growth/referral-settings',
+  '/growth/referral-performance',
+  '/growth/referral-tracking',
+  '/growth/credit-ledger',
+  '/growth/bonus-blocks',
+  '/growth/bonus-schemes',
+];
+
+const isRewardTabRoute = (pathname) =>
+  REWARD_TAB_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+
 // Menu definition matching staging-admin.mito.money (module 34602 & 96972)
 const ROUTING_ITEMS = [
   {
@@ -88,11 +104,12 @@ const ROUTING_ITEMS = [
     title: 'Financials',
     icon: IconFinancials,
     subMenu: [
-      { title: 'Transactions', path: '/financials/debits' },
+      { title: 'Rate', path: '/financials/rate-threshold' },
+      { title: 'Transactions', path: '/financials/transactions' },
+      { title: 'MTO Submissions', path: '/financials/mto-submissions' },
+      { title: 'Retail Submissions', path: '/financials/retail-transactions' },
+      { title: 'Biller Submissions', path: '/financials/biller-transactions' },
       { title: 'Receive Money', path: '/financials/receive-money' },
-      { title: 'Account Balance', path: '/financials/payouts' },
-      { title: 'Commissions', path: '/financials/commissions' },
-      { title: 'Promo Codes', path: '/financials/promocodes' },
     ],
   },
   {
@@ -119,16 +136,13 @@ const ROUTING_ITEMS = [
     title: 'Configuration',
     icon: IconConfiguration,
     subMenu: [
-      { title: 'Reward$', path: '/configuration/rewards' },
       { title: 'Rates Manager', path: '/configuration/rate-manager' },
-      { title: 'Rate Audit Log', path: '/configuration/rate-audit-log' },
-      { title: 'Promo Codes', path: '/financials/promocodes' },
-      { title: 'Referral Settings', path: '/growth/referral-settings' },
-      { title: 'Referral Performance', path: '/growth/referral-performance' },
-      { title: 'Referral Tracking', path: '/growth/referral-tracking' },
-      { title: 'Bonus Wallet / Ledger', path: '/growth/credit-ledger' },
-      { title: 'Blocked Customers', path: '/growth/bonus-blocks' },
-      { title: 'Bonus Scheme Manager', path: '/growth/bonus-schemes' },
+      { title: 'Look Up Data', path: '/configuration/lookup-data' },
+      { title: 'Service Providers', path: '/configuration/providers' },
+      { title: 'Service Payers', path: '/configuration/payers' },
+      { title: 'Reward$', path: '/configuration/rewards' },
+      { title: 'Website', path: '/configuration/website-configuration' },
+      { title: 'Email templates', path: '/configuration/email-templates' },
     ],
   },
   {
@@ -157,15 +171,23 @@ const StagingSidebar = ({ isOpen, onClose, collapsed, onToggleCollapse }) => {
   };
 
   useEffect(() => {
+    if (isRewardTabRoute(pathname) || pathname.startsWith('/configuration/rates-manager')) {
+      setCurrentMenu('Configuration');
+      return;
+    }
+    if (pathname.startsWith('/admin/on-behalf-of-customer')) {
+      setCurrentMenu('Customers');
+      return;
+    }
+    if (pathname === '/financials/debits' || pathname === '/financials/payouts' || pathname === '/financials/commissions') {
+      setCurrentMenu('Financials');
+      return;
+    }
     const activeGroup = ROUTING_ITEMS.find((item) =>
       item.subMenu?.some((sub) => sub.path && (pathname === sub.path || pathname.startsWith(sub.path + '/')))
     );
     if (activeGroup?.title) {
       setCurrentMenu(activeGroup.title);
-    } else if (pathname.startsWith('/admin/on-behalf-of-customer')) {
-      setCurrentMenu('Customers');
-    } else if (pathname.startsWith('/configuration/rates-manager')) {
-      setCurrentMenu('Configuration');
     }
   }, [pathname]);
 
@@ -226,7 +248,9 @@ const StagingSidebar = ({ isOpen, onClose, collapsed, onToggleCollapse }) => {
                         (s) =>
                           (s.path && (pathname === s.path || pathname.startsWith(s.path + '/'))) ||
                           (s.path === '/customer/obo-customer' && pathname.startsWith('/admin/on-behalf-of-customer')) ||
-                          (s.path === '/configuration/rate-manager' && pathname.startsWith('/configuration/rates-manager'))
+                          (s.path === '/configuration/rate-manager' && pathname.startsWith('/configuration/rates-manager')) ||
+                          (s.path === '/configuration/rewards' && isRewardTabRoute(pathname)) ||
+                          (s.path === '/financials/transactions' && pathname === '/financials/debits')
                       )
                   );
                 const isHighlighted = !hasSub ? isDirectActive : currentMenu === item.title;
@@ -248,7 +272,7 @@ const StagingSidebar = ({ isOpen, onClose, collapsed, onToggleCollapse }) => {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center' }}>
-                        {IconComponent && <IconComponent active={isHighlighted || isGroupActive} />}
+                        {IconComponent && <IconComponent active={isGroupActive} />}
                         <span
                           className="staging-nav-label"
                           style={{
@@ -282,7 +306,9 @@ const StagingSidebar = ({ isOpen, onClose, collapsed, onToggleCollapse }) => {
                           const subActive =
                             pathname === sub.path ||
                             (sub.path === '/customer/obo-customer' && pathname.startsWith('/admin/on-behalf-of-customer')) ||
-                            (sub.path === '/configuration/rate-manager' && pathname.startsWith('/configuration/rates-manager'));
+                            (sub.path === '/configuration/rate-manager' && pathname.startsWith('/configuration/rates-manager')) ||
+                            (sub.path === '/configuration/rewards' && isRewardTabRoute(pathname)) ||
+                            (sub.path === '/financials/transactions' && pathname === '/financials/debits');
                           return (
                             <li key={`${sub.path}-${sub.title}`}>
                               <Link

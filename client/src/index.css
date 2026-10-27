@@ -314,7 +314,7 @@ body {
   display: flex;
   width: 100%;
   align-items: center;
-  padding: 10px 12px 10px 36px;
+  padding: 10px 12px 10px 28px;
   color: #323130;
   font-size: 14px;
   font-weight: 500;
@@ -322,27 +322,13 @@ body {
   transition: color 0.15s;
 }
 
-.staging-sub-item::before {
-  content: '-';
-  margin-right: 8px;
-  color: #6b7280;
-}
-
 .staging-sub-item:hover {
-  color: #FB4B14;
-}
-
-.staging-sub-item:hover::before {
   color: #FB4B14;
 }
 
 .staging-sub-item.active {
   color: #FB4B14;
   font-weight: 600;
-}
-
-.staging-sub-item.active::before {
-  color: #FB4B14;
 }
 
 /* Dashboard Balance Rows */

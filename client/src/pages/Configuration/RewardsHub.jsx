@@ -147,17 +147,21 @@ const SitesTab = () => {
   );
 };
 
-const RewardsHub = () => {
+const RewardsHub = ({ defaultTab = 'sites' }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab');
 
-  const [activeTab, setActiveTab] = useState(urlTab || 'sites');
+  const [activeTab, setActiveTab] = useState(
+    urlTab && REWARD_TABS.some(t => t.id === urlTab) ? urlTab : defaultTab
+  );
 
   useEffect(() => {
     if (urlTab && REWARD_TABS.some(t => t.id === urlTab)) {
       setActiveTab(urlTab);
+    } else if (defaultTab) {
+      setActiveTab(defaultTab);
     }
-  }, [urlTab]);
+  }, [urlTab, defaultTab]);
 
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
