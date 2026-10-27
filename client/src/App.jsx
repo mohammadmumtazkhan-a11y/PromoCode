@@ -141,15 +141,19 @@ function App() {
 
             {/* Financials (matching staging-admin Financials sub-menu) */}
             <Route path="/financials/rate-threshold" element={<RateManager />} />
-            <Route path="/financials/transactions" element={<DebitLogs />} />
-            <Route path="/financials/transactions/:id" element={<TransactionDetailPage />} />
+            <Route path="/financials/transactions" element={<DebitLogs type="standard" />} />
+            <Route path="/financials/transactions/:id" element={<TransactionDetailPage type="standard" />} />
             <Route path="/financials/mto-submissions/:id" element={<TransactionDetailPage />} />
-            <Route path="/financials/retail-transactions/:id" element={<TransactionDetailPage />} />
+            <Route path="/financials/retail-transactions/:id" element={<TransactionDetailPage type="retail" />} />
             <Route path="/financials/biller-transactions/:id" element={<TransactionDetailPage />} />
             <Route path="/financials/mto-submissions" element={<DebitLogs />} />
-            <Route path="/financials/retail-transactions" element={<DebitLogs />} />
+            <Route path="/financials/retail-transactions" element={<DebitLogs type="retail" />} />
             <Route path="/financials/biller-transactions" element={<DebitLogs />} />
             <Route path="/financials/receive-money" element={<ReceiveMoneyPage />} />
+            <Route path="/financials/retail" element={<Navigate to="/financials/retail-transactions" replace />} />
+            <Route path="/financials/mto" element={<Navigate to="/financials/mto-submissions" replace />} />
+            <Route path="/financials/billers" element={<Navigate to="/financials/biller-transactions" replace />} />
+            <Route path="/financials/receive" element={<Navigate to="/financials/receive-money" replace />} />
             <Route path="/financials/debits" element={<DebitLogs />} />
             <Route path="/financials/payouts" element={<Payouts />} />
             <Route path="/financials/account-balance" element={<Payouts />} />
