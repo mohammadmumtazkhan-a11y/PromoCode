@@ -35,14 +35,39 @@ async function finishSetup(db) {
 
 async function ensureDemoSeparatePills(q) {
     try {
-        const gbpRule = await q.get(`SELECT id FROM referral_rules WHERE base_currency = 'GBP' AND COALESCE(is_archived,0) = 0 ORDER BY is_enabled DESC, id LIMIT 1`);
+        const gbpRule = await q.get(`SELECT id, min_transaction_threshold, qualification_window_days, bonus_validity_days FROM referral_rules WHERE base_currency = 'GBP' AND COALESCE(is_archived,0) = 0 ORDER BY is_enabled DESC, id LIMIT 1`);
         const gbpScheme = await q.get(`SELECT id FROM bonus_schemes WHERE currency = 'GBP' AND status = 'ACTIVE' AND min_transaction_threshold > 0 ORDER BY id DESC LIMIT 1`);
         await q.run(`UPDATE credit_ledger SET credit_source = 'SCHEME', credit_source_detail = 'LOYALTY_CREDIT', scheme_id = COALESCE(scheme_id, ?) WHERE id = 'cl_1' AND user_id = 'user_123'`, [gbpScheme ? gbpScheme.id : null]);
         const hasRef = await q.get(`SELECT id FROM credit_ledger WHERE user_id = 'user_123' AND credit_source = 'REFERRAL' AND type = 'EARNED'`);
         if (!hasRef) {
-            await q.run(`INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, type, scheme_id, reference_id, reason_code, notes, admin_user, created_at, currency, referral_rule_id, credit_source, credit_source_detail)
-                VALUES ('cl_ref_123', 'user_123', 15.00, 'EARNED', NULL, 'ref_demo_123', 'REFERRAL_REWARD', 'Referrer reward – referred Sarah S.', 'System', '2025-01-10 10:00:00', 'GBP', ?, 'REFERRAL', 'REFERRER')`,
+            await q.run(`INSERT OR IGNORE INTO credit_ledger (id, user_id, amount, type, scheme_id, reference_id, referral_id, reason_code, notes, admin_user, created_at, currency, referral_rule_id, credit_source, credit_source_detail)
+                VALUES ('cl_ref_123', 'user_123', 15.00, 'EARNED', NULL, 'ref_demo_123', 'ref_demo_123', 'REFERRAL_REWARD', 'Referrer reward – referred Sarah S.', 'System', '2025-01-10 10:00:00', 'GBP', ?, 'REFERRAL', 'REFERRER')`,
                 [gbpRule ? gbpRule.id : null]);
+        } else {
+            await q.run(`UPDATE credit_ledger SET referral_id = COALESCE(referral_id, 'ref_demo_123') WHERE id = 'cl_ref_123' AND user_id = 'user_123'`);
+        }
+
+        // Keep the referrals table in sync with the seeded cl_ref_123 referral credit so "My referrals" and "History" match
+        const john = await q.get(`SELECT id, referral_code FROM customers WHERE id = 'user_123'`);
+        const sarah = await q.get(`SELECT id FROM customers WHERE id = 'user_102'`);
+        if (john && sarah) {
+            await q.run(`INSERT OR IGNORE INTO referrals (
+                id, referrer_id, referee_id, code, rule_id, currency, reward_type,
+                referrer_reward, referee_reward, floor, qualification_window_days, bonus_validity_days,
+                qualification_deadline, status, registered_at, rewarded_at,
+                referrer_credited, referee_credited, referrer_credit_id, registration_channel, attribution_method, updated_at
+            ) VALUES (
+                'ref_demo_123', 'user_123', 'user_102', ?, ?, 'GBP', 'BOTH',
+                15.00, 10.00, ?, ?, ?,
+                '2025-04-10', 'REWARDED', '2025-01-05T10:00:00.000Z', '2025-01-10T10:00:00.000Z',
+                15.00, 10.00, 'cl_ref_123', 'WEB', 'DIRECT_LINK', '2025-01-10T10:00:00.000Z'
+            )`, [
+                john.referral_code || 'JOHN2880',
+                gbpRule ? gbpRule.id : 1,
+                gbpRule ? Number(gbpRule.min_transaction_threshold || 50) : 50,
+                gbpRule ? Number(gbpRule.qualification_window_days || 30) : 30,
+                gbpRule ? Number(gbpRule.bonus_validity_days || 90) : 90,
+            ]);
         }
     } catch { /* ignore in isolated test dbs */ }
 }
