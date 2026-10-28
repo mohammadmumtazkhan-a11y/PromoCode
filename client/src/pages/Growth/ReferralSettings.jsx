@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ToastStack, ConfirmDialog } from '../../components/Feedback';
 import { useToasts } from '../../components/useToasts';
-import { CURRENCIES, COUNTRIES, countryByCode, parseCountryList, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso } from './referralUtils';
+import { CURRENCIES, COUNTRIES, countryByCode, parseCountryList, corridorLabel, currencySymbol, formatMoney, formatUkDate, ukTodayIso, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
 import { validateForm } from './referralValidation';
 import './referral.css';
@@ -27,6 +27,358 @@ const EMPTY_FORM = {
 const REGIONS = ['Suggested', 'All Regions', 'Europe', 'Africa', 'North America', 'Asia & Middle East', 'Oceania'];
 
 const TYPE_LABELS = { BOTH: 'Both Parties', REFERRER: 'Referrer Only', REFEREE: 'Referee Only' };
+
+const RULE_AUDIT_LABELS = {
+    created: 'Rule Created',
+    archived: 'Rule Archived',
+    name: 'Rule Name',
+    is_enabled: 'Active / Paused Status',
+    reward_type: 'Reward Type',
+    base_currency: 'Send Currency',
+    receive_currency: 'Receive Currency',
+    send_country_mode: 'Send Country Mode',
+    send_countries: 'Send Countries',
+    receive_country_mode: 'Receive Country Mode',
+    receive_countries: 'Receive Countries',
+    referrer_reward: 'Referrer Bonus',
+    referee_reward: 'Referee Bonus',
+    min_transaction_threshold: 'Minimum Transfer (Floor)',
+    qualification_window_days: 'Qualification Window (Days)',
+    bonus_validity_days: 'Bonus Validity (Days)',
+    max_referrals_cap_type: 'Per-Referrer Cap Type',
+    max_referrals_per_referrer: 'Per-Referrer Headcount Cap',
+    max_referrals_amount_per_referrer: 'Per-Referrer Monetary Cap',
+    max_scheme_budget: 'Total Scheme Budget Cap',
+    start_date: 'Start Date',
+    end_date: 'End Date',
+};
+
+const formatUkDateTime = (value) => {
+    if (!value) return '—';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.split('-').reverse().join('/');
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString('en-GB', {
+        timeZone: 'Europe/London',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+const formatAuditFieldVal = (field, rawVal, currency) => {
+    if (rawVal === null || rawVal === undefined || rawVal === '') {
+        if (field === 'receive_currency') return 'All currencies';
+        if (field === 'max_referrals_per_referrer' || field === 'max_referrals_amount_per_referrer' || field === 'max_scheme_budget') return 'Unlimited';
+        if (field === 'start_date') return 'Immediate';
+        if (field === 'end_date') return 'No end date';
+        return '—';
+    }
+    const s = String(rawVal);
+    if (field === 'is_enabled') return s === '1' || s === 'true' ? 'Enabled (Active)' : 'Disabled (Paused)';
+    if (field === 'archived') return s === '1' || s === 'true' ? 'Archived' : 'Active';
+    if (field === 'reward_type') return TYPE_LABELS[s] || s;
+    if (['referrer_reward', 'referee_reward', 'min_transaction_threshold', 'max_referrals_amount_per_referrer', 'max_scheme_budget'].includes(field)) {
+        const n = Number(s);
+        return Number.isFinite(n) ? formatMoney(n, currency || 'GBP') : s;
+    }
+    if (field === 'qualification_window_days' || field === 'bonus_validity_days') return `${s} days`;
+    if (field === 'max_referrals_per_referrer') return `${s} referrals`;
+    if (field === 'send_countries' || field === 'receive_countries') {
+        const list = parseCountryList(s);
+        if (!list.length) return 'All countries';
+        return list.map((code) => {
+            const c = countryByCode(code);
+            return `${c.flag} ${c.name} (${c.code})`;
+        }).join(', ');
+    }
+    if (field === 'start_date' || field === 'end_date') return formatUkDate(s);
+    return s;
+};
+
+const ReferralHistoryModal = ({ open, rule, data, loading, onClose }) => {
+    const [tab, setTab] = useState('audit');
+
+    useEffect(() => {
+        if (open) setTab('audit');
+    }, [open, rule?.id]);
+
+    if (!open || !rule) return null;
+
+    const c = rule.base_currency || 'GBP';
+    const perf = data?.perf || {};
+    const rawAudit = data?.audit || [];
+    const referrals = data?.referrals || [];
+    const referralsTotal = data?.referralsTotal ?? referrals.length;
+
+    // Ensure seeded rules that predated audit rows still show their initial creation record
+    const hasCreatedAudit = rawAudit.some((a) => a.field === 'created');
+    const auditRows = hasCreatedAudit
+        ? rawAudit
+        : [
+            ...rawAudit,
+            {
+                id: `seed-created-${rule.id}`,
+                field: 'created',
+                old_value: null,
+                new_value: `${rule.name} (${corridorLabel(c, rule.receive_currency)} · Referrer ${rule.reward_type === 'REFEREE' ? '—' : formatMoney(rule.referrer_reward, c)} / Referee ${rule.reward_type === 'REFERRER' ? '—' : formatMoney(rule.referee_reward, c)})`,
+                admin_user: 'System / Admin',
+                created_at: rule.created_at || rule.updated_at,
+            },
+        ];
+
+    const sendCountries = parseCountryList(rule.send_countries || rule.send_country);
+    const rcvCountries = parseCountryList(rule.receive_countries || rule.receive_country);
+    const sendScopeLabel = sendCountries.length
+        ? `${rule.send_country_mode === 'EXCLUDE' ? 'Exclude' : 'Include only'}: ${sendCountries.join(', ')}`
+        : `All ${c} send countries`;
+    const rcvScopeLabel = rcvCountries.length
+        ? `${rule.receive_country_mode === 'EXCLUDE' ? 'Exclude' : 'Include only'}: ${rcvCountries.join(', ')}`
+        : rule.receive_currency ? `All ${rule.receive_currency} receive countries` : 'All destination countries';
+
+    const perUserCapLabel = rule.max_referrals_cap_type === 'AMOUNT' && rule.max_referrals_amount_per_referrer
+        ? `${formatMoney(rule.max_referrals_amount_per_referrer, c)} per referrer`
+        : rule.max_referrals_per_referrer
+            ? `${rule.max_referrals_per_referrer} referrals per referrer`
+            : 'Unlimited per referrer';
+
+    const schemeSpend = Number(rule.scheme_spend ?? perf.bonus_issued ?? 0);
+    const schemeBudget = Number(rule.max_scheme_budget || 0);
+    const datesLabel = rule.start_date || rule.end_date
+        ? `${formatUkDate(rule.start_date) === '—' ? 'Immediate' : formatUkDate(rule.start_date)} – ${rule.end_date ? formatUkDate(rule.end_date) : 'No end date'}`
+        : 'Always on (no end date)';
+
+    return (
+        <div className="rf-cmodal-backdrop" onClick={onClose} data-testid="referral-history-modal">
+            <div className="rf-cmodal rf-hmodal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="rf-hmodal-title">
+                <div className="rf-cmodal-header">
+                    <div>
+                        <h3 id="rf-hmodal-title">Scheme History — {rule.name}</h3>
+                        <p>Complete configuration snapshot, audit change log, budget utilization, and referral activity for this scheme.</p>
+                        <div className="rf-hmodal-meta">
+                            <span className="rf-chip">{corridorLabel(c, rule.receive_currency)}</span>
+                            <StatusPill status={rule.status} />
+                            <span className="rf-pill rf-pill-blue">{TYPE_LABELS[rule.reward_type] || rule.reward_type}</span>
+                            <span className="rf-sub" style={{ display: 'inline' }}>
+                                Rule #{rule.id} • Created {formatUkDateTime(rule.created_at)}
+                                {rule.updated_at && rule.updated_at !== rule.created_at ? ` • Last updated ${formatUkDateTime(rule.updated_at)}` : ''}
+                            </span>
+                        </div>
+                    </div>
+                    <button type="button" className="rf-cmodal-close" aria-label="Close scheme history" data-testid="close-referral-history-modal" onClick={onClose}>&times;</button>
+                </div>
+
+                <div className="rf-hmodal-kpis">
+                    <div className="rf-hmodal-kpi">
+                        <div className="rf-hmodal-kpi-label">Funnel &amp; Conversion</div>
+                        <div className="rf-hmodal-kpi-val" data-testid="history-kpi-funnel">
+                            {perf.registrations ?? rule.referral_count ?? 0} joined · {perf.rewarded ?? 0} rewarded
+                        </div>
+                        <div className="rf-hmodal-kpi-sub">
+                            {perf.link_visits ?? 0} link visits · {perf.pending ?? rule.pending_count ?? 0} pending
+                            {perf.conversion_rate != null ? ` · ${perf.conversion_rate}% conv.` : ''}
+                        </div>
+                    </div>
+                    <div className="rf-hmodal-kpi">
+                        <div className="rf-hmodal-kpi-label">Bonuses Issued &amp; Used</div>
+                        <div className="rf-hmodal-kpi-val" data-testid="history-kpi-bonuses">
+                            {formatMoney(perf.bonus_issued ?? schemeSpend, c)} issued
+                        </div>
+                        <div className="rf-hmodal-kpi-sub">
+                            Used: {formatMoney(perf.bonus_used ?? 0, c)} · Unused: {formatMoney(perf.bonus_unused ?? 0, c)} · Expired: {formatMoney(perf.bonus_expired ?? 0, c)}
+                        </div>
+                    </div>
+                    <div className="rf-hmodal-kpi">
+                        <div className="rf-hmodal-kpi-label">Scheme Budget &amp; Caps</div>
+                        <div className="rf-hmodal-kpi-val" data-testid="history-kpi-budget">
+                            {schemeBudget > 0 ? `${formatMoney(schemeSpend, c)} / ${formatMoney(schemeBudget, c)}` : `${formatMoney(schemeSpend, c)} utilized`}
+                        </div>
+                        <div className="rf-hmodal-kpi-sub">
+                            {schemeBudget > 0
+                                ? (rule.scheme_cap_reached ? '⚠️ Scheme budget cap reached' : `Remaining: ${formatMoney(Math.max(0, schemeBudget - schemeSpend), c)}`)
+                                : 'Unlimited total scheme budget'} · {perUserCapLabel}
+                        </div>
+                    </div>
+                    <div className="rf-hmodal-kpi">
+                        <div className="rf-hmodal-kpi-label">Qualifying Volume &amp; Floor</div>
+                        <div className="rf-hmodal-kpi-val" data-testid="history-kpi-volume">
+                            {formatMoney(perf.referred_volume ?? 0, c)} volume
+                        </div>
+                        <div className="rf-hmodal-kpi-sub">
+                            Floor: {formatMoney(rule.min_transaction_threshold, c)} · Validity: {rule.bonus_validity_days ?? 90}d (qualify in {rule.qualification_window_days ?? 30}d)
+                        </div>
+                    </div>
+                </div>
+
+                <div className="rf-cmodal-tabs" role="tablist">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === 'audit'}
+                        className={`rf-cmodal-tab ${tab === 'audit' ? 'active' : ''}`}
+                        data-testid="history-tab-audit"
+                        onClick={() => setTab('audit')}
+                    >
+                        <div>
+                            <span className="rf-cmodal-tab-title">1. Audit &amp; Configuration History</span>
+                            <span className="rf-cmodal-tab-sub">Every rule change, status update, and current parameter snapshot</span>
+                        </div>
+                        <span className="rf-scope-badge all">{auditRows.length} {auditRows.length === 1 ? 'entry' : 'entries'}</span>
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === 'referrals'}
+                        className={`rf-cmodal-tab ${tab === 'referrals' ? 'active' : ''}`}
+                        data-testid="history-tab-referrals"
+                        onClick={() => setTab('referrals')}
+                    >
+                        <div>
+                            <span className="rf-cmodal-tab-title">2. Referrals &amp; Bonus Activity</span>
+                            <span className="rf-cmodal-tab-sub">Customers referred under this scheme and bonuses credited</span>
+                        </div>
+                        <span className="rf-scope-badge include">{referralsTotal} {referralsTotal === 1 ? 'referral' : 'referrals'}</span>
+                    </button>
+                </div>
+
+                <div className="rf-cmodal-body">
+                    <div className="rf-hmodal-config-grid" data-testid="history-config-snapshot">
+                        <div className="rf-hmodal-config-item">
+                            <span>Reward Amounts</span>
+                            <strong>
+                                Referrer: {rule.reward_type === 'REFEREE' ? '—' : formatMoney(rule.referrer_reward, c)} · Referee: {rule.reward_type === 'REFERRER' ? '—' : formatMoney(rule.referee_reward, c)}
+                            </strong>
+                        </div>
+                        <div className="rf-hmodal-config-item">
+                            <span>Send &amp; Receive Scope</span>
+                            <strong>{sendScopeLabel} → {rcvScopeLabel}</strong>
+                        </div>
+                        <div className="rf-hmodal-config-item">
+                            <span>Link Schedule</span>
+                            <strong>{datesLabel}</strong>
+                        </div>
+                        <div className="rf-hmodal-config-item">
+                            <span>Qualification &amp; Expiry</span>
+                            <strong>Qualify within {rule.qualification_window_days ?? 30}d · Bonus valid {rule.bonus_validity_days ?? 90}d</strong>
+                        </div>
+                    </div>
+
+                    {loading ? (
+                        <div className="rf-empty">Loading scheme history…</div>
+                    ) : tab === 'audit' ? (
+                        <div className="rf-table-wrap">
+                            <table className="rf-table rf-compact" data-testid="history-audit-table">
+                                <thead>
+                                    <tr>
+                                        <th>When (UK Time)</th>
+                                        <th>Action / Field</th>
+                                        <th>Change Details (Previous → New)</th>
+                                        <th>Admin User</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {auditRows.map((row) => {
+                                        const isCreate = row.field === 'created';
+                                        const isArchive = row.field === 'archived';
+                                        return (
+                                            <tr key={row.id}>
+                                                <td style={{ whiteSpace: 'nowrap' }}>{formatUkDateTime(row.created_at)}</td>
+                                                <td>
+                                                    <span className="rf-strong">{RULE_AUDIT_LABELS[row.field] || row.field}</span>
+                                                </td>
+                                                <td>
+                                                    {isCreate ? (
+                                                        <span className="rf-audit-new">Created rule &ldquo;{row.new_value || rule.name}&rdquo;</span>
+                                                    ) : isArchive ? (
+                                                        <span className="rf-pill rf-pill-amber">Rule archived (stopped for new referrals)</span>
+                                                    ) : (
+                                                        <div className="rf-audit-diff">
+                                                            <span className="rf-audit-old">{formatAuditFieldVal(row.field, row.old_value, c)}</span>
+                                                            <span aria-hidden="true">→</span>
+                                                            <span className="rf-audit-new">{formatAuditFieldVal(row.field, row.new_value, c)}</span>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td style={{ whiteSpace: 'nowrap' }}>{row.admin_user || 'Admin'}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : referrals.length === 0 ? (
+                        <div className="rf-empty" data-testid="history-referrals-empty">
+                            No customer referrals have been recorded under this scheme yet.
+                        </div>
+                    ) : (
+                        <div className="rf-table-wrap">
+                            <table className="rf-table rf-compact" data-testid="history-referrals-table">
+                                <thead>
+                                    <tr>
+                                        <th>Referral ID</th>
+                                        <th>Referrer</th>
+                                        <th>Referee</th>
+                                        <th>Channel</th>
+                                        <th>Joined</th>
+                                        <th>Status</th>
+                                        <th className="rf-num">Referrer Bonus</th>
+                                        <th className="rf-num">Referee Bonus</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {referrals.map((r) => (
+                                        <tr key={r.id}>
+                                            <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{r.id}</td>
+                                            <td>
+                                                <div className="rf-strong">{`${r.referrer_first_name || ''} ${r.referrer_last_name || ''}`.trim() || r.referrer_id}</div>
+                                                <span className="rf-sub">{r.referrer_email || r.referrer_id}</span>
+                                            </td>
+                                            <td>
+                                                <div className="rf-strong">{`${r.referee_first_name || ''} ${r.referee_last_name || ''}`.trim() || r.referee_id}</div>
+                                                <span className="rf-sub">{r.referee_email || r.referee_id}</span>
+                                            </td>
+                                            <td><span className="rf-chip">{r.registration_channel || 'WEB'}</span></td>
+                                            <td style={{ whiteSpace: 'nowrap' }}>{formatUkDateTime(r.registered_at)}</td>
+                                            <td>
+                                                <StatusPill status={r.status} />
+                                                {r.status_reason && <span className="rf-sub">{r.status_reason}</span>}
+                                            </td>
+                                            <td className="rf-num">{r.referrer_credited ? formatMoney(r.referrer_credited, r.currency || c) : '—'}</td>
+                                            <td className="rf-num">{r.referee_credited ? formatMoney(r.referee_credited, r.currency || c) : '—'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+
+                <div className="rf-cmodal-footer">
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                        Showing {tab === 'audit' ? `${auditRows.length} audit log ${auditRows.length === 1 ? 'entry' : 'entries'}` : `${referrals.length} of ${referralsTotal} referrals`} for <strong>{rule.name}</strong>.
+                    </span>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                        {referralsTotal > 0 && (
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                data-testid="history-export-csv-btn"
+                                onClick={() => downloadUrl(`/api/referral/tracking.csv?rule_id=${rule.id}`)}
+                            >
+                                Export Referrals CSV
+                            </button>
+                        )}
+                        <button type="button" className="btn-primary" onClick={onClose}>
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 const Field = ({ id, label, required, error, hint, infoTip, children }) => {
     const [infoOpen, setInfoOpen] = useState(false);
     return (
@@ -443,7 +795,38 @@ const ReferralSettings = () => {
     const [dialogNotify, setDialogNotify] = useState(true);
     const [showValiditySummary, setShowValiditySummary] = useState(true);
     const [countryModal, setCountryModal] = useState({ open: false, tab: 'send' });
+    const [historyModal, setHistoryModal] = useState({ open: false, rule: null, loading: false, data: null });
     const { toasts, push, dismiss } = useToasts();
+
+    const openHistory = async (rule) => {
+        setHistoryModal({ open: true, rule, loading: true, data: null });
+        try {
+            const [auditRes, perfRes, trackRes] = await Promise.all([
+                fetch(`/api/referral-rules/${rule.id}/audit`).then((r) => r.json()).catch(() => ({ data: [] })),
+                fetch('/api/referral/performance?include_archived=1').then((r) => r.json()).catch(() => ({ data: [] })),
+                fetch(`/api/referral/tracking?rule_id=${rule.id}&page_size=50`).then((r) => r.json()).catch(() => ({ data: [], total: 0 })),
+            ]);
+            const perfRow = (perfRes.data || []).find((p) => Number(p.rule_id) === Number(rule.id)) || null;
+            setHistoryModal({
+                open: true,
+                rule,
+                loading: false,
+                data: {
+                    audit: auditRes.data || [],
+                    perf: perfRow,
+                    referrals: trackRes.data || [],
+                    referralsTotal: trackRes.total ?? (trackRes.data || []).length,
+                },
+            });
+        } catch {
+            setHistoryModal({
+                open: true,
+                rule,
+                loading: false,
+                data: { audit: [], perf: null, referrals: [], referralsTotal: 0 },
+            });
+        }
+    };
 
     const fetchRules = useCallback(async () => {
         setLoadError(false);
@@ -916,12 +1299,22 @@ const ReferralSettings = () => {
                                             </span>
                                         </td>
                                         <td>
-                                            {!archived && (
-                                                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                                    <button type="button" className="rf-btn-sm" onClick={() => handleEdit(rule)}>Edit</button>
-                                                    <button type="button" className="rf-btn-sm rf-warn" onClick={() => handleArchive(rule)}>Archive</button>
-                                                </div>
-                                            )}
+                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                                <button
+                                                    type="button"
+                                                    className="rf-btn-sm"
+                                                    data-testid={`rule-history-btn-${rule.id}`}
+                                                    onClick={() => openHistory(rule)}
+                                                >
+                                                    History
+                                                </button>
+                                                {!archived && (
+                                                    <>
+                                                        <button type="button" className="rf-btn-sm" onClick={() => handleEdit(rule)}>Edit</button>
+                                                        <button type="button" className="rf-btn-sm rf-warn" onClick={() => handleArchive(rule)}>Archive</button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -940,6 +1333,14 @@ const ReferralSettings = () => {
                     set(patch);
                     setCountryModal({ open: false, tab: 'send' });
                 }}
+            />
+
+            <ReferralHistoryModal
+                open={historyModal.open}
+                rule={historyModal.rule}
+                data={historyModal.data}
+                loading={historyModal.loading}
+                onClose={() => setHistoryModal({ open: false, rule: null, loading: false, data: null })}
             />
 
             <ConfirmDialog
