@@ -785,7 +785,7 @@ const ReferralSettings = () => {
                             )}
                         </Field>
                         <Field id="rf-max_scheme_budget" label="Maximum Cap per Scheme (Total Budget)" error={err('max_scheme_budget')}
-                            infoTip="Maximum total spend/budget allowed across the entire referral scheme (in addition to the per-user limit). The scheme automatically stops once this overall cap is reached. Leave blank for no overall budget cap.">
+                            infoTip="This cap is for the whole referral scheme and includes all referrers' and referees' bonuses combined (in addition to the per-referrer limit). The scheme automatically stops once the combined bonuses paid to all referrers and referees reach this overall cap. Leave blank for no overall budget cap.">
                             <div className="rf-affix"><span className="rf-prefix">{sym}</span>
                                 <input {...aria('max_scheme_budget')} className={inputCls('max_scheme_budget')} inputMode="decimal" placeholder="Unlimited scheme budget (e.g. 10000)"
                                     value={form.max_scheme_budget} onChange={(e) => set({ max_scheme_budget: e.target.value })} />
