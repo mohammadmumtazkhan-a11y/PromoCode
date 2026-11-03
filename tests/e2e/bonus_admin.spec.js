@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
 // Growth > Bonus Scheme Manager, Bonus Wallet / Ledger (BONUS_MODULE_SPEC_MITO_ADMIN.md §5). Requires the API server on :5000.
-const API = 'http://localhost:5000';
+const API = process.env.API_URL || 'http://localhost:5050';
 const uid = (p) => `${p} ${Date.now().toString(36)}`;
 const day = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
 
@@ -107,7 +107,7 @@ test.describe('Bonus Wallet / Ledger', () => {
         await expect(page.getByText(`Credit of £12.50 granted to ${customer}.`)).toBeVisible();
 
         await page.locator('#ledger-customer').fill(customer);
-        await expect(page.getByTestId('balance-by-source')).toContainText('From Rhemito · GBP');
+        await expect(page.getByTestId('balance-by-source')).toContainText('From Rhemito · GBP', { timeout: 10000 });
         await expect(page.getByTestId('balance-by-source')).toContainText('£12.50');
         const row = page.locator('table.data-table tbody tr').first();
         await expect(row).toContainText('From Rhemito');

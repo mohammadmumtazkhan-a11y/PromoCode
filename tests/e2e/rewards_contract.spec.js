@@ -6,20 +6,21 @@ const { test, expect } = require('@playwright/test');
 //   RC-UI-02  Referral Settings: the form blocks saving a rule that pays someone no amount, and never sends an amount for the unpaid side
 //   RC-UI-03  Referral Tracking: a paid reward links to the Credit Ledger already filtered to REFERRAL and that referral
 //   RC-UI-04  Credit Ledger: every credit shows its source label (Referrals / Bonus offers / From Rhemito) and detail
-// Requires the API server on :5000 (see referral_admin.spec.js). If you change a rule here, change the matching server contract too.
-const API = 'http://localhost:5000';
+// Requires the API server on :5050.
+const API = process.env.API_URL || 'http://localhost:5050';
 const unique = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
 
 test.describe('Rewards contract: Referral Settings form', () => {
     test('RC-UI-01 reward type offers exactly Referrer / Referee / Both and each requires only the side it pays', async ({ page }) => {
         // WHY: the choice decides who is paid (server contract REFERRAL-03). The form must make the unpaid side impossible to fill in.
         await page.goto('/growth/referral-settings');
-        const type = page.getByLabel('Who gets a bonus?');
+        await page.getByTestId('open-create-rule-modal-btn').click();
+        const type = page.getByLabel(/Who gets a bonus/i);
         const options = await type.locator('option').evaluateAll((els) => els.map((o) => [o.value, o.textContent.trim()]));
         expect(options).toEqual([
-            ['BOTH', 'Both Parties (Double-Sided)'],
-            ['REFERRER', 'Referrer Only'],
-            ['REFEREE', 'Referee (New User) Only'],
+            ['BOTH', 'Both parties (Double-sided)'],
+            ['REFERRER', 'Referrer only'],
+            ['REFEREE', 'Referee (New user) only'],
         ]);
         const referrer = page.locator('#rf-referrer_reward');
         const referee = page.locator('#rf-referee_reward');
@@ -67,27 +68,28 @@ test.describe('Rewards contract: Referral Settings form', () => {
             return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, id: 999999, data: {}, notification: null }) });
         });
         await page.goto('/growth/referral-settings');
-        await page.getByLabel('Rule Name').fill(`Contract Form ${unique()}`);
-        await page.getByLabel('Send Currency').selectOption('GBP');
-        await page.getByLabel('Receive Currency').selectOption('KES');
+        await page.getByTestId('open-create-rule-modal-btn').click();
+        await page.getByLabel(/Rule Name/i).fill(`Contract Form ${unique()}`);
+        await page.getByLabel(/Send Currency/i).selectOption('GBP');
+        await page.getByLabel(/Receive Currency/i).selectOption('KES');
 
         // Both parties, but the referee amount is 0
         await page.locator('#rf-referee_reward').fill('0');
-        await page.getByRole('button', { name: 'Create Rule' }).click();
+        await page.getByRole('button', { name: /Create rule/i }).click();
         await expect(page.locator('#rf-referee_reward-error')).toHaveText(/Enter an amount greater than 0/);
         await expect(page.locator('#rf-referee_reward')).toHaveAttribute('aria-invalid', 'true');
 
         // Referrer only, but the referrer amount is blank
-        await page.getByLabel('Who gets a bonus?').selectOption('REFERRER');
+        await page.getByLabel(/Who gets a bonus/i).selectOption('REFERRER');
         await page.locator('#rf-referrer_reward').fill('');
-        await page.getByRole('button', { name: 'Create Rule' }).click();
+        await page.getByRole('button', { name: /Create rule/i }).click();
         await expect(page.locator('#rf-referrer_reward-error')).toHaveText(/Enter an amount greater than 0/);
         await expect(page.locator('#rf-referee_reward-error')).toHaveCount(0); // the unpaid side is never validated or required
         expect(posts).toHaveLength(0); // nothing reached the server
 
         // Fix it: the request carries the paid amount and exactly 0 for the unpaid side
         await page.locator('#rf-referrer_reward').fill('7');
-        await page.getByRole('button', { name: 'Create Rule' }).click();
+        await page.getByRole('button', { name: /Create rule/i }).click();
         await expect.poll(() => posts.length).toBe(1);
         expect(posts[0]).toMatchObject({ reward_type: 'REFERRER', base_currency: 'GBP', receive_currency: 'KES' });
         expect(Number(posts[0].referrer_reward)).toBe(7);
@@ -123,7 +125,8 @@ test.describe('Rewards contract: referral rewards in the Credit Ledger', () => {
         await expect(row).toHaveCount(1);
         await expect(row).toContainText('Rewarded');
 
-        await row.locator('button.rf-link').first().click(); // the Referrer bonus amount
+        await row.getByRole('button', { name: 'View' }).click();
+        await page.getByRole('dialog').locator('button.rf-link').first().click(); // the Referrer bonus amount
         await expect(page).toHaveURL(/\/growth\/credit-ledger\?/);
         const url = new URL(page.url());
         expect(url.searchParams.get('creditSource')).toBe('REFERRAL');

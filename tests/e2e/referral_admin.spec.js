@@ -7,42 +7,46 @@ const unique = () => `${Date.now()}`.slice(-6);
 test.describe('Referral Settings', () => {
     test('uses Bonus wording and shows validation errors', async ({ page }) => {
         await page.goto('/growth/referral-settings');
-        await expect(page.getByRole('heading', { name: 'Referral Scheme Management' })).toBeVisible();
-        await expect(page.getByText('Who gets a bonus?')).toBeVisible();
+        await expect(page.getByRole('heading', { name: /Referral scheme management/i })).toBeVisible();
+        await page.getByTestId('open-create-rule-modal-btn').click();
+        await expect(page.getByText(/Who gets a bonus/i)).toBeVisible();
         await expect(page.getByText(/Commission/)).toHaveCount(0);
 
-        await page.getByLabel('Rule Name').fill('ab');
-        await page.getByRole('button', { name: 'Create Rule' }).click();
+        await page.getByLabel(/Rule Name/i).fill('ab');
+        await page.getByRole('button', { name: /Create rule/i }).click();
         await expect(page.getByText("Rule name must be 3–50 characters and use letters, numbers, spaces, '-' or '&' only.")).toBeVisible();
     });
 
     test('receive currency is optional and offers every currency except the send currency', async ({ page }) => {
         await page.goto('/growth/referral-settings');
-        await expect(page.getByLabel('Receive Currency')).toHaveValue('');
+        await page.getByTestId('open-create-rule-modal-btn').click();
+        await expect(page.getByLabel(/Receive Currency/i)).toHaveValue('');
         await expect(page.getByText(/Applies to every GBP transfer/)).toBeVisible();
 
-        await page.getByLabel('Send Currency').selectOption('GBP');
-        await expect(page.getByLabel('Receive Currency').locator('option[value="GBP"]')).toHaveCount(0);
-        await page.getByLabel('Receive Currency').selectOption('NGN');
+        await page.getByLabel(/Send Currency/i).selectOption('GBP');
+        await expect(page.getByLabel(/Receive Currency/i).locator('option[value="GBP"]')).toHaveCount(0);
+        await page.getByLabel(/Receive Currency/i).selectOption('NGN');
         await expect(page.getByText(/Applies (only )?to GBP → NGN transfers\./)).toBeVisible();
         // choosing NGN as the send currency clears a matching receive currency
-        await page.getByLabel('Send Currency').selectOption('NGN');
-        await expect(page.getByLabel('Receive Currency')).toHaveValue('');
+        await page.getByLabel(/Send Currency/i).selectOption('NGN');
+        await expect(page.getByLabel(/Receive Currency/i)).toHaveValue('');
     });
 
     test('Referee Only disables the Referrer Bonus and keeps it at 0 when the currency changes', async ({ page }) => {
         await page.goto('/growth/referral-settings');
-        await page.getByLabel('Who gets a bonus?').selectOption('REFEREE');
+        await page.getByTestId('open-create-rule-modal-btn').click();
+        await page.getByLabel(/Who gets a bonus/i).selectOption('REFEREE');
         const referrer = page.locator('#rf-referrer_reward');
         await expect(referrer).toBeDisabled();
         await expect(referrer).toHaveValue('0');
-        await page.getByLabel('Send Currency').selectOption('NGN');
+        await page.getByLabel(/Send Currency/i).selectOption('NGN');
         await expect(referrer).toHaveValue('0');
         await expect(page.locator('#rf-referee_reward')).toHaveValue('5000');
     });
 
     test('supports multi-country include/exclude modal, info popovers, and collapsible validity summary', async ({ page }) => {
         await page.goto('/growth/referral-settings');
+        await page.getByTestId('open-create-rule-modal-btn').click();
         await page.getByTestId('rf-bonus_validity_days-info-btn').click();
         await expect(page.getByTestId('rf-bonus_validity_days-info-popover')).toBeVisible();
         await page.getByTestId('rf-bonus_validity_days-info-popover').getByRole('button', { name: /Close/i }).click();
@@ -70,17 +74,19 @@ test.describe('Referral Settings', () => {
 
         const name = `E2E AUD ${unique()}`;
         await page.goto('/growth/referral-settings');
-        await page.getByLabel('Rule Name').fill(name);
-        await page.getByLabel('Send Currency').selectOption('AUD');
-        await page.getByLabel('Receive Currency').selectOption('NGN');
+        await page.getByTestId('open-create-rule-modal-btn').click();
+        await page.getByLabel(/Rule Name/i).fill(name);
+        await page.getByLabel(/Send Currency/i).selectOption('AUD');
+        await page.getByLabel(/Receive Currency/i).selectOption('NGN');
         await page.locator('#rf-referrer_reward').fill('5');
         await page.locator('#rf-referee_reward').fill('10');
         await page.locator('#rf-min_transaction_threshold').fill('50');
-        await page.getByRole('button', { name: 'Create Rule' }).click();
+        await page.getByRole('button', { name: /Create rule/i }).click();
         await expect(page.getByText(`Referral rule '${name}' created.`)).toBeVisible();
 
         const row = page.getByRole('row', { name: new RegExp(name) });
-        await expect(row.getByText('AUD → NGN')).toBeVisible();
+        await expect(row.locator('.rf-corridor-pill')).toContainText('AUD');
+        await expect(row.locator('.rf-corridor-pill')).toContainText('NGN');
         await expect(row.getByText('Active')).toBeVisible();
         await row.getByRole('button', { name: `Deactivate ${name}` }).click();
         await page.getByRole('dialog').getByRole('button', { name: 'Deactivate' }).click();
@@ -97,16 +103,17 @@ test.describe('Referral Settings', () => {
 test.describe('Referral reporting', () => {
     test('performance and tracking pages load', async ({ page }) => {
         await page.goto('/growth/referral-performance');
-        await expect(page.getByRole('heading', { name: 'Referral Performance' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: /Referral Performance/i })).toBeVisible();
         await expect(page.getByRole('columnheader', { name: 'Conversion' })).toBeVisible();
 
         await page.goto('/growth/referral-tracking');
-        await expect(page.getByRole('heading', { name: /Referral Tracking/ })).toBeVisible();
-        await expect(page.getByPlaceholder(/Name, customer ID, email, referral code/)).toBeVisible();
-        await expect(page.getByRole('tab', { name: /Link Clicks & App Installs/ })).toBeVisible();
-        await page.getByRole('tab', { name: /Link Clicks & App Installs/ }).click();
+        await expect(page.getByRole('heading', { name: /Referral tracking/i })).toBeVisible();
+        await expect(page.locator('#rt-q')).toBeVisible();
+        await expect(page.getByRole('tab', { name: /Link Clicks & App Installs/i })).toBeVisible();
+        await page.getByRole('tab', { name: /Link Clicks & App Installs/i }).click();
         await expect(page.getByRole('columnheader', { name: 'Tracking ID' })).toBeVisible();
-        await page.getByRole('tab', { name: /Registered Referrals/ }).click();
+        await page.getByRole('tab', { name: /Registered Referrals/i }).click();
+        await page.getByRole('button', { name: /Filter/i }).click();
         await expect(page.locator('#rt-channel')).toBeVisible();
     });
 

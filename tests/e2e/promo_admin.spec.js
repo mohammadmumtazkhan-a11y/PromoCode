@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
-// Financials > Promo Codes (PROMO_MODULE_SPEC_MITO_ADMIN.md §5). Requires the API server on :5000.
-const API = 'http://localhost:5000';
+// Financials > Promo Codes (PROMO_MODULE_SPEC_MITO_ADMIN.md §5). Requires the API server on :5050.
+const API = process.env.API_URL || 'http://localhost:5050';
 const uid = () => `E2E${Date.now().toString(36).toUpperCase()}`.slice(0, 14);
 const inDays = (d) => new Date(Date.now() + d * 86400000).toISOString();
 
@@ -16,8 +16,8 @@ test.describe('Promo Codes admin', () => {
     test('AC-5.2.1 shows field errors and the preview line, then creates a code', async ({ page }) => {
         await page.goto('/financials/promocodes');
         await expect(page.getByRole('heading', { name: 'Promo Codes' })).toBeVisible();
-        await page.getByRole('button', { name: '+ Create New' }).click();
-        await page.getByRole('button', { name: 'Create Promo Code' }).click();
+        await page.getByRole('button', { name: 'Create new promo code' }).click();
+        await page.getByRole('button', { name: /create promo code/i }).click();
         await expect(page.getByText('Enter a promo code.')).toBeVisible();
         await expect(page.getByText('Choose an end date.')).toBeVisible();
         await expect(page.getByText('Please correct the highlighted fields.')).toBeVisible();
@@ -30,7 +30,7 @@ test.describe('Promo Codes admin', () => {
         await page.locator('#pf-start_date').fill(inDays(-1).slice(0, 16));
         await page.locator('#pf-end_date').fill(inDays(10).slice(0, 16));
         await expect(page.getByText(/Customers sending GBP → All receive currencies get 20% off the fee \(max £5\.00\)/)).toBeVisible();
-        await page.getByRole('button', { name: 'Create Promo Code' }).click();
+        await page.getByRole('button', { name: /create promo code/i }).click();
         await expect(page.getByText(`Promo code ${code} created.`)).toBeVisible();
         const row = page.getByTestId(`promo-row-${code}`);
         await expect(row).toContainText('20% (max £5.00)');
@@ -43,16 +43,25 @@ test.describe('Promo Codes admin', () => {
         await page.goto(`/financials/promocodes?q=${code}`);
         const row = page.getByTestId(`promo-row-${code}`);
         await expect(row.getByRole('button', { name: 'Edit' })).toBeDisabled(); // used codes keep Edit visible but disabled with tooltip
-        await row.getByRole('button', { name: 'Usage' }).click();
+        
+        // Open More menu -> Usage
+        await row.getByRole('button', { name: `More actions for ${code}` }).click();
+        await page.getByRole('menuitem', { name: 'Usage' }).click();
         await expect(page.getByText(`T-${code}`)).toBeVisible();
         await expect(page.getByText('Redeemed: 1 · Discount given: £2.00')).toBeVisible();
         await page.getByRole('button', { name: 'Close' }).first().click();
-        await row.getByRole('button', { name: 'Disable' }).click();
+
+        // Open More menu -> Disable
+        await row.getByRole('button', { name: `More actions for ${code}` }).click();
+        await page.getByRole('menuitem', { name: 'Disable' }).click();
         await expect(page.getByText(`Disable ${code}?`)).toBeVisible();
         await page.getByRole('button', { name: 'Disable' }).last().click();
         await expect(page.getByText(`${code} disabled.`)).toBeVisible();
         await expect(row).toContainText('Disabled');
-        await row.getByRole('button', { name: 'History' }).click();
+
+        // Open More menu -> History
+        await row.getByRole('button', { name: `More actions for ${code}` }).click();
+        await page.getByRole('menuitem', { name: 'History' }).click();
         await expect(page.getByText(`Change history – ${code}`)).toBeVisible();
         expect(id).toBeTruthy();
     });

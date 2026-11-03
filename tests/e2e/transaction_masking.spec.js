@@ -40,7 +40,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     await page.locator('#search-results tbody tr').first().click();
 
     // Verify Tabs are present
-    await expect(page.getByRole('button', { name: 'Details' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Trail' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'KYC' })).toBeVisible();
 
@@ -85,7 +85,7 @@ test.describe('Transaction PII Masking and Tabs', () => {
     const searchBtn = page.locator('#transaction-search-btn');
 
     // Search for the sender email
-    await page.locator('select').selectOption('email');
+    await page.locator('select').first().selectOption('email');
     await searchInput.fill('ogbeide.sender@example.com');
     // Change the dates to ensure the transaction is found
     await page.locator('#transaction-date-from').fill('2026-01-01');

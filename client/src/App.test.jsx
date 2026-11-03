@@ -7,8 +7,8 @@ describe('App Component', () => {
     it('renders the dashboard by default', () => {
         // App is rendered inside BrowserRouter in main.jsx, so the test needs a router too
         render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
-        // Expect "Mito Admin" from sidebar or "Welcome back" from header
-        expect(screen.getByText(/Mito Admin/i)).toBeInTheDocument();
-        expect(screen.getByText(/Account Overview/i)).toBeInTheDocument();
+        // Expect "Mito Logo" and dashboard balances
+        expect(screen.getAllByAltText(/Mito Logo/i)[0]).toBeInTheDocument();
+        expect(screen.getAllByText(/Balances/i).length).toBeGreaterThan(0);
     });
 });
