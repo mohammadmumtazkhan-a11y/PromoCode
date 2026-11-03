@@ -5,11 +5,22 @@ import {
 } from './lib/promoUtils';
 import { validatePromoForm, toPayload } from './lib/promoValidation';
 import { formFromPromo } from './lib/promoForm';
+import iconInfoGrey from '../../assets/figma-referrals/info-grey.svg';
 
-const Field = ({ id, label, required, rightLabel, error, hint, children }) => (
+const Field = ({ id, label, required, infoTip, rightLabel, error, hint, children }) => (
     <div className="rf-field">
         <label htmlFor={id}>
-            <span>{label}{required && <span className="rf-req">*</span>}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span>{label}{required && <span className="rf-req">*</span>}</span>
+                {infoTip && (
+                    <img
+                        src={iconInfoGrey}
+                        alt=""
+                        title={infoTip}
+                        style={{ width: 16, height: 16, cursor: 'help', flexShrink: 0 }}
+                    />
+                )}
+            </span>
             {rightLabel}
         </label>
         {children}
@@ -158,33 +169,32 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
         <div className="rf-dialog-backdrop" onClick={onClose}>
             <div className="rf-dialog promo-dialog" role="dialog" aria-modal="true" aria-labelledby="pf-title" onClick={(e) => e.stopPropagation()}>
                 <button type="button" className="rf-dialog-close" aria-label="Close" onClick={onClose}>×</button>
-                <h3 id="pf-title">{editing ? 'Edit Promo Code' : 'Create Promo Code'}</h3>
+                <h3 id="pf-title">{editing ? 'Edit promo code' : 'Create new promo code'}</h3>
                 {legacy && (
                     <div className="promo-banner">This is a legacy {TYPE_LABELS[promo.type].replace(' (legacy)', '')} code. It gives no fee discount. You can disable it or create a new code.</div>
                 )}
                 <form className="promo-form" onSubmit={submit} noValidate>
                     <fieldset disabled={ro} className="promo-fieldset">
                         {/* SECTION 1: Code & Discount */}
-                        <div className="promo-section-head">
-                            <span className="rf-section-label">Code &amp; Discount</span>
-                            <label className="rf-check promo-inline-check" style={{ color: '#9ca3af', cursor: 'not-allowed' }} title="Batch code generation is disabled for this release">
-                                <input type="checkbox" disabled checked={false} readOnly /> Generate a batch of codes (Disabled)
-                            </label>
-                        </div>
-
                         <div className="rf-grid rf-grid-3">
-                            <Field id="pf-code" label="Promo Code" required error={errors.code} hint={editing ? 'Editable until first use.' : '3–20 letters, numbers or hyphens.'}>
-                                <input {...aria('code')} className={`${cls('code')} promo-mono`} value={f.code} maxLength={20} placeholder="e.g. SAVE20"
+                            <Field id="pf-code" label="Promo code" required error={errors.code} hint={editing ? 'Editable until first use.' : '3-20 letter, numbers or hyphens'}>
+                                <input {...aria('code')} className={`${cls('code')} promo-mono`} value={f.code} maxLength={20} placeholder="e.g SAVE20"
                                     onChange={(e) => set({ code: e.target.value.toUpperCase() })} />
                             </Field>
-                            <Field id="pf-type" label={f.applies_to_flow === 'receive' ? 'Bonus Type' : 'Discount Type'} required error={errors.type}>
+                            <Field
+                                id="pf-type"
+                                label={f.applies_to_flow === 'receive' ? 'Bonus type' : 'Discount type'}
+                                required
+                                infoTip="Fixed amount, percentage of the fee/transfer, or full fee waiver."
+                                error={errors.type}
+                            >
                                 <select {...aria('type')} className={cls('type', 'rf-select')} value={legacy ? promo.type : f.type} onChange={(e) => set({ type: e.target.value, value: e.target.value === 'Waiver' ? '' : f.value })}>
                                     {legacy && <option value={promo.type}>{TYPE_LABELS[promo.type]}</option>}
                                     {(f.applies_to_flow === 'receive' ? RECEIVE_TYPE_OPTIONS : TYPE_OPTIONS).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                             </Field>
-                            <Field id="pf-description" label="Internal note (optional)" error={errors.description} hint="Only visible to admins.">
-                                <input {...aria('description')} className={cls('description')} value={f.description} maxLength={200} placeholder="e.g. Summer campaign"
+                            <Field id="pf-description" label="Description / Bonus note" error={errors.description} hint="Visible only to admins">
+                                <input {...aria('description')} className={cls('description')} value={f.description} maxLength={200} placeholder="e.g. Summer promo"
                                     onChange={(e) => set({ description: e.target.value })} />
                             </Field>
                         </div>
@@ -193,7 +203,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                             {f.type !== 'Waiver' && (
                                 <Field
                                     id="pf-value"
-                                    label={f.applies_to_flow === 'receive' ? (f.type === 'Percentage' ? 'Bonus Value (% of requested amount)' : `Bonus Value (${curTag})`) : (f.type === 'Percentage' ? 'Discount Value (%)' : `Discount Value (${curTag})`)}
+                                    label={f.applies_to_flow === 'receive' ? (f.type === 'Percentage' ? 'Bonus value (% of requested amount)' : `Bonus value (${curTag})`) : (f.type === 'Percentage' ? 'Discount value (%)' : `Discount value (${curTag})`)}
                                     required
                                     error={errors.value}
                                     hint={f.applies_to_flow === 'receive' ? 'Paid into the requester\'s bank on top of the amount they receive, with the payout.' : (f.type === 'FixedAmount' ? 'Must not exceed send amount. Customer gets this discount while Mito sends the full send amount (incurring loss).' : undefined)}
@@ -218,7 +228,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     </div>
                                 </Field>
                             )}
-                            <Field id="pf-min_threshold" label={f.applies_to_flow === 'receive' ? `Minimum request amount (${curTag}, optional)` : `Minimum send amount (${curTag}, optional)`} error={errors.min_threshold} hint={f.applies_to_flow === 'receive' ? 'The requested amount must be at least this.' : 'Customer must send at least this amount.'}>
+                            <Field id="pf-min_threshold" label={f.applies_to_flow === 'receive' ? `Min request amount (${curTag} optional)` : `Min send amount (${curTag} optional)`} error={errors.min_threshold} hint={f.applies_to_flow === 'receive' ? 'The requested amount must be at least this.' : 'Customer must send at least this amount.'}>
                                 <div className="rf-affix">
                                     {sym && <span className="rf-prefix">{sym}</span>}
                                     <input {...aria('min_threshold')} className={cls('min_threshold')} inputMode="decimal" placeholder="0.00 (no minimum)" value={f.min_threshold}
@@ -245,7 +255,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 </div>
                             ) : (
                             <div className="promo-subcard">
-                                <Field id="pf-currency" label="From (Send Currency)" required error={errors.currency} hint="Sets the currency for discounts, minimum send, and budget.">
+                                <Field id="pf-currency" label="From (Send currency)" required error={errors.currency} hint="Sets the currency for discounts, minimum send, and budget">
                                     <select
                                         {...aria('currency')}
                                         className={cls('currency', 'rf-select')}
@@ -256,8 +266,8 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     </select>
                                 </Field>
 
-                                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
-                                    <label className="rf-check" style={{ marginBottom: f.allCorridors ? 0 : 8, fontWeight: 600, fontSize: '0.84rem' }}>
+                                <div>
+                                    <label className="rf-check" style={{ marginBottom: f.allCorridors ? 0 : 8, fontSize: 13, color: '#605e5c' }}>
                                         <input
                                             type="checkbox"
                                             checked={f.allCorridors}
@@ -329,9 +339,10 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                                             style={{
                                                                 fontSize: '0.73rem',
                                                                 padding: '2px 7px',
-                                                                background: active ? '#eff6ff' : '#fff',
-                                                                borderColor: active ? '#3b82f6' : '#cbd5e1',
-                                                                color: active ? '#1d4ed8' : '#475569',
+                                                                height: 26,
+                                                                background: active ? '#fff0eb' : '#fff',
+                                                                borderColor: active ? '#fb4b14' : '#e1dfdd',
+                                                                color: active ? '#fb4b14' : '#605e5c',
                                                                 fontWeight: active ? 600 : 500,
                                                             }}
                                                             onClick={() => active ? removeCorridorPair(pair) : addReceiveCurrency(c.code)}
@@ -358,7 +369,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
                             {/* Right Subcard: Transaction Flow & Payment Methods */}
                             <div className="promo-subcard">
-                                <Field id="pf-applies_to_flow" label="Applies to transaction flow" error={errors.applies_to_flow} hint="One code is for one side only: Send Money deducts from what the sender pays; Receive Money adds a bonus for the receiver.">
+                                <Field id="pf-applies_to_flow" label="Applies to transaction flow" error={errors.applies_to_flow} hint="One code is for one side only. Send money deducts from what the sender pays; Receive money adds a bonus for the receiver">
                                     <div className="promo-flow-segmented" role="radiogroup" aria-label="Applies to transaction flow">
                                         {[
                                             ['send', 'Send Money'],
@@ -376,8 +387,8 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                 </Field>
 
                                 {f.applies_to_flow !== 'receive' && (
-                                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
-                                    <label className="rf-check" style={{ marginBottom: f.allMethods ? 0 : 4, fontWeight: 600, fontSize: '0.84rem' }}>
+                                <div>
+                                    <label className="rf-check" style={{ marginBottom: f.allMethods ? 0 : 4, fontSize: 13, color: '#605e5c' }}>
                                         <input type="checkbox" checked={f.allMethods} onChange={(e) => set({ allMethods: e.target.checked, payment_methods: e.target.checked ? [] : f.payment_methods })} /> All payment methods
                                     </label>
                                     {!f.allMethods && (
@@ -400,7 +411,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
                         {/* SECTION 3: Limits */}
                         <div className="promo-section-head">
-                            <span className="rf-section-label">Usage &amp; Budget Limits</span>
+                            <span className="rf-section-label">Usage &amp; budget limits</span>
                         </div>
                         <div className="rf-grid rf-grid-3">
                             <Field id="pf-usage_limit_global" label="Total uses (optional)" error={errors.usage_limit_global} hint="Maximum redemptions across all customers.">
@@ -435,7 +446,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
                         {/* SECTION 4: Dates */}
                         <div className="promo-section-head">
-                            <span className="rf-section-label">Validity Period</span>
+                            <span className="rf-section-label">Validity period</span>
                         </div>
                         <div className="rf-grid rf-grid-2">
                             <Field id="pf-start_date" label="Start date & time" required error={errors.start_date}>
@@ -464,8 +475,8 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
                                     <label key={v} className={`promo-audience-card${active ? ' active' : ''}`}>
                                         <input type="radio" name="pf-audience" value={v} checked={active} onChange={() => set({ audience: v })} />
                                         <div>
-                                            <div style={{ fontWeight: 600, fontSize: '0.84rem', color: '#1e293b' }}>{l}</div>
-                                            {h && <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: 1 }}>{h}</div>}
+                                            <div style={{ fontWeight: 700, fontSize: 16, lineHeight: '24px', color: '#605e5c' }}>{l}</div>
+                                            {h && <div style={{ fontSize: 13, lineHeight: '19.5px', color: '#605e5c', marginTop: 2 }}>{h}</div>}
                                         </div>
                                     </label>
                                 );
@@ -527,7 +538,7 @@ export default function PromoCodeForm({ promo = null, existingCodes = [], segmen
 
                     <div className="rf-dialog-actions">
                         <button type="button" className="btn-secondary" onClick={onClose}>{legacy ? 'Close' : 'Cancel'}</button>
-                        {!legacy && <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Promo Code'}</button>}
+                        {!legacy && <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Promo code'}</button>}
                     </div>
                 </form>
             </div>

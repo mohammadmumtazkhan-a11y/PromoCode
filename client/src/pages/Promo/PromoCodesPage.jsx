@@ -11,18 +11,56 @@ import {
 import '../Growth/referral.css';
 import './promo.css';
 
+// Figma SVG assets
+import iconAddCircle from '../../assets/figma-referrals/add-circle.svg';
+import iconEdit from '../../assets/figma-referrals/edit.svg';
+import iconDelete from '../../assets/figma-referrals/delete.svg';
+import iconEllipsesCircle from '../../assets/figma-referrals/ellipses-circle.svg';
+import statusGreen from '../../assets/figma-referrals/status-green.svg';
+import statusRed from '../../assets/figma-referrals/status-red.svg';
+import statusBlue from '../../assets/figma-referrals/status-blue.svg';
+import statusGrey from '../../assets/figma-referrals/status-grey.svg';
+
 const COLS = [
     { label: 'Code', tip: 'The text customers type, with your internal note underneath.' },
     { label: 'Discount', tip: 'How much the code takes off the fee, with its type underneath: fixed amount, percentage of the fee, or the whole fee waived.' },
-    { label: 'Where & who', tip: 'Corridors and payment methods the code works for, and which customers can use it.' },
+    { label: 'Audience', tip: 'Corridors and payment methods the code works for, and which customers can use it.' },
     { label: 'Cost incurred', num: true, tip: 'Discount given so far, out of the budget when one is set.' },
-    { label: 'Usage', tip: 'Uses so far out of the total limit, and the limit per customer.' },
-    { label: 'Period', tip: 'When the code starts and ends.' },
+    { label: 'Validity', tip: 'When the code starts and ends, days remaining, and usage out of total limits.' },
     { label: 'Status', tip: 'Active, Scheduled, Expired, Disabled, Fully redeemed or Budget spent.' },
-    { label: 'Actions', tip: 'Usage, Edit (only before first use), History and the Disable/Enable switch.' },
+    { label: 'Actions', tip: 'Edit (before first use), Delete (before first use), and More menu for History, Usage, and Disable/Enable.' },
 ];
 
-const Pill = ({ status, title }) => <span className={`rf-pill rf-pill-${STATUS_TONE[status] || 'grey'}`} title={title}>{status}</span>;
+const TONE_DOT = {
+    green: statusGreen,
+    red: statusRed,
+    blue: statusBlue,
+    amber: statusGrey,
+    grey: statusGrey,
+};
+
+const Pill = ({ status, title }) => {
+    const tone = STATUS_TONE[status] || 'grey';
+    const dotSrc = TONE_DOT[tone] || statusGrey;
+    return (
+        <span className={`rf-pill rf-pill-${tone}`} title={title}>
+            <img src={dotSrc} alt="" className="rf-status-dot-icon" aria-hidden="true" />
+            <span>{status}</span>
+        </span>
+    );
+};
+
+function computeDaysLeftBadge(p) {
+    if (!p.end_date) return null;
+    const now = Date.now();
+    const end = new Date(p.end_date).getTime();
+    if (Number.isNaN(end)) return null;
+    const diffDays = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
+    if (diffDays === 0 || p.display_status === 'Expired') {
+        return { text: '0 days left', cls: 'error' };
+    }
+    return { text: `${diffDays} day${diffDays === 1 ? '' : 's'} left`, cls: 'warn' };
+}
 
 export default function PromoCodesPage() {
     const [params, setParams] = useSearchParams();
@@ -36,6 +74,8 @@ export default function PromoCodesPage() {
     const [usage, setUsage] = useState(null); // { promo, rows, loading }
     const [history, setHistory] = useState(null); // { promo, rows }
     const [confirm, setConfirm] = useState(null);
+    const [openMenuId, setOpenMenuId] = useState(null);
+    const [kpiCurrency, setKpiCurrency] = useState('ALL');
     const { toasts, push, dismiss } = useToasts();
     const filters = { q: params.get('q') || '', status: params.get('status') || '', type: params.get('type') || '', currency: params.get('currency') || '' };
     const setFilter = (k, v) => { const next = new URLSearchParams(params); if (v) next.set(k, v); else next.delete(k); setParams(next, { replace: true }); };
@@ -55,6 +95,13 @@ export default function PromoCodesPage() {
         load();
         fetch('/api/promocodes/segments').then((r) => r.json()).then((d) => setSegments(d.data || [])).catch(() => {});
     }, [load]);
+
+    useEffect(() => {
+        if (!openMenuId) return undefined;
+        const closeMenu = () => setOpenMenuId(null);
+        window.addEventListener('click', closeMenu);
+        return () => window.removeEventListener('click', closeMenu);
+    }, [openMenuId]);
 
     const visible = useMemo(() => promos.filter((p) => (!filters.q || p.code.includes(filters.q.trim().toUpperCase()))
         && (!filters.status || p.display_status === filters.status) && (!filters.type || p.type === filters.type)
@@ -108,27 +155,56 @@ export default function PromoCodesPage() {
 
     const used = (p) => (p.usage_count || 0) > 0 || (p.redeemed_count || 0) > 0;
     const cost = summary && summary.cost_incurred ? Object.entries(summary.cost_incurred) : [];
+    const filteredCost = kpiCurrency === 'ALL' ? cost : cost.filter(([c]) => c === kpiCurrency);
     const usageTotals = usage ? usage.rows.filter((r) => r.status === 'Redeemed') : [];
 
     return (
         <div className="rf-page promo-page">
             <ToastStack toasts={toasts} onDismiss={dismiss} />
             <div className="promo-head">
-                <div>
+                <div className="promo-head-top">
                     <h2 className="rf-title">Promo Codes</h2>
                     <p className="rf-subtitle">Configure and monitor your promo codes and discounts.</p>
                 </div>
-                <div style={{ display: 'flex', gap: 12 }}>
-                    <button type="button" className="btn-secondary" disabled title="Batch code generation is disabled for this release" style={{ opacity: 0.55, cursor: 'not-allowed' }}>Bulk create</button>
-                    <button type="button" className="btn-primary" onClick={() => setForm({ promo: null })}>+ Create New</button>
+                <div className="promo-head-actions">
+                    <button type="button" className="btn-primary" onClick={() => setForm({ promo: null })}>
+                        <img src={iconAddCircle} alt="" aria-hidden="true" style={{ width: 20, height: 20 }} />
+                        <span>Create new promo code</span>
+                    </button>
+                    <button type="button" className="btn-secondary" disabled title="Batch code generation is disabled for this release" style={{ opacity: 0.55, cursor: 'not-allowed' }}>
+                        Bulk create
+                    </button>
                 </div>
             </div>
 
             <div className="rf-kpis">
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Active codes" tip="Codes customers can use right now." /></div><div className="rf-kpi-value">{summary ? summary.active_codes : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Uses (last 30 days)" tip="Transfers that used a code in the last 30 days (released uses not counted)." /></div><div className="rf-kpi-value">{summary ? summary.uses : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Cost incurred" tip="Total discount given, one figure per currency." /></div>
-                    <div className="rf-kpi-value promo-kpi-multi">{cost.length ? cost.map(([c, v]) => <div key={c}>{formatMoney(v, c)}</div>) : '—'}</div></div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Active codes" tip="Codes customers can use right now." /></div>
+                    <div className="rf-kpi-value">{summary ? summary.active_codes : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Used codes" tip="Transfers that used a code in the last 30 days (released uses not counted)." /></div>
+                    <div className="rf-kpi-value">{summary ? summary.uses : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="promo-kpi-head">
+                        <div className="rf-kpi-label"><ColHead label="Cost incurred" tip="Total discount given, one figure per currency." /></div>
+                        {cost.length > 1 && (
+                            <select
+                                aria-label="Cost incurred currency filter"
+                                className="promo-kpi-cur-select"
+                                value={kpiCurrency}
+                                onChange={(e) => setKpiCurrency(e.target.value)}
+                            >
+                                <option value="ALL">All</option>
+                                {cost.map(([c]) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        )}
+                    </div>
+                    <div className="rf-kpi-value promo-kpi-multi">
+                        {filteredCost.length ? filteredCost.map(([c, v]) => <div key={c}>{formatMoney(v, c)}</div>) : '—'}
+                    </div>
+                </div>
             </div>
 
             <div className="rf-card">
@@ -162,13 +238,18 @@ export default function PromoCodesPage() {
                                 const r = p.restrictions || {};
                                 const corridors = r.corridors || [];
                                 const isUsed = used(p);
+                                const daysBadge = computeDaysLeftBadge(p);
+                                const menuOpen = openMenuId === p.id;
                                 return (
                                     <tr key={p.id} data-testid={`promo-row-${p.code}`}>
                                         <td>
                                             <div className="rf-strong promo-mono">{p.code}{p.is_legacy && <span className="rf-pill rf-pill-amber promo-tag">Legacy</span>}</div>
                                             {p.description && <span className="rf-sub">{p.description}</span>}
                                         </td>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{valueLabel(p)}<span className="rf-sub">{TYPE_LABELS[p.type] || p.type}</span></td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
+                                            <div>{valueLabel(p)}</div>
+                                            <span className="rf-sub">{TYPE_LABELS[p.type] || p.type}</span>
+                                        </td>
                                         <td className="promo-where">
                                             {corridors.length ? (
                                                 <span>{corridors.slice(0, 2).map((c) => <span key={c} className="rf-chip promo-chip-sm">{formatCorridorChip(c)}</span>)}{corridors.length > 2 && <span className="rf-sub" style={{ display: 'inline' }}> +{corridors.length - 2}</span>}</span>
@@ -176,43 +257,101 @@ export default function PromoCodesPage() {
                                             <span className="rf-sub">{(r.payment_methods || []).length ? r.payment_methods.join(', ') : 'All payment methods'}</span>
                                             <span className="rf-sub">{whoLabel(p.user_segment, segments)}{r.applies_to_flow && r.applies_to_flow !== 'send' ? ` · ${r.applies_to_flow === 'receive' ? 'Receive Money' : 'Send & Receive'}` : ''}</span>
                                         </td>
-                                        <td className="rf-num">{formatMoney(p.total_discount_utilized || 0, p.currency)}{p.budget_limit !== -1 && p.budget_limit != null && <span className="rf-sub"> / {formatMoney(p.budget_limit, p.currency)}</span>}</td>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{p.usage_count}/{p.usage_limit_global === -1 ? '∞' : p.usage_limit_global}
-                                            <span className="rf-sub">({p.usage_limit_per_user === -1 ? '∞' : p.usage_limit_per_user}/user)</span></td>
-                                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{formatShortDate(p.start_date)} – {formatShortDate(p.end_date)}</td>
+                                        <td className="rf-num">
+                                            {formatMoney(p.total_discount_utilized || 0, p.currency)}
+                                            {p.budget_limit !== -1 && p.budget_limit != null && <span className="rf-sub"> / {formatMoney(p.budget_limit, p.currency)}</span>}
+                                        </td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>
+                                            <div className="promo-validity-cell">
+                                                <div style={{ fontSize: 13, color: '#605e5c' }}>
+                                                    {formatShortDate(p.start_date)} – {formatShortDate(p.end_date)}
+                                                </div>
+                                                <span className="rf-sub">
+                                                    Uses: {p.usage_count}/{p.usage_limit_global === -1 ? '∞' : p.usage_limit_global} ({p.usage_limit_per_user === -1 ? '∞' : p.usage_limit_per_user}/user)
+                                                </span>
+                                                {daysBadge && (
+                                                    <span className={`promo-days-pill ${daysBadge.cls}`}>{daysBadge.text}</span>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td><Pill status={p.display_status} title={p.display_status === 'Expired' ? 'The end date has passed, so customers cannot use this code.' : undefined} /></td>
                                         <td>
-                                            <div className="promo-actions">
-                                                <button type="button" className="rf-btn-sm" onClick={() => openUsage(p)}>Usage</button>
+                                            <div className="promo-actions-bar">
                                                 {p.is_legacy ? (
-                                                    <button type="button" className="rf-btn-sm" title="View this legacy code" onClick={() => setForm({ promo: p })}>View</button>
+                                                    <button
+                                                        type="button"
+                                                        className="promo-icon-btn"
+                                                        aria-label="View"
+                                                        title="View this legacy code"
+                                                        onClick={() => setForm({ promo: p })}
+                                                    >
+                                                        <img src={iconEdit} alt="View" />
+                                                    </button>
                                                 ) : (
-                                                    <span title="Only codes that have not been used can be edited" style={{ display: 'inline-block' }}>
+                                                    <span title="Only codes that have not been used can be edited" style={{ display: 'inline-flex' }}>
                                                         <button
                                                             type="button"
-                                                            className="rf-btn-sm"
+                                                            className="promo-icon-btn"
+                                                            aria-label="Edit"
                                                             disabled={isUsed}
                                                             title="Only codes that have not been used can be edited"
-                                                            style={isUsed ? { opacity: 0.5, cursor: 'not-allowed', width: '100%' } : { width: '100%' }}
                                                             onClick={() => !isUsed && setForm({ promo: p })}
                                                         >
-                                                            Edit
+                                                            <img src={iconEdit} alt="Edit" />
                                                         </button>
                                                     </span>
                                                 )}
-                                                <button type="button" className="rf-btn-sm" onClick={() => openHistory(p)}>History</button>
-                                                <button type="button" className={`rf-btn-sm${p.status === 'Disabled' ? '' : ' rf-warn'}`} onClick={() => toggle(p)}>{p.status === 'Disabled' ? 'Enable' : 'Disable'}</button>
                                                 <button
                                                     type="button"
-                                                    className="rf-btn-sm rf-warn"
+                                                    className="promo-icon-btn"
+                                                    aria-label="Delete"
                                                     disabled={isUsed}
                                                     title={isUsed ? 'Only codes that have not been used can be deleted' : 'Delete this unused code'}
-                                                    style={isUsed ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                                                     onClick={() => !isUsed && deleteCode(p)}
                                                     data-testid={`promo-delete-${p.code}`}
                                                 >
-                                                    Delete
+                                                    <img src={iconDelete} alt="Delete" />
                                                 </button>
+                                                <div className="promo-more-wrap" onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        className="promo-icon-btn"
+                                                        aria-label={`More actions for ${p.code}`}
+                                                        aria-expanded={menuOpen}
+                                                        title="More actions (History, Usage, Disable/Enable)"
+                                                        onClick={() => setOpenMenuId(menuOpen ? null : p.id)}
+                                                    >
+                                                        <img src={iconEllipsesCircle} alt="More" />
+                                                    </button>
+                                                    {menuOpen && (
+                                                        <div className="promo-more-menu" role="menu">
+                                                            <button
+                                                                type="button"
+                                                                role="menuitem"
+                                                                className="promo-more-item"
+                                                                onClick={() => { setOpenMenuId(null); openHistory(p); }}
+                                                            >
+                                                                History
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                role="menuitem"
+                                                                className="promo-more-item"
+                                                                onClick={() => { setOpenMenuId(null); openUsage(p); }}
+                                                            >
+                                                                Usage
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                role="menuitem"
+                                                                className={`promo-more-item${p.status === 'Disabled' ? '' : ' danger'}`}
+                                                                onClick={() => { setOpenMenuId(null); toggle(p); }}
+                                                            >
+                                                                {p.status === 'Disabled' ? 'Enable' : 'Disable'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>

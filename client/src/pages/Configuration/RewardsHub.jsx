@@ -14,7 +14,9 @@ import RateAuditLog from './RateAuditLog';
 // Figma SVG assets
 import iconCompliance from '../../assets/figma-referrals/compliance.svg';
 import iconExcellence from '../../assets/figma-referrals/excellence.svg';
-import iconUsers from '../../assets/figma-referrals/users-active.svg';
+import iconExcellenceActive from '../../assets/figma-referrals/excellence-active.svg';
+import iconUsersActive from '../../assets/figma-referrals/users-active.svg';
+import iconUsersInactive from '../../assets/figma-referrals/users-inactive.svg';
 import iconSettingsCard from '../../assets/figma-referrals/settings-card.svg';
 import iconInsights from '../../assets/figma-referrals/insights-analytics.svg';
 import iconInfoOrange from '../../assets/figma-referrals/info-orange.svg';
@@ -37,20 +39,23 @@ const CATEGORY_CARDS = [
     id: 'scheme-manager',
     label: 'Scheme manager',
     icon: iconCompliance,
+    activeIcon: iconCompliance,
     defaultTab: 'bonus',
     tabs: ['bonus'],
   },
   {
-    id: 'promotions',
-    label: 'Promotions',
+    id: 'promo-codes',
+    label: 'Promo Codes',
     icon: iconExcellence,
+    activeIcon: iconExcellenceActive,
     defaultTab: 'promos',
     tabs: ['promos'],
   },
   {
     id: 'referrals',
     label: 'Referrals',
-    icon: iconUsers,
+    icon: iconUsersInactive,
+    activeIcon: iconUsersActive,
     defaultTab: 'referral',
     tabs: ['referral', 'performance', 'tracking'],
   },
@@ -58,6 +63,7 @@ const CATEGORY_CARDS = [
     id: 'site-configurations',
     label: 'Site configurations',
     icon: iconSettingsCard,
+    activeIcon: iconSettingsCard,
     defaultTab: 'sites',
     tabs: ['sites'],
   },
@@ -65,9 +71,14 @@ const CATEGORY_CARDS = [
     id: 'tracking-group',
     label: 'Tracking',
     icon: iconInsights,
+    activeIcon: iconInsights,
     defaultTab: 'ledger',
     tabs: ['ledger', 'blocked', 'audit'],
   },
+];
+
+const PROMO_SUBTABS = [
+  { id: 'promos', label: 'Promo Codes', tip: 'Create fee-discount codes, set corridors and limits, then monitor redemptions. Codes apply at Send Money & Receive Money payment.' },
 ];
 
 const REFERRAL_SUBTABS = [
@@ -226,6 +237,7 @@ const RewardsHub = ({ defaultTab = 'sites' }) => {
     setSearchParams({ tab: tabId }, { replace: true });
   };
 
+  const isPromoGroup = activeTab === 'promos';
   const isReferralGroup = ['referral', 'performance', 'tracking'].includes(activeTab);
   const isTrackingGroup = ['ledger', 'blocked', 'audit'].includes(activeTab);
 
@@ -264,7 +276,7 @@ const RewardsHub = ({ defaultTab = 'sites' }) => {
                 className={`rf-hub-cat-card ${isCardActive ? 'active' : ''}`}
                 onClick={() => handleTabChange(card.defaultTab)}
               >
-                <img src={card.icon} alt="" aria-hidden="true" />
+                <img src={isCardActive ? (card.activeIcon || card.icon) : card.icon} alt="" aria-hidden="true" />
                 <span className="rf-hub-cat-card-label">{card.label}</span>
               </button>
             );
@@ -274,6 +286,29 @@ const RewardsHub = ({ defaultTab = 'sites' }) => {
 
       {/* Main White Card Container */}
       <div className="panel" style={{ padding: '16px 24px 28px', borderRadius: 8 }}>
+        {/* Sub-Tabs when Promo Codes is active */}
+        {isPromoGroup && (
+          <div className="rf-hub-subtabs" role="tablist" aria-label="Promo Codes sections">
+            {PROMO_SUBTABS.map((sub) => {
+              const isSubActive = activeTab === sub.id;
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSubActive}
+                  className={`rf-hub-subtab ${isSubActive ? 'active' : ''}`}
+                  onClick={() => handleTabChange(sub.id)}
+                  title={sub.tip}
+                >
+                  <span>{sub.label}</span>
+                  <img src={isSubActive ? iconInfoOrange : iconInfoGrey} alt="" aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Sub-Tabs when Referrals is active (Settings | Performances | Tracking) */}
         {isReferralGroup && (
           <div className="rf-hub-subtabs" role="tablist" aria-label="Referrals sections">
