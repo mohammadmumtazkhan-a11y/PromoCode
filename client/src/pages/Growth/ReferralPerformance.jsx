@@ -1,183 +1,417 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { corridorLabel, formatMoney, daysAgoIso, ukTodayIso, downloadUrl } from './referralUtils';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { corridorLabel, formatMoney, ukTodayIso, daysAgoIso, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
 import ColHead from './ColHead';
 import './referral.css';
 
-const RANGES = [
-    { key: '7', label: 'Last 7 days', from: () => daysAgoIso(7) },
-    { key: '30', label: 'Last 30 days', from: () => daysAgoIso(30) },
-    { key: 'month', label: 'This month', from: () => `${ukTodayIso().slice(0, 8)}01` },
-    { key: 'all', label: 'All time', from: () => '' },
+// Figma SVG assets
+import iconCalendar from '../../assets/figma-referrals/calendar.svg';
+import iconExport from '../../assets/figma-referrals/export.svg';
+import iconClose from '../../assets/figma-referrals/close.svg';
+
+const QUICK = [
+    { id: 'all', label: 'All', range: () => ({ from: '', to: '' }) },
+    { id: 'today', label: 'Today', range: () => ({ from: ukTodayIso(), to: ukTodayIso() }) },
+    { id: '7d', label: 'Past 7 days', range: () => ({ from: daysAgoIso(6), to: ukTodayIso() }) },
+    { id: '30d', label: 'Past 30 days', range: () => ({ from: daysAgoIso(29), to: ukTodayIso() }) },
 ];
 
-// Plain-English help for each column, shown when the admin hovers (or focuses) a column name
-const COLUMNS = [
-    { label: 'Rule', tip: 'The referral rule and its corridor (send currency → receive currency). Click a rule name to see its top referrers.' },
-    { label: 'Status', tip: 'Whether the rule is live right now: Active (taking new referrals), Inactive (switched off), Scheduled (starts on a future date), Ended (past its end date) or Archived.' },
-    { label: 'Link visits', num: true, tip: 'How many times referral links were opened for this rule\u2019s send currency in the selected dates. The same visitor counts once per 24 hours.' },
-    { label: 'Registrations', num: true, tip: 'New customers who signed up through a referral link under this rule in the selected dates, whatever happened next. Click the number to see them.' },
-    { label: 'Pending', num: true, tip: 'Referrals still in progress: the friend has joined but not yet made a qualifying transfer, or that transfer has not completed yet.' },
-    { label: 'Rewarded', num: true, tip: 'Referrals where the qualifying transfer completed and the bonus was credited.' },
-    { label: 'Expired / Not eligible', num: true, tip: 'Referrals that ended without a reward: the friend did not qualify in time, was not eligible (for example a self-referral), or the qualifying transfer was refunded.' },
-    { label: 'Conversion', num: true, tip: 'Rewarded referrals as a percentage of registrations. Shows \u2014 when there are no registrations yet.' },
-    { label: 'Bonus issued', num: true, tip: 'Total bonus credit given to referrers and new customers under this rule, in the rule\u2019s send currency.' },
-    { label: 'Used', num: true, tip: 'Bonus credit customers have spent on transfers, after taking back any returned for cancelled or refunded transfers.' },
-    { label: 'Unused', num: true, tip: 'Bonus credit still available to spend: issued, plus any returned, minus what was used or expired.' },
-    { label: 'Expired', num: true, tip: 'Bonus credit that went unused and lapsed, or was removed because the qualifying transfer was refunded.' },
-    { label: 'Referred volume', num: true, tip: 'Total amount sent in completed transfers by customers referred under this rule, in the rule\u2019s send currency.' },
-];
+const TIPS = {
+    rule: 'The referral rule name, with its corridor (send → receive currency) underneath. Click the name to view financial details and top referrers.',
+    status: 'Current state of the rule: Active, Inactive, Scheduled, Ended or Archived.',
+    visits: 'How many times customers opened a referral link under this rule. Click the number to inspect click-to-app/web traceability.',
+    registrations: 'New customers who created an account using a referral link or code under this rule. Click the number to view them in Referral Tracking.',
+    pending: 'Referrals where the new customer has registered (or started a transfer) and is still within the qualification window.',
+    rewarded: 'Referrals where the new customer completed a qualifying transfer and the bonus was credited.',
+    eligible: 'Referrals that were not eligible, expired, or reversed.',
+    conversion: 'Share of registered referrals that became Rewarded: Rewarded ÷ Registrations.',
+    issued: 'Total bonus credited to referrers and referees under this rule.',
+    used: 'Part of the issued bonus that customers have already spent on transfers.',
+    unused: 'Issued bonus still sitting in customer wallets and not yet expired.',
+    expired: 'Issued bonus that passed its validity date without being spent.',
+    volume: 'Total send amount of the qualifying first transfers made by referred customers.',
+};
 
-// US-1.8: how each referral rule is performing
 const ReferralPerformance = () => {
     const navigate = useNavigate();
-    const [range, setRange] = useState('30');
-    const [from, setFrom] = useState(daysAgoIso(30));
-    const [to, setTo] = useState(ukTodayIso());
+    const location = useLocation();
+    const isRewardsHub = location.pathname.startsWith('/configuration/rewards');
+    const [from, setFrom] = useState('');
+    const [to, setTo] = useState('');
+    const [quick, setQuick] = useState('all');
+    const [showCustomDates, setShowCustomDates] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
-    const [rows, setRows] = useState([]);
+    const [data, setData] = useState({ data: [], totals: null });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
-    const [top, setTop] = useState(null);
+    const [panelRule, setPanelRule] = useState(null);
+    const [top, setTop] = useState({ loading: false, rows: [] });
 
-    const query = () => new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(showArchived ? { include_archived: '1' } : {}) }).toString();
+    const invalidRange = from && to && from > to;
 
     const load = useCallback(async () => {
+        if (invalidRange) return;
         setLoading(true); setError(false);
         try {
-            const res = await fetch(`/api/referral/performance?${query()}`);
+            const qs = new URLSearchParams();
+            if (from) qs.set('from', from);
+            if (to) qs.set('to', to);
+            if (showArchived) qs.set('include_archived', '1');
+            const res = await fetch(`/api/referral/performance?${qs.toString()}`);
             if (!res.ok) throw new Error();
-            setRows((await res.json()).data || []);
+            setData(await res.json());
         } catch { setError(true); } finally { setLoading(false); }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [from, to, showArchived]);
+    }, [from, to, showArchived, invalidRange]);
 
     useEffect(() => { load(); }, [load]);
 
-    const pickRange = (r) => { setRange(r.key); setFrom(r.from()); setTo(r.key === 'all' ? '' : ukTodayIso()); };
-
-    const drill = (row, params) => {
-        const p = new URLSearchParams({ rule_id: String(row.rule_id), ...params, ...(from ? { from } : {}), ...(to ? { to } : {}) });
-        navigate(`/growth/referral-tracking?${p.toString()}`);
+    const applyQuick = (q) => {
+        const r = q.range();
+        setFrom(r.from);
+        setTo(r.to);
+        setQuick(q.id);
+        setShowCustomDates(false);
     };
 
-    const openTop = async (row) => {
-        setTop({ row, data: null });
+    const toggleCustom = () => {
+        setQuick('custom');
+        setShowCustomDates((v) => !v);
+    };
+
+    const openTop = async (rule) => {
+        setPanelRule(rule);
+        setTop({ loading: true, rows: [] });
         try {
-            const res = await fetch(`/api/referral/performance/${row.rule_id}/top-referrers`);
-            setTop({ row, data: (await res.json()).data || [] });
-        } catch { setTop({ row, data: [], error: true }); }
+            const qs = new URLSearchParams();
+            if (from) qs.set('from', from);
+            if (to) qs.set('to', to);
+            const res = await fetch(`/api/referral/performance/${rule.rule_id}/top-referrers?${qs.toString()}`);
+            const body = await res.json();
+            setTop({ loading: false, rows: body.data || [] });
+        } catch { setTop({ loading: false, rows: [] }); }
     };
 
-    // Totals per currency only — never add currencies together (AC-1.8.3)
-    const totals = rows.reduce((acc, r) => {
-        acc.registrations += r.registrations; acc.rewarded += r.rewarded; acc.visits += r.link_visits; acc.pending += r.pending;
-        return acc;
-    }, { registrations: 0, rewarded: 0, visits: 0, pending: 0 });
+    const openTracking = (ruleId, extra = {}) => {
+        const qs = new URLSearchParams({ rule_id: String(ruleId), ...extra });
+        if (from) qs.set('from', from);
+        if (to) qs.set('to', to);
+        if (isRewardsHub) {
+            qs.set('tab', 'tracking');
+            navigate(`/configuration/rewards?${qs.toString()}`);
+        } else {
+            navigate(`/growth/referral-tracking?${qs.toString()}`);
+        }
+    };
 
-    const Count = ({ row, value, params }) => (value > 0
-        ? <button type="button" className="rf-link" onClick={() => drill(row, params)}>{value}</button>
-        : <span>0</span>);
+    const openClickTraceability = () => {
+        const qs = new URLSearchParams({ view: 'clicks' });
+        if (from) qs.set('from', from);
+        if (to) qs.set('to', to);
+        if (isRewardsHub) {
+            qs.set('tab', 'tracking');
+            navigate(`/configuration/rewards?${qs.toString()}`);
+        } else {
+            navigate(`/growth/referral-tracking?${qs.toString()}`);
+        }
+    };
+
+    const exportCsv = () => {
+        const qs = new URLSearchParams();
+        if (from) qs.set('from', from);
+        if (to) qs.set('to', to);
+        if (showArchived) qs.set('include_archived', '1');
+        downloadUrl(`/api/referral/performance.csv?${qs.toString()}`);
+    };
+
+    const t = data.totals;
 
     return (
         <div className="rf-page">
-            <h2 className="rf-title">Referral Performance</h2>
+            <h2 className="rf-title">Referral performance</h2>
             <p className="rf-subtitle">See registrations from referral links, rewards and bonus usage for each referral rule.</p>
 
+            {/* 4 Figma KPI Cards (`5579:13367`) */}
             <div className="rf-kpis">
-                <div className="rf-kpi"><div className="rf-kpi-label">Link visits</div><div className="rf-kpi-value">{totals.visits}</div><div className="rf-kpi-sub">Unique visits in range</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Registrations</div><div className="rf-kpi-value">{totals.registrations}</div><div className="rf-kpi-sub">Joined via link or code</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Pending</div><div className="rf-kpi-value">{totals.pending}</div><div className="rf-kpi-sub">Waiting for a qualifying transfer</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label">Rewarded</div><div className="rf-kpi-value">{totals.rewarded}</div>
-                    <div className="rf-kpi-sub">{totals.registrations ? `${(Math.round((totals.rewarded / totals.registrations) * 1000) / 10).toFixed(1)}% conversion` : 'No registrations yet'}</div></div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Link visits" tip={TIPS.visits} showIcon /></div>
+                    <div className="rf-kpi-value">{t ? t.link_visits : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Registrations" tip={TIPS.registrations} showIcon /></div>
+                    <div className="rf-kpi-value">{t ? t.registrations : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Pending" tip={TIPS.pending} showIcon /></div>
+                    <div className="rf-kpi-value">{t ? t.pending : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Rewarded" tip={TIPS.rewarded} showIcon /></div>
+                    <div className="rf-kpi-value">{t ? t.rewarded : '—'}</div>
+                </div>
             </div>
 
+            {/* Performance Rules Section */}
             <div className="rf-card">
-                <div className="rf-card-head">
-                    <div><h3>Performance by rule</h3><p>Each rule is one corridor (send → receive currency). Amounts are shown in the rule&apos;s send currency.</p></div>
-                    <div className="rf-quick">
-                        {RANGES.map((r) => (
-                            <button key={r.key} type="button" className={`rf-btn-sm${range === r.key ? ' rf-active' : ''}`} onClick={() => pickRange(r)}>{r.label}</button>
-                        ))}
+                <div className="rf-card-head" style={{ paddingTop: 0 }}>
+                    <div>
+                        <h3>Performance rules</h3>
+                        <p>See registrations from referral links, rewards and bonus usage for each referral rule.</p>
                     </div>
                 </div>
-                <div className="rf-filters">
-                    <div className="rf-field"><label htmlFor="pf-from">Start date</label>
-                        <input id="pf-from" type="date" className="rf-input" value={from} max={to || undefined} onChange={(e) => { setRange('custom'); setFrom(e.target.value); }} /></div>
-                    <div className="rf-field"><label htmlFor="pf-to">End date</label>
-                        <input id="pf-to" type="date" className="rf-input" value={to} min={from || undefined} onChange={(e) => { setRange('custom'); setTo(e.target.value); }} /></div>
-                    <label className="rf-switch-row" style={{ paddingBottom: 8 }}>
-                        <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
-                    </label>
-                    <button type="button" className="btn-secondary" onClick={() => downloadUrl(`/api/referral/performance.csv?${query()}`)}>Export CSV</button>
+
+                {/* Figma Filter Chips + Right Controls */}
+                <div className="rf-perf-toolbar">
+                    <div className="rf-chip-group">
+                        {QUICK.map((q) => (
+                            <button
+                                key={q.id}
+                                type="button"
+                                className={`rf-filter-chip ${quick === q.id ? 'active' : ''}`}
+                                onClick={() => applyQuick(q)}
+                            >
+                                <span>{q.label}</span>
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            className={`rf-filter-chip ${quick === 'custom' ? 'active' : ''}`}
+                            onClick={toggleCustom}
+                        >
+                            <img src={iconCalendar} alt="" aria-hidden="true" />
+                            <span>Custom</span>
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                        <label className="rf-switch-row">
+                            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+                            <span>Show archived</span>
+                        </label>
+                        <button
+                            type="button"
+                            className="rf-figma-btn-secondary"
+                            onClick={exportCsv}
+                            disabled={invalidRange}
+                        >
+                            <img src={iconExport} alt="" style={{ width: 24, height: 24 }} aria-hidden="true" />
+                            <span>Export CSV</span>
+                        </button>
+                    </div>
                 </div>
+
+                {/* Inline Custom Date Inputs when Custom is toggled or dates are active */}
+                {(showCustomDates || quick === 'custom' || from || to) && (
+                    <div className="rf-filters" style={{ marginBottom: 16 }}>
+                        <div className="rf-field">
+                            <label htmlFor="rp-from">From</label>
+                            <input
+                                id="rp-from"
+                                type="date"
+                                className="rf-input"
+                                value={from}
+                                onChange={(e) => { setFrom(e.target.value); setQuick('custom'); }}
+                            />
+                        </div>
+                        <div className="rf-field">
+                            <label htmlFor="rp-to">To</label>
+                            <input
+                                id="rp-to"
+                                type="date"
+                                className={`rf-input${invalidRange ? ' rf-invalid' : ''}`}
+                                value={to}
+                                onChange={(e) => { setTo(e.target.value); setQuick('custom'); }}
+                            />
+                            {invalidRange && <div className="rf-error">End date must be on or after the start date.</div>}
+                        </div>
+                        {(from || to) && (
+                            <button
+                                type="button"
+                                className="rf-btn-sm"
+                                onClick={() => applyQuick(QUICK[0])}
+                            >
+                                Clear dates
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* 7-Column Figma Table (`5579:13367`) */}
                 <div className="rf-table-wrap">
                     <table className="rf-table">
                         <thead>
                             <tr>
-                                {COLUMNS.map((c) => (
-                                    <th key={c.label} className={c.num ? 'rf-num' : undefined}>
-                                        <ColHead label={c.label} tip={c.tip} />
-                                    </th>
-                                ))}
+                                <th><ColHead label="Rule" tip={TIPS.rule} /></th>
+                                <th><ColHead label="Link visits" tip={TIPS.visits} /></th>
+                                <th><ColHead label="Registrations" tip={TIPS.registrations} /></th>
+                                <th><ColHead label="Pending" tip={TIPS.pending} /></th>
+                                <th><ColHead label="Rewarded" tip={TIPS.rewarded} /></th>
+                                <th><ColHead label="Status" tip={TIPS.status} /></th>
+                                <th><ColHead label="Conversion" tip={TIPS.conversion} /></th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr><td colSpan="13" className="rf-empty">Loading performance...</td></tr>
+                                <tr><td colSpan="7" className="rf-empty">Loading performance...</td></tr>
                             ) : error ? (
-                                <tr><td colSpan="13" className="rf-empty">We couldn&apos;t load referral performance. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
-                            ) : rows.length === 0 ? (
-                                <tr><td colSpan="13" className="rf-empty">No referral rules yet. Create one in Referral Settings.</td></tr>
-                            ) : rows.map((r) => (
-                                <tr key={r.rule_id}>
-                                    <td>
-                                        <button type="button" className="rf-link" style={{ textDecoration: 'none', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => openTop(r)} title="View top referrers">{r.name}</button>
-                                        <span className="rf-sub">{corridorLabel(r.currency, r.receive_currency)}</span>
-                                    </td>
-                                    <td><StatusPill status={r.status} /></td>
-                                    <td className="rf-num">{r.link_visits}</td>
-                                    <td className="rf-num"><Count row={r} value={r.registrations} params={{}} /></td>
-                                    <td className="rf-num"><Count row={r} value={r.pending} params={{ status_group: 'pending' }} /></td>
-                                    <td className="rf-num"><Count row={r} value={r.rewarded} params={{ status: 'REWARDED' }} /></td>
-                                    <td className="rf-num"><Count row={r} value={r.closed} params={{ status_group: 'closed' }} /></td>
-                                    <td className="rf-num rf-strong">{r.conversion_rate === null ? '—' : `${r.conversion_rate.toFixed(1)}%`}</td>
-                                    <td className="rf-num">{formatMoney(r.bonus_issued, r.currency)}</td>
-                                    <td className="rf-num">{formatMoney(r.bonus_used, r.currency)}</td>
-                                    <td className="rf-num" style={{ color: '#047857', fontWeight: 600 }}>{formatMoney(r.bonus_unused, r.currency)}</td>
-                                    <td className="rf-num">{formatMoney(r.bonus_expired, r.currency)}</td>
-                                    <td className="rf-num">{formatMoney(r.referred_volume, r.currency)}</td>
-                                </tr>
-                            ))}
+                                <tr><td colSpan="7" className="rf-empty">We couldn&apos;t load performance figures. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
+                            ) : data.data.length === 0 ? (
+                                <tr><td colSpan="7" className="rf-empty">No referral rules found.</td></tr>
+                            ) : data.data.map((r) => {
+                                const c = r.base_currency;
+                                return (
+                                    <tr key={r.rule_id}>
+                                        <td>
+                                            <button type="button" className="rf-link" onClick={() => openTop(r)}>{r.name}</button>
+                                            <span className="rf-sub">{c} to {r.receive_currency || 'All'}</span>
+                                        </td>
+                                        <td className="rf-num">
+                                            {r.link_visits > 0
+                                                ? <button type="button" className="rf-link" title="Inspect click-to-app/web traceability" onClick={openClickTraceability}>{r.link_visits}</button>
+                                                : 0}
+                                        </td>
+                                        <td className="rf-num">
+                                            {r.registrations > 0 ? <button type="button" className="rf-link" onClick={() => openTracking(r.rule_id)}>{r.registrations}</button> : 0}
+                                        </td>
+                                        <td className="rf-num">
+                                            {r.pending > 0 ? <button type="button" className="rf-link" onClick={() => openTracking(r.rule_id, { status_group: 'pending' })}>{r.pending}</button> : 0}
+                                        </td>
+                                        <td className="rf-num">
+                                            {r.rewarded > 0 ? <button type="button" className="rf-link" onClick={() => openTracking(r.rule_id, { status: 'REWARDED' })}>{r.rewarded}</button> : 0}
+                                            {r.not_eligible > 0 && (
+                                                <span className="rf-sub">
+                                                    <button type="button" className="rf-link" style={{ fontSize: '10px' }} onClick={() => openTracking(r.rule_id, { status_group: 'not_eligible' })}>
+                                                        {r.not_eligible} not eligible
+                                                    </button>
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td><StatusPill status={r.status} /></td>
+                                        <td className="rf-num">{r.conversion_rate !== null ? `${r.conversion_rate.toFixed(1)}%` : '—'}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {top && (
-                <div className="rf-panel-backdrop" onClick={() => setTop(null)}>
-                    <aside className="rf-panel" role="dialog" aria-modal="true" aria-label="Top referrers" onClick={(e) => e.stopPropagation()}>
-                        <div className="rf-panel-head">
-                            <div><h3>Top referrers</h3><span className="rf-sub">{top.row.name} · {corridorLabel(top.row.currency, top.row.receive_currency)}</span></div>
-                            <button type="button" className="rf-dialog-close" style={{ position: 'static' }} aria-label="Close" onClick={() => setTop(null)}>×</button>
+            {/* Performance Rule Details Modal (Figma `5579:15897`) */}
+            {panelRule && (
+                <div className="rf-figma-modal-backdrop" onClick={() => setPanelRule(null)} data-testid="performance-rule-modal">
+                    <div
+                        className="rf-figma-modal"
+                        onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="rf-perf-modal-title"
+                    >
+                        <div className="rf-figma-modal-head">
+                            <div>
+                                <h3 id="rf-perf-modal-title">{panelRule.name}</h3>
+                                <p>Performance rule details ({corridorLabel(panelRule.base_currency, panelRule.receive_currency)})</p>
+                            </div>
+                            <button
+                                type="button"
+                                className="rf-figma-modal-close"
+                                aria-label="Close"
+                                onClick={() => setPanelRule(null)}
+                            >
+                                <img src={iconClose} alt="Close" />
+                            </button>
                         </div>
-                        {!top.data ? <p className="rf-muted">Loading...</p> : top.data.length === 0 ? <p className="rf-muted">No referrals for this rule yet.</p> : (
-                            <table className="rf-table">
-                                <thead><tr><th>Customer</th><th className="rf-num">Registrations</th><th className="rf-num">Rewarded</th><th className="rf-num">Bonus earned</th></tr></thead>
-                                <tbody>
-                                    {top.data.map((t) => (
-                                        <tr key={t.referrer_id}>
-                                            <td><span className="rf-strong">{`${t.first_name || ''} ${t.last_name || ''}`.trim() || 'Unknown customer'}</span><span className="rf-sub">ID: {t.referrer_id}</span></td>
-                                            <td className="rf-num">{t.registrations}</td>
-                                            <td className="rf-num">{t.rewarded}</td>
-                                            <td className="rf-num">{formatMoney(t.bonus_earned || 0, top.row.currency)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </aside>
+
+                        {/* 6 KPI Cards in Modal */}
+                        <div className="rf-kpis" style={{ marginBottom: 0 }}>
+                            <div className="rf-kpi" style={{ minWidth: 105, flex: '1 1 105px' }}>
+                                <div className="rf-kpi-label"><ColHead label="Link visits" tip={TIPS.visits} showIcon /></div>
+                                <div className="rf-kpi-value">{panelRule.link_visits ?? 0}</div>
+                            </div>
+                            <div className="rf-kpi" style={{ minWidth: 105, flex: '1 1 105px' }}>
+                                <div className="rf-kpi-label"><ColHead label="Registrations" tip={TIPS.registrations} showIcon /></div>
+                                <div className="rf-kpi-value">{panelRule.registrations ?? 0}</div>
+                            </div>
+                            <div className="rf-kpi" style={{ minWidth: 105, flex: '1 1 105px' }}>
+                                <div className="rf-kpi-label"><ColHead label="Pending" tip={TIPS.pending} showIcon /></div>
+                                <div className="rf-kpi-value">{panelRule.pending ?? 0}</div>
+                            </div>
+                            <div className="rf-kpi" style={{ minWidth: 105, flex: '1 1 105px' }}>
+                                <div className="rf-kpi-label"><ColHead label="Rewarded" tip={TIPS.rewarded} showIcon /></div>
+                                <div className="rf-kpi-value">{panelRule.rewarded ?? 0}</div>
+                            </div>
+                            <div className="rf-kpi" style={{ minWidth: 105, flex: '1 1 105px' }}>
+                                <div className="rf-kpi-label"><ColHead label="Eligible" tip={TIPS.eligible} showIcon /></div>
+                                <div className="rf-kpi-value">{panelRule.not_eligible ?? 0}</div>
+                            </div>
+                            <div className="rf-kpi" style={{ minWidth: 105, flex: '1 1 105px' }}>
+                                <div className="rf-kpi-label"><ColHead label="Conversion" tip={TIPS.conversion} showIcon /></div>
+                                <div className="rf-kpi-value">{panelRule.conversion_rate !== null ? `${panelRule.conversion_rate.toFixed(1)}%` : '—'}</div>
+                            </div>
+                        </div>
+
+                        {/* Financial Details Card */}
+                        <div className="rf-fin-details-box">
+                            <div className="rf-fin-details-title">Financial details</div>
+                            <div className="rf-fin-details-row">
+                                <span>Bonus issued:</span>
+                                <span>{formatMoney(panelRule.bonus_issued, panelRule.base_currency)}</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Bonus used:</span>
+                                <span>{formatMoney(panelRule.bonus_used, panelRule.base_currency)}</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Bonus unused:</span>
+                                <span>{formatMoney(panelRule.bonus_unused, panelRule.base_currency)}</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Bonus expired:</span>
+                                <span>{formatMoney(panelRule.bonus_expired, panelRule.base_currency)}</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Referred volume:</span>
+                                <span>{formatMoney(panelRule.referred_volume, panelRule.base_currency)}</span>
+                            </div>
+                        </div>
+
+                        {/* Top Referrers Section */}
+                        <div>
+                            <h4 style={{ fontFamily: "'Open Sans', sans-serif", fontSize: 24, lineHeight: '36px', fontWeight: 700, color: '#323130', margin: '0 0 12px' }}>
+                                Top referrers
+                            </h4>
+                            {top.loading ? (
+                                <div className="rf-empty">Loading top referrers...</div>
+                            ) : top.rows.length === 0 ? (
+                                <div className="rf-empty">No referrers for this rule in the selected period.</div>
+                            ) : (
+                                <div className="rf-table-wrap">
+                                    <table className="rf-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Customer</th>
+                                                <th>Registrations</th>
+                                                <th>Rewarded</th>
+                                                <th>Bonus earned</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {top.rows.map((u) => (
+                                                <tr key={u.referrer_id}>
+                                                    <td>
+                                                        <div className="rf-strong">{`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.referrer_id}</div>
+                                                        <span className="rf-sub">ID: {u.referrer_id}</span>
+                                                    </td>
+                                                    <td className="rf-num">{u.registrations}</td>
+                                                    <td className="rf-num">{u.rewarded}</td>
+                                                    <td className="rf-num">{formatMoney(u.bonus_earned, panelRule.base_currency)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

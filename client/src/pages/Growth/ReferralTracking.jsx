@@ -8,6 +8,10 @@ import { useToasts } from '../../components/useToasts';
 import { adminHeaders, getAdminToken, setAdminToken } from '../../lib/adminAuth';
 import './referral.css';
 
+// Figma SVG assets
+import iconFilter from '../../assets/figma-referrals/filter.svg';
+import iconClose from '../../assets/figma-referrals/close.svg';
+
 const STATUSES = ['REGISTERED', 'PENDING', 'REWARDED', 'EXPIRED', 'NOT_ELIGIBLE', 'REVERSED'];
 const PAGE_SIZE = 25;
 const COLUMNS = [
@@ -15,14 +19,9 @@ const COLUMNS = [
     { label: 'Referrer', tip: 'The existing customer who shared their link or code. Their reward is paid once their friend qualifies.' },
     { label: 'Referee', tip: 'The new customer who joined using the referrer\u2019s link or code. Their welcome bonus is paid when they qualify.' },
     { label: 'Rule', tip: 'The referral rule this referral falls under, with its corridor (send \u2192 receive currency) underneath. If a customer joins before choosing a destination, the rule is set at their first transfer.' },
-    { label: 'Registered', tip: 'The date the referee created their account through the referral link or code.' },
-    { label: 'Deadlines', tip: 'Last day to qualify. Referrer = end of the Qualification Window; Referee = end of the Bonus Validity period, counted from the registration date. Only one date is shown when both are the same.' },
-    { label: 'Qualifying transfer', tip: 'The first transfer by the referee that met the rule\u2019s conditions (corridor and minimum amount), with its amount underneath. Blank until the referee qualifies.' },
+    { label: 'Reg. Date', tip: 'The date the referee created their account through the referral link or code, with the platform channel badge underneath.' },
     { label: 'Status', tip: 'Where the referral stands: Registered (joined, no transfer yet), Pending (transfer in progress), Rewarded (bonus paid), Expired (deadline passed), Not eligible (failed a condition) or Reversed (bonus taken back).' },
-    { label: 'Referrer bonus', num: true, tip: 'Bonus credited to the referrer. Shows \u201cdue\u201d in grey when it will be paid once the referral qualifies. Click an amount to see it in the Credit Ledger.' },
-    { label: 'Referee bonus', num: true, tip: 'Welcome bonus credited to the referee. Shows \u201cdue\u201d in grey when it will be paid once they qualify. Click an amount to see it in the Credit Ledger.' },
-    { label: 'Rewarded', tip: 'The date the bonus was paid out. Blank if no bonus has been paid yet.' },
-    { label: 'Action', tip: 'Actions you can take on this referral. \u201cApprove reward\u201d appears on Not eligible referrals so an admin can pay the bonus anyway, with a recorded reason.' },
+    { label: 'Action', tip: 'View full referral details (deadlines, qualifying transfer, bonuses, ledger links) or approve a Not eligible reward with a recorded reason.' },
 ];
 
 const KPI_TIPS = {
@@ -30,7 +29,8 @@ const KPI_TIPS = {
     pending: 'Referrals still waiting for the referee to qualify: Registered (no transfer yet) or Pending (transfer in progress).',
     rewarded: 'Referrals where the bonus has been paid.',
     conversion: 'Share of referrals that were rewarded: Rewarded \u00f7 Total referrals.',
-    bonus: 'Total bonus credited to referrers and referees for these referrals, shown per currency.',
+    bonus: 'Total bonus credited to referrers and referees for these referrals.',
+    clicks: 'Tracked referral link clicks across Web, Android Google Play Store, and Apple App Store.',
 };
 
 const FILTER_TIPS = {
@@ -42,12 +42,13 @@ const FILTER_TIPS = {
     from: 'Only include referrals registered on or after this date.',
     to: 'Only include referrals registered on or before this date.',
 };
+
 const fullName = (f, l) => `${f || ''} ${l || ''}`.trim() || 'Unknown customer';
 
 const CHANNEL_BADGES = {
-    WEB: { label: 'Web', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-    ANDROID: { label: 'Android App', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
-    IOS: { label: 'iOS App', bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe' },
+    WEB: { label: 'Web', bg: '#cae4ff', color: '#605e5c', border: '#6db0f3' },
+    ANDROID: { label: 'Android', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+    IOS: { label: 'iOS', bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe' },
 };
 
 const METHOD_LABELS = {
@@ -78,6 +79,10 @@ const ReferralTracking = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [search, setSearch] = useState(params.get('q') || '');
+    const [showFilters, setShowFilters] = useState(
+        ['status', 'status_group', 'channel', 'currency', 'receive_currency', 'rule_id', 'from', 'to'].some((k) => Boolean(params.get(k)))
+    );
+    const [selectedReferral, setSelectedReferral] = useState(null);
     const [approve, setApprove] = useState(null);
     const [reason, setReason] = useState('');
     const [reasonError, setReasonError] = useState('');
@@ -152,25 +157,32 @@ const ReferralTracking = () => {
     const pages = Math.max(1, Math.ceil(((viewMode === 'clicks' ? clicksResult.total : result.total) || 0) / PAGE_SIZE));
     const hasFilters = ['status', 'status_group', 'channel', 'currency', 'receive_currency', 'rule_id', 'from', 'to', 'q'].some((k) => filters[k]);
 
+    // Compute Referrer vs Referee bonus totals from the current data rows (for Figma Total bonus issued card)
+    const referrerCreditedTotal = result.data.reduce((acc, r) => acc + Number(r.referrer_credited || 0), 0);
+    const refereeCreditedTotal = result.data.reduce((acc, r) => acc + Number(r.referee_credited || 0), 0);
+    const primaryCurrency = (s && Object.keys(s.bonus_issued || {})[0]) || (result.data[0]?.currency) || 'GBP';
+    const webClicksCount = cs ? Math.max(0, (cs.total_clicks || 0) - (cs.android_clicks || 0) - (cs.ios_clicks || 0)) : 0;
+
     return (
         <div className="rf-page">
             <ToastStack toasts={toasts} onDismiss={dismiss} />
+
+            {/* Figma Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
                 <div>
-                    <h2 className="rf-title">Referral Tracking &amp; Attribution</h2>
+                    <h2 className="rf-title">Referral tracking &amp; attribution</h2>
                     <p className="rf-subtitle">Every customer who joined through a referral link or code across Web, Android (Google Play Install Referrer), and iOS (App Store).</p>
                 </div>
-                <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: 4, borderRadius: 10, border: '1px solid #e2e8f0' }} role="tablist" aria-label="Tracking view mode">
+                <div style={{ display: 'inline-flex', background: '#f3f2f1', padding: 4, borderRadius: 8, border: '1px solid #e1dfdd' }} role="tablist" aria-label="Tracking view mode">
                     <button
                         type="button"
                         role="tab"
                         aria-selected={viewMode === 'referrals'}
                         onClick={() => setViewMode('referrals')}
                         style={{
-                            padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                            padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                             background: viewMode === 'referrals' ? '#ffffff' : 'transparent',
-                            color: viewMode === 'referrals' ? '#0f172a' : '#64748b',
-                            boxShadow: viewMode === 'referrals' ? '0 1px 2px rgba(15,23,42,0.08)' : 'none',
+                            color: viewMode === 'referrals' ? '#fb4b14' : '#605e5c',
                         }}
                     >
                         Registered Referrals ({result.total || 0})
@@ -181,10 +193,9 @@ const ReferralTracking = () => {
                         aria-selected={viewMode === 'clicks'}
                         onClick={() => setViewMode('clicks')}
                         style={{
-                            padding: '7px 14px', borderRadius: 7, border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                            padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                             background: viewMode === 'clicks' ? '#ffffff' : 'transparent',
-                            color: viewMode === 'clicks' ? '#0f172a' : '#64748b',
-                            boxShadow: viewMode === 'clicks' ? '0 1px 2px rgba(15,23,42,0.08)' : 'none',
+                            color: viewMode === 'clicks' ? '#fb4b14' : '#605e5c',
                         }}
                     >
                         Link Clicks &amp; App Installs ({clicksResult.total || 0})
@@ -192,67 +203,137 @@ const ReferralTracking = () => {
                 </div>
             </div>
 
+            {/* 6 Figma KPI Cards (`5579:16462`) */}
             <div className="rf-kpis">
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Total referrals" tip={KPI_TIPS.total} /></div><div className="rf-kpi-value">{s ? s.total : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Pending" tip={KPI_TIPS.pending} /></div><div className="rf-kpi-value">{s ? s.pending : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Rewarded" tip={KPI_TIPS.rewarded} /></div><div className="rf-kpi-value">{s ? s.rewarded : '—'}</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Conversion rate" tip={KPI_TIPS.conversion} /></div><div className="rf-kpi-value">{s && s.conversion_rate !== null ? `${s.conversion_rate.toFixed(1)}%` : '—'}</div><div className="rf-kpi-sub">Rewarded ÷ Registered</div></div>
-                <div className="rf-kpi"><div className="rf-kpi-label"><ColHead label="Total bonus issued" tip={KPI_TIPS.bonus} /></div>
-                    <div className="rf-kpi-value" style={{ fontSize: '1.15rem' }}>
-                        {s && Object.keys(s.bonus_issued).length ? Object.entries(s.bonus_issued).map(([c, v]) => <div key={c}>{formatMoney(v, c)}</div>) : '—'}
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Total referrals" tip={KPI_TIPS.total} showIcon /></div>
+                    <div className="rf-kpi-value">{s ? s.total : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Pending" tip={KPI_TIPS.pending} showIcon /></div>
+                    <div className="rf-kpi-value">{s ? s.pending : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Rewarded" tip={KPI_TIPS.rewarded} showIcon /></div>
+                    <div className="rf-kpi-value">{s ? s.rewarded : '—'}</div>
+                </div>
+                <div className="rf-kpi">
+                    <div className="rf-kpi-label"><ColHead label="Conversion rate" tip={KPI_TIPS.conversion} showIcon /></div>
+                    <div className="rf-kpi-value">{s && s.conversion_rate !== null ? `${s.conversion_rate.toFixed(1)}%` : '—'}</div>
+                    <div className="rf-kpi-sub">Rewarded ÷ Registered</div>
+                </div>
+
+                {/* Row 2 Wide KPI 1: Total bonus issued */}
+                <div className="rf-kpi rf-kpi-wide">
+                    <div className="rf-kpi-label"><ColHead label="Total bonus issued" tip={KPI_TIPS.bonus} showIcon /></div>
+                    <div className="rf-kpi-tag-row">
+                        <div className="rf-kpi-tag-item">
+                            <span className="rf-kpi-tag-pill">Referrer</span>
+                            <span className="rf-kpi-tag-val">{formatMoney(referrerCreditedTotal, primaryCurrency)}</span>
+                        </div>
+                        <div className="rf-kpi-tag-item">
+                            <span className="rf-kpi-tag-pill">Referee</span>
+                            <span className="rf-kpi-tag-val">{formatMoney(refereeCreditedTotal, primaryCurrency)}</span>
+                        </div>
+                    </div>
+                    {s && Object.keys(s.bonus_issued || {}).length > 0 && (
+                        <div className="rf-kpi-sub">
+                            {Object.entries(s.bonus_issued).map(([c, v]) => `${formatMoney(v, c)} (${c})`).join(' · ')}
+                        </div>
+                    )}
+                </div>
+
+                {/* Row 2 Wide KPI 2: Click traceability */}
+                <div className="rf-kpi rf-kpi-wide">
+                    <div className="rf-kpi-label"><ColHead label="Click traceability" tip={KPI_TIPS.clicks} showIcon /></div>
+                    <div className="rf-kpi-tag-row">
+                        <div className="rf-kpi-tag-item">
+                            <span className="rf-kpi-tag-pill">Web</span>
+                            <span className="rf-kpi-tag-val">{cs ? webClicksCount : 0}</span>
+                        </div>
+                        <div className="rf-kpi-tag-item">
+                            <span className="rf-kpi-tag-pill">Android</span>
+                            <span className="rf-kpi-tag-val">{cs ? cs.android_clicks : 0}</span>
+                        </div>
+                        <div className="rf-kpi-tag-item">
+                            <span className="rf-kpi-tag-pill">IOS</span>
+                            <span className="rf-kpi-tag-val">{cs ? cs.ios_clicks : 0}</span>
+                        </div>
                     </div>
                 </div>
-                {cs && (
-                    <div className="rf-kpi">
-                        <div className="rf-kpi-label"><ColHead label="Click → App / Web Traceability" tip="Tracked referral link clicks across Web, Android Google Play Store, and Apple App Store." /></div>
-                        <div className="rf-kpi-value" style={{ fontSize: '1.05rem' }}>{cs.total_clicks} clicks</div>
-                        <div className="rf-kpi-sub">Android: {cs.android_clicks} · iOS: {cs.ios_clicks} · Linked: {cs.linked_registrations}</div>
-                    </div>
-                )}
             </div>
 
+            {/* Registered Referrals Section Header + Search + Filter Button (Figma `5579:16462`) */}
             <div className="rf-card">
-                <div className="rf-filters">
-                    <div className="rf-field" style={{ flex: 2 }}><label htmlFor="rt-q"><ColHead label="Search" tip={FILTER_TIPS.search} /></label>
-                        <input id="rt-q" className="rf-input" placeholder="Name, customer ID, email, referral code or tracking ID (REF...)" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-                    <div className="rf-field"><label htmlFor="rt-status"><ColHead label="Status" tip={FILTER_TIPS.status} /></label>
-                        <select id="rt-status" className="rf-select" value={filters.status || (filters.status_group ? `group:${filters.status_group}` : '')}
-                            onChange={(e) => (e.target.value.startsWith('group:') ? setFilter('status_group', e.target.value.slice(6)) : setFilter('status', e.target.value))}>
-                            <option value="">All statuses</option>
-                            {filters.status_group && <option value={`group:${filters.status_group}`}>{filters.status_group === 'pending' ? 'Registered or Pending' : 'Expired / Not eligible / Reversed'}</option>}
-                            {STATUSES.map((st) => <option key={st} value={st}>{st.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</option>)}
-                        </select></div>
-                    <div className="rf-field"><label htmlFor="rt-channel"><ColHead label="Channel" tip="Filter referrals by the platform channel where the referee registered (Web, Android App, or iOS App)." /></label>
-                        <select id="rt-channel" className="rf-select" value={filters.channel} onChange={(e) => setFilter('channel', e.target.value)}>
-                            <option value="">All channels</option>
-                            <option value="WEB">Web</option>
-                            <option value="ANDROID">Android App</option>
-                            <option value="IOS">iOS App</option>
-                        </select></div>
-                    <div className="rf-field"><label htmlFor="rt-currency"><ColHead label="Send currency" tip={FILTER_TIPS.currency} /></label>
-                        <select id="rt-currency" className="rf-select" value={filters.currency} onChange={(e) => setFilter('currency', e.target.value)}>
-                            <option value="">All currencies</option>
-                            {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-                        </select></div>
-                    <div className="rf-field"><label htmlFor="rt-receive-currency"><ColHead label="Receive currency" tip={FILTER_TIPS.receive} /></label>
-                        <select id="rt-receive-currency" className="rf-select" value={filters.receive_currency} onChange={(e) => setFilter('receive_currency', e.target.value)}>
-                            <option value="">All currencies</option>
-                            {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-                        </select></div>
-                    <div className="rf-field"><label htmlFor="rt-rule"><ColHead label="Rule" tip={FILTER_TIPS.rule} /></label>
-                        <select id="rt-rule" className="rf-select" value={filters.rule_id} onChange={(e) => setFilter('rule_id', e.target.value)}>
-                            <option value="">All rules</option>
-                            {rules.map((r) => <option key={r.id} value={r.id}>{r.name} ({corridorLabel(r.base_currency, r.receive_currency)}){r.status === 'ARCHIVED' ? ' (archived)' : ''}</option>)}
-                        </select></div>
-                    <div className="rf-field"><label htmlFor="rt-from"><ColHead label="Registered from" tip={FILTER_TIPS.from} /></label>
-                        <input id="rt-from" type="date" className="rf-input" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} /></div>
-                    <div className="rf-field"><label htmlFor="rt-to"><ColHead label="Registered to" tip={FILTER_TIPS.to} /></label>
-                        <input id="rt-to" type="date" className="rf-input" value={filters.to} min={filters.from || undefined} onChange={(e) => setFilter('to', e.target.value)} /></div>
-                    <div className="rf-quick">
-                        {hasFilters && <button type="button" className="btn-secondary" onClick={() => { setSearch(''); setParams(new URLSearchParams()); }}>Clear</button>}
-                        <button type="button" className="btn-secondary" onClick={() => downloadUrl(`/api/referral/tracking.csv?${params.toString()}`)}>Export CSV</button>
+                <div className="rf-card-head" style={{ paddingTop: 0 }}>
+                    <div>
+                        <h3>{viewMode === 'clicks' ? 'Link clicks & app installs' : 'Registered referrals'}</h3>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <input
+                            id="rt-q"
+                            type="text"
+                            className="rf-input"
+                            style={{ width: 374, maxWidth: '100%' }}
+                            placeholder="Search sender name, recipient name, Ref no"
+                            aria-label="Search"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                        <button
+                            type="button"
+                            className="rf-figma-btn-secondary"
+                            onClick={() => setShowFilters((v) => !v)}
+                            aria-expanded={showFilters}
+                        >
+                            <span>Filter</span>
+                            <img src={iconFilter} alt="" style={{ width: 24, height: 24 }} aria-hidden="true" />
+                        </button>
                     </div>
                 </div>
+
+                {/* Expandable Filter Panel (preserves 100% of existing filter inputs & Export CSV) */}
+                {showFilters && (
+                    <div className="rf-filters">
+                        <div className="rf-field"><label htmlFor="rt-status"><ColHead label="Status" tip={FILTER_TIPS.status} /></label>
+                            <select id="rt-status" className="rf-select" value={filters.status || (filters.status_group ? `group:${filters.status_group}` : '')}
+                                onChange={(e) => (e.target.value.startsWith('group:') ? setFilter('status_group', e.target.value.slice(6)) : setFilter('status', e.target.value))}>
+                                <option value="">All statuses</option>
+                                {filters.status_group && <option value={`group:${filters.status_group}`}>{filters.status_group === 'pending' ? 'Registered or Pending' : 'Expired / Not eligible / Reversed'}</option>}
+                                {STATUSES.map((st) => <option key={st} value={st}>{st.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</option>)}
+                            </select></div>
+                        <div className="rf-field"><label htmlFor="rt-channel"><ColHead label="Channel" tip="Filter referrals by the platform channel where the referee registered (Web, Android App, or iOS App)." /></label>
+                            <select id="rt-channel" className="rf-select" value={filters.channel} onChange={(e) => setFilter('channel', e.target.value)}>
+                                <option value="">All channels</option>
+                                <option value="WEB">Web</option>
+                                <option value="ANDROID">Android App</option>
+                                <option value="IOS">iOS App</option>
+                            </select></div>
+                        <div className="rf-field"><label htmlFor="rt-currency"><ColHead label="Send currency" tip={FILTER_TIPS.currency} /></label>
+                            <select id="rt-currency" className="rf-select" value={filters.currency} onChange={(e) => setFilter('currency', e.target.value)}>
+                                <option value="">All currencies</option>
+                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+                            </select></div>
+                        <div className="rf-field"><label htmlFor="rt-receive-currency"><ColHead label="Receive currency" tip={FILTER_TIPS.receive} /></label>
+                            <select id="rt-receive-currency" className="rf-select" value={filters.receive_currency} onChange={(e) => setFilter('receive_currency', e.target.value)}>
+                                <option value="">All currencies</option>
+                                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+                            </select></div>
+                        <div className="rf-field"><label htmlFor="rt-rule"><ColHead label="Rule" tip={FILTER_TIPS.rule} /></label>
+                            <select id="rt-rule" className="rf-select" value={filters.rule_id} onChange={(e) => setFilter('rule_id', e.target.value)}>
+                                <option value="">All rules</option>
+                                {rules.map((r) => <option key={r.id} value={r.id}>{r.name} ({corridorLabel(r.base_currency, r.receive_currency)}){r.status === 'ARCHIVED' ? ' (archived)' : ''}</option>)}
+                            </select></div>
+                        <div className="rf-field"><label htmlFor="rt-from"><ColHead label="Registered from" tip={FILTER_TIPS.from} /></label>
+                            <input id="rt-from" type="date" className="rf-input" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} /></div>
+                        <div className="rf-field"><label htmlFor="rt-to"><ColHead label="Registered to" tip={FILTER_TIPS.to} /></label>
+                            <input id="rt-to" type="date" className="rf-input" value={filters.to} min={filters.from || undefined} onChange={(e) => setFilter('to', e.target.value)} /></div>
+                        <div className="rf-quick">
+                            {hasFilters && <button type="button" className="rf-figma-btn-secondary" onClick={() => { setSearch(''); setParams(new URLSearchParams()); }}>Clear</button>}
+                            <button type="button" className="rf-figma-btn-secondary" onClick={() => downloadUrl(`/api/referral/tracking.csv?${params.toString()}`)}>Export CSV</button>
+                        </div>
+                    </div>
+                )}
 
                 {viewMode === 'referrals' ? (
                     <div className="rf-table-wrap">
@@ -266,11 +347,11 @@ const ReferralTracking = () => {
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan="12" className="rf-empty">Loading referrals...</td></tr>
+                                    <tr><td colSpan="7" className="rf-empty">Loading referrals...</td></tr>
                                 ) : error ? (
-                                    <tr><td colSpan="12" className="rf-empty">We couldn&apos;t load referrals. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
+                                    <tr><td colSpan="7" className="rf-empty">We couldn&apos;t load referrals. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
                                 ) : result.data.length === 0 ? (
-                                    <tr><td colSpan="12" className="rf-empty">{hasFilters ? 'No referrals match your filters.' : 'No referrals yet.'}</td></tr>
+                                    <tr><td colSpan="7" className="rf-empty">{hasFilters ? 'No referrals match your filters.' : 'No referrals yet.'}</td></tr>
                                 ) : result.data.map((r) => {
                                     const chKey = String(r.registration_channel || 'WEB').toUpperCase();
                                     const chBadge = CHANNEL_BADGES[chKey] || CHANNEL_BADGES.WEB;
@@ -282,45 +363,55 @@ const ReferralTracking = () => {
                                                 <span className="rf-sub">Code {r.code}</span>
                                                 {r.tracking_id && <span className="rf-sub" style={{ fontFamily: 'monospace', color: '#0369a1' }} title="Click / Install Tracking ID">Track: {r.tracking_id}</span>}
                                             </td>
-                                            <td>{fullName(r.referrer_first_name, r.referrer_last_name)}<span className="rf-sub">ID: {r.referrer_id}</span></td>
-                                            <td>{fullName(r.referee_first_name, r.referee_last_name)}<span className="rf-sub">ID: {r.referee_id}</span></td>
-                                            <td>{r.rule_name || <span className="rf-muted">—</span>}<span className="rf-sub">{r.rule_id ? corridorLabel(r.currency, r.receive_currency, '?') : `${r.currency || '?'} · rule set at first transfer`}</span></td>
+                                            <td>
+                                                <div>{fullName(r.referrer_first_name, r.referrer_last_name)}</div>
+                                                <span className="rf-sub">ID: {r.referrer_id}</span>
+                                            </td>
+                                            <td>
+                                                <div>{fullName(r.referee_first_name, r.referee_last_name)}</div>
+                                                <span className="rf-sub">ID: {r.referee_id}</span>
+                                            </td>
+                                            <td>
+                                                <div>{r.rule_name || <span className="rf-muted">—</span>}</div>
+                                                <span className="rf-sub">{r.rule_id ? `${r.currency} to ${r.receive_currency || 'All'}` : `${r.currency || '?'} · rule set at first transfer`}</span>
+                                            </td>
                                             <td style={{ whiteSpace: 'nowrap' }}>
-                                                {formatUkDate(r.registered_at)}
+                                                <div>{formatUkDate(r.registered_at)}</div>
                                                 <div style={{ marginTop: 4 }}>
                                                     <span style={{
-                                                        display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 600,
+                                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                        padding: '2px 8px', borderRadius: 16, fontSize: '10px', lineHeight: '15px',
                                                         background: chBadge.bg, color: chBadge.color, border: `1px solid ${chBadge.border}`,
                                                     }} title={methodText}>
                                                         {chBadge.label}
                                                     </span>
                                                 </div>
                                             </td>
-                                            <td style={{ whiteSpace: 'nowrap' }}>
-                                                {r.referrer_deadline && r.qualification_deadline && r.referrer_deadline.slice(0, 10) !== r.qualification_deadline.slice(0, 10) ? (
-                                                    <>
-                                                        <div className="rf-bonus"><span>Referrer</span><b className="rf-dl">{formatUkDate(r.referrer_deadline)}</b></div>
-                                                        <div className="rf-bonus"><span>Referee</span><b className="rf-dl">{formatUkDate(r.qualification_deadline)}</b></div>
-                                                    </>
-                                                ) : formatUkDate(r.qualification_deadline || r.referrer_deadline)}
-                                            </td>
-                                            <td>{r.qualifying_transfer_id || <span className="rf-muted">—</span>}{r.qualifying_amount ? <span className="rf-sub">{formatMoney(r.qualifying_amount, r.currency)}</span> : null}</td>
                                             <td>
                                                 <StatusPill status={r.status} title={r.status_reason} />
                                                 {r.status_reason && <span className="rf-sub" style={{ maxWidth: 200 }}>{r.status_reason}</span>}
                                             </td>
-                                            <td className="rf-num">
-                                                {r.referrer_credited > 0
-                                                    ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referrer_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referrer_credited, r.currency)}</button>
-                                                    : <span className="rf-muted">{r.reward_type === 'REFEREE' || !r.rule_id ? '—' : formatMoney(r.referrer_reward, r.currency) + ' due'}</span>}
+                                            <td>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+                                                    <button
+                                                        type="button"
+                                                        className="rf-link"
+                                                        onClick={() => setSelectedReferral(r)}
+                                                    >
+                                                        View
+                                                    </button>
+                                                    {r.status === 'NOT_ELIGIBLE' && (
+                                                        <button
+                                                            type="button"
+                                                            className="rf-figma-btn-secondary"
+                                                            style={{ padding: '4px 10px', fontSize: 13 }}
+                                                            onClick={() => { setApprove(r); setReason(''); setReasonError(''); }}
+                                                        >
+                                                            Approve reward
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
-                                            <td className="rf-num">
-                                                {r.referee_credited > 0
-                                                    ? <button type="button" className="rf-link" onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(r.referee_id)}&creditSource=REFERRAL&referralId=${r.id}`)}>{formatMoney(r.referee_credited, r.currency)}</button>
-                                                    : <span className="rf-muted">{r.reward_type === 'REFERRER' || !r.rule_id ? '—' : formatMoney(r.referee_reward, r.currency) + ' due'}</span>}
-                                            </td>
-                                            <td style={{ whiteSpace: 'nowrap' }}>{formatUkDate(r.rewarded_at)}</td>
-                                            <td>{r.status === 'NOT_ELIGIBLE' && <button type="button" className="rf-btn-sm" onClick={() => { setApprove(r); setReason(''); setReasonError(''); }}>Approve reward</button>}</td>
                                         </tr>
                                     );
                                 })}
@@ -400,6 +491,7 @@ const ReferralTracking = () => {
                         </table>
                     </div>
                 )}
+
                 {(viewMode === 'clicks' ? clicksResult.total : result.total) > PAGE_SIZE && (
                     <div className="rf-pager">
                         <span>Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, result.total)} of {result.total}</span>
@@ -411,6 +503,145 @@ const ReferralTracking = () => {
                     </div>
                 )}
             </div>
+
+            {/* Referral Journey Details Modal (Opened by clicking `View` on any row) */}
+            {selectedReferral && (
+                <div className="rf-figma-modal-backdrop" onClick={() => setSelectedReferral(null)} data-testid="referral-journey-modal">
+                    <div
+                        className="rf-figma-modal"
+                        onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="rf-journey-modal-title"
+                    >
+                        <div className="rf-figma-modal-head">
+                            <div>
+                                <h3 id="rf-journey-modal-title">{selectedReferral.id}</h3>
+                                <p>Referral journey details • Code {selectedReferral.code}</p>
+                            </div>
+                            <button
+                                type="button"
+                                className="rf-figma-modal-close"
+                                aria-label="Close"
+                                onClick={() => setSelectedReferral(null)}
+                            >
+                                <img src={iconClose} alt="Close" />
+                            </button>
+                        </div>
+
+                        <div className="rf-fin-details-box">
+                            <div className="rf-fin-details-title">Participants &amp; Rule</div>
+                            <div className="rf-fin-details-row">
+                                <span>Referrer:</span>
+                                <span>{fullName(selectedReferral.referrer_first_name, selectedReferral.referrer_last_name)} (ID: {selectedReferral.referrer_id})</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Referee:</span>
+                                <span>{fullName(selectedReferral.referee_first_name, selectedReferral.referee_last_name)} (ID: {selectedReferral.referee_id})</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Rule &amp; Corridor:</span>
+                                <span>{selectedReferral.rule_name || '—'} ({corridorLabel(selectedReferral.currency, selectedReferral.receive_currency, 'All')})</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Registered Date &amp; Channel:</span>
+                                <span>{formatUkDate(selectedReferral.registered_at)} ({selectedReferral.registration_channel || 'WEB'})</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Status:</span>
+                                <StatusPill status={selectedReferral.status} title={selectedReferral.status_reason} />
+                            </div>
+                            {selectedReferral.status_reason && (
+                                <div className="rf-fin-details-row">
+                                    <span>Reason:</span>
+                                    <span>{selectedReferral.status_reason}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="rf-fin-details-box">
+                            <div className="rf-fin-details-title">Qualification &amp; Bonuses</div>
+                            <div className="rf-fin-details-row">
+                                <span>Qualification / Bonus Deadline:</span>
+                                <span>{formatUkDate(selectedReferral.qualification_deadline || selectedReferral.referrer_deadline)}</span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Qualifying Transfer:</span>
+                                <span>
+                                    {selectedReferral.qualifying_transfer_id
+                                        ? `${selectedReferral.qualifying_transfer_id} (${formatMoney(selectedReferral.qualifying_amount, selectedReferral.currency)})`
+                                        : '—'}
+                                </span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Referrer Bonus:</span>
+                                <span>
+                                    {selectedReferral.referrer_credited > 0 ? (
+                                        <button
+                                            type="button"
+                                            className="rf-link"
+                                            onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(selectedReferral.referrer_id)}&creditSource=REFERRAL&referralId=${selectedReferral.id}`)}
+                                        >
+                                            {formatMoney(selectedReferral.referrer_credited, selectedReferral.currency)} (View in Credit Ledger)
+                                        </button>
+                                    ) : (
+                                        selectedReferral.reward_type === 'REFEREE' || !selectedReferral.rule_id
+                                            ? '—'
+                                            : `${formatMoney(selectedReferral.referrer_reward, selectedReferral.currency)} due`
+                                    )}
+                                </span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Referee Bonus:</span>
+                                <span>
+                                    {selectedReferral.referee_credited > 0 ? (
+                                        <button
+                                            type="button"
+                                            className="rf-link"
+                                            onClick={() => navigate(`/growth/credit-ledger?customerId=${encodeURIComponent(selectedReferral.referee_id)}&creditSource=REFERRAL&referralId=${selectedReferral.id}`)}
+                                        >
+                                            {formatMoney(selectedReferral.referee_credited, selectedReferral.currency)} (View in Credit Ledger)
+                                        </button>
+                                    ) : (
+                                        selectedReferral.reward_type === 'REFERRER' || !selectedReferral.rule_id
+                                            ? '—'
+                                            : `${formatMoney(selectedReferral.referee_reward, selectedReferral.currency)} due`
+                                    )}
+                                </span>
+                            </div>
+                            <div className="rf-fin-details-row">
+                                <span>Rewarded Date:</span>
+                                <span>{formatUkDate(selectedReferral.rewarded_at)}</span>
+                            </div>
+                        </div>
+
+                        <div className="rf-actions">
+                            {selectedReferral.status === 'NOT_ELIGIBLE' && (
+                                <button
+                                    type="button"
+                                    className="rf-figma-btn-secondary"
+                                    onClick={() => {
+                                        const r = selectedReferral;
+                                        setSelectedReferral(null);
+                                        setApprove(r);
+                                        setReason('');
+                                        setReasonError('');
+                                    }}
+                                >
+                                    Approve reward
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                className="rf-figma-btn-primary"
+                                onClick={() => setSelectedReferral(null)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <ConfirmDialog
                 open={!!approve}

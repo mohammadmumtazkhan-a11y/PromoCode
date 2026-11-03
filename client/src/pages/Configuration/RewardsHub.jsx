@@ -11,6 +11,15 @@ import BonusBlocks from '../Bonus/BonusBlocks';
 import BonusSchemeManager from '../Bonus/BonusSchemeManager';
 import RateAuditLog from './RateAuditLog';
 
+// Figma SVG assets
+import iconCompliance from '../../assets/figma-referrals/compliance.svg';
+import iconExcellence from '../../assets/figma-referrals/excellence.svg';
+import iconUsers from '../../assets/figma-referrals/users-active.svg';
+import iconSettingsCard from '../../assets/figma-referrals/settings-card.svg';
+import iconInsights from '../../assets/figma-referrals/insights-analytics.svg';
+import iconInfoOrange from '../../assets/figma-referrals/info-orange.svg';
+import iconInfoGrey from '../../assets/figma-referrals/info-grey.svg';
+
 const REWARD_TABS = [
   { id: 'sites', label: 'Sites', tip: 'Master Admin: turn Reward$, Refer & Earn, bonus schemes, and promo codes on or off per Rhemito / widget site.' },
   { id: 'promos', label: 'Promo Codes', tip: 'Create fee-discount codes, set corridors and limits, then monitor redemptions. Codes apply at Send Money & Receive Money payment.' },
@@ -20,6 +29,56 @@ const REWARD_TABS = [
   { id: 'ledger', label: 'Bonus Wallet / Ledger', tip: 'Audit one bonus balance per customer and currency. Filter by source (referral / scheme / manual). Export CSV or post manual credit.' },
   { id: 'blocked', label: 'Blocked Customers', tip: 'Customers blocked from earning bonus after cancel/refund strikes. Lift a block only after Master Admin risk review.' },
   { id: 'bonus', label: 'Bonus Scheme Manager', tip: 'Manage rule-based bonus schemes (threshold, loyalty, request-money) and audience segments. Referral rewards stay under Referral Settings.' },
+  { id: 'audit', label: 'Rate Audit Log', tip: 'Read-only history of Reward$ rate / referral-rule changes. Export CSV for audit.' },
+];
+
+const CATEGORY_CARDS = [
+  {
+    id: 'scheme-manager',
+    label: 'Scheme manager',
+    icon: iconCompliance,
+    defaultTab: 'bonus',
+    tabs: ['bonus'],
+  },
+  {
+    id: 'promotions',
+    label: 'Promotions',
+    icon: iconExcellence,
+    defaultTab: 'promos',
+    tabs: ['promos'],
+  },
+  {
+    id: 'referrals',
+    label: 'Referrals',
+    icon: iconUsers,
+    defaultTab: 'referral',
+    tabs: ['referral', 'performance', 'tracking'],
+  },
+  {
+    id: 'site-configurations',
+    label: 'Site configurations',
+    icon: iconSettingsCard,
+    defaultTab: 'sites',
+    tabs: ['sites'],
+  },
+  {
+    id: 'tracking-group',
+    label: 'Tracking',
+    icon: iconInsights,
+    defaultTab: 'ledger',
+    tabs: ['ledger', 'blocked', 'audit'],
+  },
+];
+
+const REFERRAL_SUBTABS = [
+  { id: 'referral', label: 'Settings', tip: 'Manage Refer & Earn rules (send currency or corridor). Activate, deactivate, or archive rules here.' },
+  { id: 'performance', label: 'Performances', tip: 'Aggregate referral KPIs for the selected date range. Drill into Tracking for individual journeys.' },
+  { id: 'tracking', label: 'Tracking', tip: 'Search referral journeys. Approve Not eligible cases with a reason of at least 10 characters.' },
+];
+
+const TRACKING_GROUP_SUBTABS = [
+  { id: 'ledger', label: 'Bonus Wallet / Ledger', tip: 'Audit one bonus balance per customer and currency. Filter by source (referral / scheme / manual). Export CSV or post manual credit.' },
+  { id: 'blocked', label: 'Blocked Customers', tip: 'Customers blocked from earning bonus after cancel/refund strikes. Lift a block only after Master Admin risk review.' },
   { id: 'audit', label: 'Rate Audit Log', tip: 'Read-only history of Reward$ rate / referral-rule changes. Export CSV for audit.' },
 ];
 
@@ -38,7 +97,6 @@ const SitesTab = () => {
     setSites(prev => prev.map(s => {
       if (s.siteKey !== siteKey) return s;
       const updated = { ...s, [flag]: !s[flag] };
-      // If disabling master Reward$, disable sub-features too
       if (flag === 'enabled' && !updated.enabled) {
         updated.referral = false;
         updated.bonusScheme = false;
@@ -59,7 +117,7 @@ const SitesTab = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#323130' }}>
-            Rhemito & Affiliate Sites Configuration
+            Rhemito &amp; Affiliate Sites Configuration
           </h4>
           <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#605e5c' }}>
             Master Admin control: turn individual reward programmes on or off per site/domain.
@@ -168,66 +226,99 @@ const RewardsHub = ({ defaultTab = 'sites' }) => {
     setSearchParams({ tab: tabId }, { replace: true });
   };
 
+  const isReferralGroup = ['referral', 'performance', 'tracking'].includes(activeTab);
+  const isTrackingGroup = ['ledger', 'blocked', 'audit'].includes(activeTab);
+
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Breadcrumb matching staging-admin */}
-      <div className="staging-breadcrumb">
-        <Link to="/dashboard">Home</Link>
+      {/* Figma Page Title & Breadcrumb */}
+      <h1 className="rf-hub-header-title">Admin</h1>
+      <div className="rf-hub-breadcrumb">
+        <Link to="/configuration/rewards">Configurations</Link>
         <span>/</span>
-        <Link to="/configuration/rewards">Configuration</Link>
-        <span>/</span>
-        <span style={{ fontWeight: 600, color: '#323130' }}>Reward$</span>
+        <span>Rewards</span>
       </div>
 
-      {/* Main Panel Shell */}
-      <div className="panel" style={{ padding: '24px 28px' }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: '#323130' }}>
-              Reward$
-            </h2>
-            <span
-              title="Master Admin configuration for bonus programmes across Rhemito and MITO widget sites. Use the tabs below to manage each programme type."
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: '50%',
-                background: '#edebe9',
-                color: '#605e5c',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '11px',
-                fontWeight: 700,
-                cursor: 'help'
-              }}
-            >
-              i
-            </span>
-          </div>
-          <p style={{ margin: '8px 0 0 0', color: '#605e5c', fontSize: '0.9rem', lineHeight: 1.5, maxWidth: 900 }}>
-            Manage rule-based bonus schemes, Refer &amp; Earn, promo codes, and the customer bonus wallet. A Reward$ scheme credits bonus balance when a customer meets a rule you configure (large transfer, loyalty, or request-money paid). Hover the <strong>i</strong> icons for what each screen is and what to do.
-          </p>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 className="rf-hub-header-title">Rewards</h2>
+          <img
+            src={iconInfoGrey}
+            alt="Info"
+            title="Master Admin configuration for bonus programmes across Rhemito and MITO widget sites. Use the cards and tabs below to manage each programme type."
+            style={{ width: 24, height: 24, cursor: 'help' }}
+          />
         </div>
+        <p style={{ margin: '4px 0 0 0', color: '#605e5c', fontSize: '16px', lineHeight: '24px' }}>
+          Manage rule-based bonus schemes, Refer &amp; Earn, promo codes, and the customer bonus wallet. A Reward$ scheme credits bonus balance when a customer meets a rule you configure (large transfer, loyalty, or request-money paid). Hover the i icons for what each screen is and what to do.
+        </p>
 
-        {/* 9 Horizontal Tabs */}
-        <div className="reward-tabs-bar">
-          {REWARD_TABS.map(tab => {
-            const isActive = activeTab === tab.id;
+        {/* 5 Figma Category Cards */}
+        <div className="rf-hub-cards-row" role="navigation" aria-label="Rewards categories">
+          {CATEGORY_CARDS.map((card) => {
+            const isCardActive = card.tabs.includes(activeTab);
             return (
               <button
-                key={tab.id}
+                key={card.id}
                 type="button"
-                className={`reward-tab-btn ${isActive ? 'active' : ''}`}
-                onClick={() => handleTabChange(tab.id)}
-                title={tab.tip}
+                className={`rf-hub-cat-card ${isCardActive ? 'active' : ''}`}
+                onClick={() => handleTabChange(card.defaultTab)}
               >
-                <span>{tab.label}</span>
-                <span className="info-bubble">i</span>
+                <img src={card.icon} alt="" aria-hidden="true" />
+                <span className="rf-hub-cat-card-label">{card.label}</span>
               </button>
             );
           })}
         </div>
+      </div>
+
+      {/* Main White Card Container */}
+      <div className="panel" style={{ padding: '16px 24px 28px', borderRadius: 8 }}>
+        {/* Sub-Tabs when Referrals is active (Settings | Performances | Tracking) */}
+        {isReferralGroup && (
+          <div className="rf-hub-subtabs" role="tablist" aria-label="Referrals sections">
+            {REFERRAL_SUBTABS.map((sub) => {
+              const isSubActive = activeTab === sub.id;
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSubActive}
+                  className={`rf-hub-subtab ${isSubActive ? 'active' : ''}`}
+                  onClick={() => handleTabChange(sub.id)}
+                  title={sub.tip}
+                >
+                  <span>{sub.label}</span>
+                  <img src={isSubActive ? iconInfoOrange : iconInfoGrey} alt="" aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Sub-Tabs when Tracking Group is active (Bonus Wallet / Ledger | Blocked Customers | Rate Audit Log) */}
+        {isTrackingGroup && (
+          <div className="rf-hub-subtabs" role="tablist" aria-label="Tracking sections">
+            {TRACKING_GROUP_SUBTABS.map((sub) => {
+              const isSubActive = activeTab === sub.id;
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSubActive}
+                  className={`rf-hub-subtab ${isSubActive ? 'active' : ''}`}
+                  onClick={() => handleTabChange(sub.id)}
+                  title={sub.tip}
+                >
+                  <span>{sub.label}</span>
+                  <img src={isSubActive ? iconInfoOrange : iconInfoGrey} alt="" aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Tab Content Panes (100% functionality preserved) */}
         <div>
