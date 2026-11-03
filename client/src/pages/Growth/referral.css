@@ -654,6 +654,14 @@
 .rf-check { display: flex; gap: 8px; align-items: center; font-size: 16px; line-height: 24px; color: #605e5c; margin-bottom: 12px; cursor: pointer; }
 .rf-check input[type="checkbox"] { width: 20px; height: 20px; accent-color: #fb4b14; cursor: pointer; }
 
+/* Side panel (used by Promo Codes History drawer & shared views) */
+.rf-panel-backdrop { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.45); z-index: 3200; display: flex; justify-content: flex-end; animation: rf-in 0.18s ease-out; }
+.rf-panel { width: min(560px, 100%); height: 100%; background: #ffffff; box-shadow: -10px 0 30px rgba(0, 0, 0, 0.15); padding: 24px; overflow-y: auto; box-sizing: border-box; }
+.rf-panel-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #e1dfdd; }
+.rf-panel-head h3 { margin: 0; font-size: 20px; font-weight: 700; color: #323130; }
+.rf-table.rf-compact td, .rf-table.rf-compact th { padding-left: 10px; padding-right: 10px; }
+.rf-table.rf-compact td { padding-top: 10px; padding-bottom: 10px; }
+
 /* Figma Centered Modal (`New referral rule modal` 5579:12954 & `Performance rule modal` 5579:15897) */
 .rf-figma-modal-backdrop {
   position: fixed;
