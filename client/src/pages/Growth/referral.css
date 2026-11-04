@@ -149,6 +149,7 @@
 }
 
 .rf-label-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -159,7 +160,7 @@
   margin-bottom: 0;
 }
 
-.rf-info-wrap { position: relative; display: inline-flex; align-items: center; }
+.rf-info-wrap { position: static; display: inline-flex; align-items: center; }
 .rf-info-btn {
   width: 16px;
   height: 16px;
@@ -185,10 +186,11 @@
 .rf-info-popover {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  transform: none;
   z-index: 3200;
-  width: 310px;
+  width: min(360px, 100%);
+  box-sizing: border-box;
   background: #323130;
   color: #ffffff;
   border-radius: 8px;
