@@ -1380,7 +1380,7 @@ const ReferralSettings = () => {
                                 <Field id="rf-receive_currency" label="Receive currency" required error={err('receive_currency')}
                                     hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to every ${form.base_currency} transfer, unless a specific corridor has its own rule.`}>
                                     <select {...aria('receive_currency')} className={`rf-select${err('receive_currency') ? ' rf-invalid' : ''}`} value={form.receive_currency} onChange={(e) => set({ receive_currency: e.target.value })}>
-                                        <option value="">All currencies (All receive currencies from {form.base_currency})</option>
+                                        <option value="">All receive currencies</option>
                                         {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} - {c.currencyName} ({c.symbol.trim()})</option>)}
                                     </select>
                                     <CountryScopeBar
