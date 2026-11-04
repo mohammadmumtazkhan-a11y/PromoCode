@@ -1497,7 +1497,7 @@ const ReferralSettings = () => {
                                 )}
                             </div>
 
-                            <div className="rf-section-label">scheme duration</div>
+                            <div className="rf-section-label">Scheme duration</div>
                             <div className="rf-grid rf-grid-2">
                                 <Field id="rf-start_date" label="Start date & time" required error={err('start_date')} hint="Link Validity Start: Strictly governs when the referral link becomes active (blank = active immediately).">
                                     <input {...aria('start_date')} type="date" className={inputCls('start_date')} min={editingId ? undefined : ukTodayIso()}
