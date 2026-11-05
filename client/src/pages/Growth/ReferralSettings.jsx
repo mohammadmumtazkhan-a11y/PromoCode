@@ -992,7 +992,16 @@ const ReferralSettings = () => {
     };
 
     const openCreateModal = () => {
-        setForm(EMPTY_FORM);
+        const usedCurrencies = new Set(activeRules.map((r) => r.base_currency));
+        const availableCurrency = CURRENCIES.find((c) => !usedCurrencies.has(c.code))?.code || EMPTY_FORM.base_currency;
+        const d = CURRENCY_DEFAULTS[availableCurrency] || CURRENCY_DEFAULTS.GBP || {};
+        setForm({
+            ...EMPTY_FORM,
+            base_currency: availableCurrency,
+            min_transaction_threshold: String(d.floor ?? EMPTY_FORM.min_transaction_threshold),
+            referrer_reward: String(d.referrer ?? EMPTY_FORM.referrer_reward),
+            referee_reward: String(d.referee ?? EMPTY_FORM.referee_reward),
+        });
         setEditingId(null);
         setErrors({});
         setRuleModalOpen(true);
@@ -1032,7 +1041,7 @@ const ReferralSettings = () => {
             if (!res.ok) {
                 if (data.fields) setErrors(data.fields);
                 if (data.error === 'DUPLICATE_NAME') setErrors((e) => ({ ...e, name: data.message }));
-                if (data.error === 'DUPLICATE_CORRIDOR') setErrors((e) => ({ ...e, receive_currency: data.message }));
+                if (data.error === 'DUPLICATE_CURRENCY' || data.error === 'DUPLICATE_CORRIDOR') setErrors((e) => ({ ...e, base_currency: data.message }));
                 push(data.message || "We couldn't save the rule. Please try again.", 'error');
                 return;
             }
@@ -1177,7 +1186,7 @@ const ReferralSettings = () => {
             <div style={{ marginBottom: 24 }}>
                 <h2 className="rf-title">Referral scheme management</h2>
                 <p className="rf-subtitle" style={{ marginBottom: 16 }}>
-                    Create and manage referral reward programmes. Apply a rule to a whole send currency (e.g. GBP) or to one corridor (e.g. GBP → NGN). A corridor rule takes precedence.
+                    Create and manage referral reward programmes. Each send currency (e.g. GBP, EUR, USD) can have one referral rule, with optional receive currency and country scope filters.
                 </p>
                 <button
                     type="button"
@@ -1377,9 +1386,17 @@ const ReferralSettings = () => {
                                         <option value="REFEREE">Referee (New user) only</option>
                                     </select>
                                 </Field>
-                                <Field id="rf-base_currency" label="Send currency" required error={err('base_currency')}>
-                                    <select id="rf-base_currency" className="rf-select" value={form.base_currency} onChange={(e) => onCurrencyChange(e.target.value)}>
-                                        {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} - {c.currencyName} ({c.symbol.trim()})</option>)}
+                                <Field id="rf-base_currency" label="Send currency" required error={err('base_currency')}
+                                    hint="Only one referral rule can exist per send currency.">
+                                    <select {...aria('base_currency')} className={`rf-select${err('base_currency') ? ' rf-invalid' : ''}`} value={form.base_currency} onChange={(e) => onCurrencyChange(e.target.value)}>
+                                        {CURRENCIES.map((c) => {
+                                            const existing = activeRules.find((r) => r.id !== editingId && r.base_currency === c.code);
+                                            return (
+                                                <option key={c.code} value={c.code}>
+                                                    {c.code} - {c.currencyName} ({c.symbol.trim()}){existing ? ` (Rule: ${existing.name})` : ''}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
                                     <CountryScopeBar
                                         direction="send"
@@ -1390,7 +1407,7 @@ const ReferralSettings = () => {
                                     />
                                 </Field>
                                 <Field id="rf-receive_currency" label="Receive currency" required error={err('receive_currency')}
-                                    hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to every ${form.base_currency} transfer, unless a specific corridor has its own rule.`}>
+                                    hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to all ${form.base_currency} transfers across all receive currencies.`}>
                                     <select {...aria('receive_currency')} className={`rf-select${err('receive_currency') ? ' rf-invalid' : ''}`} value={form.receive_currency} onChange={(e) => set({ receive_currency: e.target.value })}>
                                         <option value="">All receive currencies</option>
                                         {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} - {c.currencyName} ({c.symbol.trim()})</option>)}

@@ -1244,11 +1244,11 @@ function registerReferralRoutes(app, db, hooks = {}) {
     }));
 
     const checkDuplicates = async (clean, id) => {
-        // One non-archived rule per corridor (send → receive)
-        const sameCorridor = await q.get(`SELECT id, name FROM referral_rules WHERE base_currency = ? AND receive_currency IS ? AND COALESCE(is_archived,0) = 0 ${id ? 'AND id != ?' : ''}`,
-            id ? [clean.base_currency, clean.receive_currency, id] : [clean.base_currency, clean.receive_currency]);
-        if (sameCorridor) {
-            throw Object.assign(new Error(`A referral rule for ${corridorLabel(clean.base_currency, clean.receive_currency)} already exists ('${sameCorridor.name}'). Edit or archive it first.`), { status: 409, code: 'DUPLICATE_CORRIDOR' });
+        // One non-archived rule per send currency (base_currency)
+        const sameCurrency = await q.get(`SELECT id, name FROM referral_rules WHERE base_currency = ? AND COALESCE(is_archived,0) = 0 ${id ? 'AND id != ?' : ''}`,
+            id ? [clean.base_currency, id] : [clean.base_currency]);
+        if (sameCurrency) {
+            throw Object.assign(new Error(`A referral rule for ${clean.base_currency} already exists ('${sameCurrency.name}'). Only one rule per send currency is allowed — edit or archive it first.`), { status: 409, code: 'DUPLICATE_CURRENCY' });
         }
         const sameName = await q.get(`SELECT id FROM referral_rules WHERE lower(name) = lower(?) AND COALESCE(is_archived,0) = 0 ${id ? 'AND id != ?' : ''}`,
             id ? [clean.name, id] : [clean.name]);

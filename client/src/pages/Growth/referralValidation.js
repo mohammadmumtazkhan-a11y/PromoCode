@@ -15,13 +15,12 @@ export function validateForm(f, { isNew, rules, editingId }) {
     if (!name) e.name = 'Enter a rule name.';
     else if (!NAME_RE.test(name)) e.name = "Rule name must be 3–50 characters and use letters, numbers, spaces, '-' or '&' only.";
     else if (rules.some((r) => r.id !== editingId && r.name.trim().toLowerCase() === name.toLowerCase())) e.name = 'A rule with this name already exists.';
-    // Receive currency is optional: blank = a send-currency-only rule that covers every destination
-    if (rcv && rcv === cur) e.receive_currency = 'Receive currency must be different from the send currency.';
-    else {
-        // One rule per corridor, and one send-currency-only rule per send currency
-        const dup = rules.find((r) => r.id !== editingId && r.base_currency === cur && (r.receive_currency || '') === (rcv || ''));
-        if (dup) e.receive_currency = `A referral rule for ${rcv ? `${cur} → ${rcv}` : `${cur} (all destinations)`} already exists ('${dup.name}'). Edit or archive it first.`;
+    // One non-archived rule per send currency; receive currency is an optional filter on that rule
+    const dup = rules.find((r) => r.id !== editingId && r.base_currency === cur);
+    if (dup) {
+        e.base_currency = `A referral rule for ${cur} already exists ('${dup.name}'). Only one rule per send currency is allowed — edit or archive it first.`;
     }
+    if (rcv && rcv === cur) e.receive_currency = 'Receive currency must be different from the send currency.';
     const amt = (k, max) => {
         const v = f[k];
         if (blank(v) || Number.isNaN(Number(v)) || Number(v) <= 0 || Number(v) > max || !dpOk(v, cur)) e[k] = amountMsg;
