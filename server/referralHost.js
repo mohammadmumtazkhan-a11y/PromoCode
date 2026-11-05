@@ -35,9 +35,11 @@ async function finishSetup(db) {
 
 async function ensureDemoSeparatePills(q) {
     try {
-        // Remove legacy seeded dummy bonus/referral rows for user_123 so "Your bonus credits" and referral stats only appear when genuinely earned
-        await q.run(`DELETE FROM credit_ledger WHERE user_id = 'user_123' AND (id IN ('cl_1', 'cl_ref_123') OR reference_id IN ('ref_001', 'ref_demo_123') OR source_credit_id IN ('cl_1', 'cl_ref_123') OR notes LIKE 'Big Sender mv%')`);
+        // Remove legacy seeded dummy bonus/referral/promo rows for user_123 so "Your bonus credits", savings, and referral stats only reflect actual activity
+        await q.run(`DELETE FROM credit_ledger WHERE user_id = 'user_123' AND (id IN ('cl_1', 'cl_ref_123', 'cl_demo_ref_123') OR reference_id IN ('ref_001', 'ref_demo_123') OR source_credit_id IN ('cl_1', 'cl_ref_123', 'cl_demo_ref_123') OR notes LIKE 'Big Sender mv%')`);
+        await q.run(`DELETE FROM credit_ledger WHERE user_id = 'user_123' AND source_credit_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM credit_ledger p WHERE p.id = credit_ledger.source_credit_id AND p.type = 'EARNED')`);
         await q.run(`DELETE FROM referrals WHERE id = 'ref_demo_123' AND referrer_id = 'user_123'`);
+        await q.run(`DELETE FROM promo_redemptions WHERE user_id = 'user_123' AND (id IN ('pr_1', 'pr_2') OR transaction_id IN ('txn_promo_1', 'txn_promo_2', 'TXN-202610-00001', 'TXN-202610-00002', 'bbca50b3-7195-4312-a7b3-8ff599a5dce5', 'da9ee751-9487-4d48-8872-9682a6cd60af'))`);
     } catch { /* ignore in isolated test dbs */ }
 }
 

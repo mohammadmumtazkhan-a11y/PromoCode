@@ -456,10 +456,13 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
         LEFT JOIN bonus_schemes sbs ON sbs.id = src.scheme_id
         WHERE cl.user_id = ? ${currencyFilter ? 'AND cl.currency = ?' : ''} ORDER BY cl.created_at DESC, cl.rowid DESC`, params);
 
+    const creditIds = new Set(credits.map((c) => c.id));
+    const validEntries = entries.filter((e) => e.type === 'EARNED' || !e.source_credit_id || creditIds.has(e.source_credit_id));
+
     const byCurrency = {};
     const bucket = (c) => (byCurrency[c] = byCurrency[c] || { currency: c, available: 0, earned: 0, used: 0, expired: 0, used_transfers: new Set(), referral_credits: 0, other_credits: 0, groups: {} });
     const group = (b, s) => (b.groups[s || 'MANUAL'] = b.groups[s || 'MANUAL'] || emptyGroup());
-    for (const e of entries) {
+    for (const e of validEntries) {
         const b = bucket(e.currency || 'GBP');
         const g = () => group(b, e.eff_source); // clawback rows are not a source (BS-85)
         if (e.type === 'EARNED' && e.reason_code !== 'BONUS_RETURNED') {
@@ -496,7 +499,7 @@ async function walletView(q, id, { currency, creditSource, promoRedemptions, blo
 
     const keep = (row) => !sourceFilter || row.credit_source === sourceFilter;
     const srcFields = (row) => ({ credit_source: row.credit_source || null, credit_source_detail: row.credit_source_detail || null, credit_source_label: row.source_label || null, source_label: row.source_label || null });
-    const historyRows = entries.map((e) => {
+    const historyRows = validEntries.map((e) => {
         const matchedCredit = credits.find((c) => c.id === e.id || c.id === e.source_credit_id);
         const view = { credit_source: e.eff_source || null, credit_source_detail: e.eff_detail || null, notes: e.label_notes, scheme_name: e.scheme_name, referrer_display_name: matchedCredit ? matchedCredit.referrer_display_name : null };
         const label = view.credit_source ? sourceLabel(view) : null;
