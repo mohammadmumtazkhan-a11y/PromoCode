@@ -49,6 +49,7 @@ function registerAdminRoutes(app, q, { ready, ports }) {
         return Object.fromEntries(rows.map((r) => [String(r.k), r.c]));
     };
 
+    const PROMO_STATUS_RANK = { Active: 0, Scheduled: 1, Disabled: 2, 'Fully redeemed': 3, 'Budget spent': 4, Expired: 5 };
     const listCodes = async (f = {}) => {
         const rows = await q.all('SELECT * FROM promo_codes ORDER BY start_date DESC');
         const counts = await redeemedCounts();
@@ -57,6 +58,7 @@ function registerAdminRoutes(app, q, { ready, ports }) {
         if (f.type) data = data.filter((p) => p.type === f.type);
         if (f.currency) data = data.filter((p) => (p.currency || '') === String(f.currency).toUpperCase());
         if (f.q) data = data.filter((p) => String(p.code).includes(String(f.q).trim().toUpperCase()));
+        data.sort((a, b) => (PROMO_STATUS_RANK[a.display_status] ?? 6) - (PROMO_STATUS_RANK[b.display_status] ?? 6));
         return data;
     };
 

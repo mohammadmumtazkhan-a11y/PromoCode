@@ -137,7 +137,7 @@ const RateManager = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rates.map((rate) => (
+                                    {[...rates].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active))).map((rate) => (
                                         <tr key={rate.id} style={{ borderBottom: '1px solid #f3f4f6', background: 'white' }}>
                                             <td style={{ padding: '12px 16px', color: '#2563eb', fontWeight: 500 }}>{rate.id}</td>
                                             <td style={{ padding: '12px 16px', fontWeight: 600, color: '#111827' }}>{rate.from} - {rate.to}</td>

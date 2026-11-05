@@ -103,9 +103,23 @@ export default function PromoCodesPage() {
         return () => window.removeEventListener('click', closeMenu);
     }, [openMenuId]);
 
-    const visible = useMemo(() => promos.filter((p) => (!filters.q || p.code.includes(filters.q.trim().toUpperCase()))
-        && (!filters.status || p.display_status === filters.status) && (!filters.type || p.type === filters.type)
-        && (!filters.currency || p.currency === filters.currency)), [promos, filters.q, filters.status, filters.type, filters.currency]);
+    const visible = useMemo(() => {
+        const rank = (p) => {
+            const st = p?.display_status || p?.status || '';
+            if (st === 'Active') return 0;
+            if (st === 'Scheduled') return 1;
+            if (st === 'Disabled') return 2;
+            if (st === 'Fully redeemed') return 3;
+            if (st === 'Budget spent') return 4;
+            if (st === 'Expired') return 5;
+            return 6;
+        };
+        return promos
+            .filter((p) => (!filters.q || p.code.includes(filters.q.trim().toUpperCase()))
+                && (!filters.status || p.display_status === filters.status) && (!filters.type || p.type === filters.type)
+                && (!filters.currency || p.currency === filters.currency))
+            .sort((a, b) => rank(a) - rank(b));
+    }, [promos, filters.q, filters.status, filters.type, filters.currency]);
 
     const setStatus = async (p, status) => {
         try {

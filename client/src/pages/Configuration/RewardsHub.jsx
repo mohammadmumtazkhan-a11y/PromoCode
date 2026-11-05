@@ -117,11 +117,13 @@ const SitesTab = () => {
     }));
   };
 
-  const filtered = sites.filter(s =>
-    s.displayName.toLowerCase().includes(search.toLowerCase()) ||
-    s.domain.toLowerCase().includes(search.toLowerCase()) ||
-    s.siteKey.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = sites
+    .filter(s =>
+      s.displayName.toLowerCase().includes(search.toLowerCase()) ||
+      s.domain.toLowerCase().includes(search.toLowerCase()) ||
+      s.siteKey.toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => Number(Boolean(b.enabled)) - Number(Boolean(a.enabled)));
 
   return (
     <div>

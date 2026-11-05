@@ -1195,7 +1195,8 @@ async function performance(q, { from, to, include_archived }) {
             bonus_unused: round2(issued + returned - used - expired), referred_volume: volume,
         });
     }
-    return rows;
+    const rank = { ACTIVE: 0, SCHEDULED: 1, INACTIVE: 2, ENDED: 3, ARCHIVED: 4 };
+    return rows.sort((a, b) => (rank[a.status] ?? 5) - (rank[b.status] ?? 5));
 }
 
 const csvEscape = (v) => {
@@ -1236,7 +1237,10 @@ function registerReferralRoutes(app, db, hooks = {}) {
     app.get('/api/referral-rules', wrap(async (req, res) => {
         const all = req.query.include_archived === '1' || req.query.include_archived === 'true';
         const rows = await q.all(`SELECT * FROM referral_rules ${all ? '' : 'WHERE COALESCE(is_archived,0) = 0'} ORDER BY created_at DESC, id DESC`);
-        res.json({ data: await Promise.all(rows.map(withMeta)) });
+        const metaRows = await Promise.all(rows.map(withMeta));
+        const rank = { ACTIVE: 0, SCHEDULED: 1, INACTIVE: 2, ENDED: 3, ARCHIVED: 4 };
+        metaRows.sort((a, b) => (rank[a.status] ?? 5) - (rank[b.status] ?? 5));
+        res.json({ data: metaRows });
     }));
 
     const checkDuplicates = async (clean, id) => {

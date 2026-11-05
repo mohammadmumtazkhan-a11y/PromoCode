@@ -191,10 +191,14 @@ const present = (s, stats = {}) => ({
 function registerSchemeRoutes(app, q, { wrap, ports }) {
     const actor = (req) => ports.adminIdentity(req).name;
 
+    const SCHEME_STATUS_RANK = { Active: 0, Scheduled: 1, Inactive: 2, Ended: 3, Archived: 4 };
     app.get('/api/bonus-schemes', wrap(async (req, res) => {
         const rows = await q.all('SELECT * FROM bonus_schemes ORDER BY created_at DESC, id DESC');
         const stats = await awardStats(q);
-        res.json({ data: rows.map((s) => present(s, stats)) });
+        const data = rows
+            .map((s) => present(s, stats))
+            .sort((a, b) => (SCHEME_STATUS_RANK[a.display_status] ?? 5) - (SCHEME_STATUS_RANK[b.display_status] ?? 5));
+        res.json({ data });
     }));
 
     app.post('/api/bonus-schemes', wrap(async (req, res) => {

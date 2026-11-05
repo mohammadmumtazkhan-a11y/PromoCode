@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { corridorLabel, formatMoney, ukTodayIso, daysAgoIso, downloadUrl } from './referralUtils';
 import StatusPill from './StatusPill';
@@ -125,6 +125,18 @@ const ReferralPerformance = () => {
     };
 
     const t = data.totals;
+    const sortedRows = useMemo(() => {
+        const rank = (r) => {
+            const st = String(r?.status || '').toUpperCase();
+            if (st === 'ACTIVE') return 0;
+            if (st === 'SCHEDULED') return 1;
+            if (st === 'INACTIVE') return 2;
+            if (st === 'ENDED') return 3;
+            if (st === 'ARCHIVED') return 4;
+            return 5;
+        };
+        return [...(data.data || [])].sort((a, b) => rank(a) - rank(b));
+    }, [data.data]);
 
     return (
         <div className="rf-page">
@@ -255,9 +267,9 @@ const ReferralPerformance = () => {
                                 <tr><td colSpan="7" className="rf-empty">Loading performance...</td></tr>
                             ) : error ? (
                                 <tr><td colSpan="7" className="rf-empty">We couldn&apos;t load performance figures. <button type="button" className="rf-link" onClick={load}>Retry</button></td></tr>
-                            ) : data.data.length === 0 ? (
+                            ) : sortedRows.length === 0 ? (
                                 <tr><td colSpan="7" className="rf-empty">No referral rules found.</td></tr>
-                            ) : data.data.map((r) => {
+                            ) : sortedRows.map((r) => {
                                 const c = r.base_currency;
                                 return (
                                     <tr key={r.rule_id}>

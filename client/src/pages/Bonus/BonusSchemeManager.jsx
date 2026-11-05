@@ -50,15 +50,28 @@ const BonusSchemeManager = () => {
         return () => { alive = false; };
     }, [push]);
 
-    const visible = useMemo(() => schemes.filter((s) => {
-        const shown = displayStatus(s);
-        if (filters.q && !s.name.toLowerCase().includes(filters.q.toLowerCase())) return false;
-        if (filters.type !== 'ALL' && s.bonus_type !== filters.type) return false;
-        if (filters.status === 'ALL' ? shown === 'Archived' : shown !== filters.status) return false;
-        if (filters.from && s.start_date < filters.from) return false;
-        if (filters.to && s.end_date > filters.to) return false;
-        return true;
-    }), [schemes, filters]);
+    const visible = useMemo(() => {
+        const rank = (s) => {
+            const shown = displayStatus(s);
+            if (shown === 'Active') return 0;
+            if (shown === 'Scheduled') return 1;
+            if (shown === 'Inactive') return 2;
+            if (shown === 'Ended') return 3;
+            if (shown === 'Archived') return 4;
+            return 5;
+        };
+        return schemes
+            .filter((s) => {
+                const shown = displayStatus(s);
+                if (filters.q && !s.name.toLowerCase().includes(filters.q.toLowerCase())) return false;
+                if (filters.type !== 'ALL' && s.bonus_type !== filters.type) return false;
+                if (filters.status === 'ALL' ? shown === 'Archived' : shown !== filters.status) return false;
+                if (filters.from && s.start_date < filters.from) return false;
+                if (filters.to && s.end_date > filters.to) return false;
+                return true;
+            })
+            .sort((a, b) => rank(a) - rank(b));
+    }, [schemes, filters]);
 
     const setStatus = async (scheme, status) => {
         const res = await fetch(`/api/bonus-schemes/${scheme.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });

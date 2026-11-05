@@ -31,7 +31,8 @@ const BonusBlocks = () => {
             const res = await fetch(`/api/bonus-blocks?status=${status}`);
             if (!res.ok) throw new Error();
             const d = await res.json();
-            setRows(d.data || []); setLimit(d.limit || 3);
+            const sorted = [...(d.data || [])].sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1));
+            setRows(sorted); setLimit(d.limit || 3);
         } catch { setError(true); } finally { setLoading(false); }
     }, [status]);
     useEffect(() => { load(); }, [load]);

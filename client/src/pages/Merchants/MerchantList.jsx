@@ -48,7 +48,7 @@ const MerchantList = () => {
                 <Link to="/merchants/onboard" className="btn-primary" style={{ textDecoration: 'none' }}>+ Add Merchant</Link>
             </div>
 
-            <Table columns={columns} data={data} />
+            <Table columns={columns} data={[...data].sort((a, b) => (a.status === 'Active' ? 0 : 1) - (b.status === 'Active' ? 0 : 1))} />
         </div>
     );
 };

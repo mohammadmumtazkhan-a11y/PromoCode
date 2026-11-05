@@ -69,9 +69,20 @@ const UserCreditLedger = () => {
             fetch('/api/promocodes').then((r) => r.json()).catch(() => ({})),
             fetch('/api/referral-rules?include_archived=1').then((r) => r.json()).catch(() => ({})),
         ]).then(([schemeData, promoData, ruleData]) => {
-            setBonusSchemes((schemeData.data || []).filter((s) => s.bonus_type !== 'REFERRAL_CREDIT'));
-            setPromoOptions((promoData.data || []).map((p) => ({ id: p.id, name: `Promo: ${p.code}` })));
-            setReferralRules(ruleData.data || []);
+            const schemeRank = (s) => (s?.display_status === 'Active' || s?.status === 'ACTIVE' ? 0 : 1);
+            const promoRank = (p) => (p?.display_status === 'Active' || p?.status === 'Active' ? 0 : 1);
+            const ruleRank = (r) => (r?.status === 'ACTIVE' ? 0 : r?.status === 'ARCHIVED' ? 2 : 1);
+            setBonusSchemes(
+                (schemeData.data || [])
+                    .filter((s) => s.bonus_type !== 'REFERRAL_CREDIT')
+                    .sort((a, b) => schemeRank(a) - schemeRank(b))
+            );
+            setPromoOptions(
+                [...(promoData.data || [])]
+                    .sort((a, b) => promoRank(a) - promoRank(b))
+                    .map((p) => ({ id: p.id, name: `Promo: ${p.code}` }))
+            );
+            setReferralRules([...(ruleData.data || [])].sort((a, b) => ruleRank(a) - ruleRank(b)));
         });
     }, []);
 

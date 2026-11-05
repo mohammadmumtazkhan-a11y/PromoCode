@@ -947,6 +947,18 @@ const ReferralSettings = () => {
     useEffect(() => { fetchRules(); }, [fetchRules]);
 
     const activeRules = useMemo(() => rules.filter((r) => r.status !== 'ARCHIVED'), [rules]);
+    const sortedRules = useMemo(() => {
+        const rank = (r) => {
+            const st = String(r?.status || (r?.is_archived ? 'ARCHIVED' : r?.is_enabled ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
+            if (st === 'ACTIVE') return 0;
+            if (st === 'SCHEDULED') return 1;
+            if (st === 'INACTIVE') return 2;
+            if (st === 'ENDED') return 3;
+            if (st === 'ARCHIVED') return 4;
+            return 5;
+        };
+        return [...rules].sort((a, b) => rank(a) - rank(b));
+    }, [rules]);
     const sym = currencySymbol(form.base_currency);
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -1098,7 +1110,7 @@ const ReferralSettings = () => {
     };
 
     const changeStatus = async (rule, enable, notify) => {
-        setRules((rs) => rs.map((r) => (r.id === rule.id ? { ...r, is_enabled: enable ? 1 : 0 } : r)));
+        setRules((rs) => rs.map((r) => (r.id === rule.id ? { ...r, is_enabled: enable ? 1 : 0, status: enable ? 'ACTIVE' : 'INACTIVE' } : r)));
         try {
             const res = await fetch(`/api/referral-rules/${rule.id}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_enabled: enable, notify }),
@@ -1208,9 +1220,9 @@ const ReferralSettings = () => {
                                 <tr><td colSpan="7" className="rf-empty">Loading referral rules...</td></tr>
                             ) : loadError ? (
                                 <tr><td colSpan="7" className="rf-empty">We couldn&apos;t load referral rules. Please refresh the page. <button type="button" className="rf-link" onClick={fetchRules}>Retry</button></td></tr>
-                            ) : rules.length === 0 ? (
+                            ) : sortedRules.length === 0 ? (
                                 <tr><td colSpan="7" className="rf-empty">No referral rules yet. Click &ldquo;Create new rule&rdquo; above to add your first rule.</td></tr>
-                            ) : rules.map((rule) => {
+                            ) : sortedRules.map((rule) => {
                                 const archived = rule.status === 'ARCHIVED';
                                 const c = rule.base_currency;
                                 const sendCountries = parseCountryList(rule.send_countries || rule.send_country);
