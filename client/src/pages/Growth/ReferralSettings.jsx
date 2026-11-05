@@ -963,7 +963,7 @@ const ReferralSettings = () => {
     const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
     const onTypeChange = (type) => {
-        const d = CURRENCY_DEFAULTS[form.base_currency] || {};
+        const d = CURRENCY_DEFAULTS[form.base_currency] || CURRENCY_DEFAULTS.GBP || { floor: 50, referrer: 5, referee: 10 };
         const patch = { reward_type: type };
         if (type === 'REFEREE') patch.referrer_reward = '0';
         if (type === 'REFERRER') patch.referee_reward = '0';
@@ -975,7 +975,7 @@ const ReferralSettings = () => {
     const onCurrencyChange = (currency) => {
         const patch = { base_currency: currency };
         if (currency === form.receive_currency) patch.receive_currency = '';
-        const d = CURRENCY_DEFAULTS[currency];
+        const d = CURRENCY_DEFAULTS[currency] || CURRENCY_DEFAULTS.GBP;
         if (d && !editingId) {
             patch.min_transaction_threshold = String(d.floor);
             patch.referrer_reward = form.reward_type === 'REFEREE' ? '0' : String(d.referrer);

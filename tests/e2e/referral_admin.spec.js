@@ -20,10 +20,9 @@ test.describe('Referral Settings', () => {
     test('receive currency is optional and offers every currency except the send currency', async ({ page }) => {
         await page.goto('/growth/referral-settings');
         await page.getByTestId('open-create-rule-modal-btn').click();
-        await expect(page.getByLabel(/Receive Currency/i)).toHaveValue('');
-        await expect(page.getByText(/Applies to every GBP transfer/)).toBeVisible();
-
         await page.getByLabel(/Send Currency/i).selectOption('GBP');
+        await expect(page.getByLabel(/Receive Currency/i)).toHaveValue('');
+        await expect(page.getByText(/Applies to all GBP transfers across all receive currencies./)).toBeVisible();
         await expect(page.getByLabel(/Receive Currency/i).locator('option[value="GBP"]')).toHaveCount(0);
         await page.getByLabel(/Receive Currency/i).selectOption('NGN');
         await expect(page.getByText(/Applies (only )?to GBP → NGN transfers\./)).toBeVisible();
@@ -68,9 +67,9 @@ test.describe('Referral Settings', () => {
     });
 
     test('creates, deactivates and archives a rule', async ({ page, request }) => {
-        // Free up the AUD → NGN corridor so the test can create a rule for it
+        // Free up the AUD send currency so the test can create a rule for it
         const existing = await (await request.get(`${API}/api/referral-rules`)).json();
-        for (const r of existing.data.filter((x) => x.base_currency === 'AUD' && x.receive_currency === 'NGN')) await request.post(`${API}/api/referral-rules/${r.id}/archive`);
+        for (const r of existing.data.filter((x) => x.base_currency === 'AUD')) await request.post(`${API}/api/referral-rules/${r.id}/archive`);
 
         const name = `E2E AUD ${unique()}`;
         await page.goto('/growth/referral-settings');

@@ -61,7 +61,10 @@ test.describe('Rewards contract: Referral Settings form', () => {
     test('RC-UI-02 the form refuses a rule whose paid side has no amount, and sends 0 for the unpaid side', async ({ page }) => {
         // WHY: an inconsistent rule would promise a reward nobody can fund, or fund the party the rule says should not be paid.
         const posts = [];
-        await page.route('**/api/referral-rules', async (route) => {
+        await page.route('**/api/referral-rules*', async (route) => {
+            if (route.request().method() === 'GET') {
+                return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+            }
             if (route.request().method() !== 'POST') return route.continue();
             posts.push(route.request().postDataJSON());
             // Answer as the server would for a valid rule, so no rule is really created in the shared database
@@ -101,7 +104,7 @@ test.describe('Rewards contract: Referral Settings form', () => {
 async function rewardedReferral(request) {
     const u = unique();
     const existing = await (await request.get(`${API}/api/referral-rules`)).json();
-    for (const r of existing.data.filter((x) => x.base_currency === 'ZAR' && x.receive_currency === 'GHS')) await request.post(`${API}/api/referral-rules/${r.id}/archive`);
+    for (const r of existing.data.filter((x) => x.base_currency === 'ZAR')) await request.post(`${API}/api/referral-rules/${r.id}/archive`);
     const rule = await request.post(`${API}/api/referral-rules`, { data: { name: `E2E Contract ${u}`, reward_type: 'BOTH', base_currency: 'ZAR', receive_currency: 'GHS', referrer_reward: 5, referee_reward: 10, min_transaction_threshold: 50, notify: false } });
     expect(rule.status()).toBe(201);
     const referrerId = `e2e_ref_${u}`;

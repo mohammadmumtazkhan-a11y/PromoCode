@@ -30,16 +30,11 @@ describe('validateForm (US-1.1)', () => {
         expect(validateForm({ ...base, receive_currency: 'GBP' }, ctx).receive_currency).toBe('Receive currency must be different from the send currency.');
     });
 
-    it('allows several rules per send currency but only one per corridor', () => {
+    it('allows only one non-archived rule per send currency', () => {
         const rules = [{ id: 1, name: 'UK to Nigeria', base_currency: 'GBP', receive_currency: 'NGN' }];
-        expect(validateForm({ ...base, name: 'UK to India', receive_currency: 'INR' }, { ...ctx, rules })).toEqual({});
-        expect(validateForm({ ...base, name: 'Another Nigeria' }, { ...ctx, rules }).receive_currency)
-            .toBe("A referral rule for GBP → NGN already exists ('UK to Nigeria'). Edit or archive it first.");
-        // one send-currency-only rule per send currency
-        const withAll = [{ id: 2, name: 'UK All', base_currency: 'GBP', receive_currency: null }];
-        expect(validateForm({ ...base, name: 'Another All', receive_currency: '' }, { ...ctx, rules: withAll }).receive_currency)
-            .toBe("A referral rule for GBP (all destinations) already exists ('UK All'). Edit or archive it first.");
-        expect(validateForm({ ...base, name: 'Corridor Too' }, { ...ctx, rules: withAll })).toEqual({});
+        expect(validateForm({ ...base, name: 'UK to India', receive_currency: 'INR' }, { ...ctx, rules }).base_currency)
+            .toBe("A referral rule for GBP already exists ('UK to Nigeria'). Only one rule per send currency is allowed — edit or archive it first.");
+        expect(validateForm({ ...base, name: 'Canada Standard', base_currency: 'CAD', receive_currency: 'NGN' }, { ...ctx, rules })).toEqual({});
         // editing the rule itself is not a clash
         expect(validateForm({ ...base, name: 'UK to Nigeria' }, { isNew: false, rules, editingId: 1 })).toEqual({});
     });
