@@ -522,6 +522,9 @@ const Toggle = ({ on, onClick, label, disabled }) => (
     </button>
 );
 
+// Country scope stays off for this release. Rules are chosen by send and receive currency only.
+const SHOW_COUNTRY_SCOPE = false;
+
 const CountryScopeBar = ({ direction, currencyCode, mode, countries, onConfigure }) => {
     const list = Array.isArray(countries) ? countries : parseCountryList(countries);
     const effectiveMode = list.length === 0 ? 'ALL' : (mode === 'INCLUDE' || mode === 'EXCLUDE' ? mode : 'INCLUDE');
@@ -1008,17 +1011,19 @@ const ReferralSettings = () => {
     };
 
     const payload = () => {
-        const sendList = parseCountryList(form.send_countries);
-        const rcvList = parseCountryList(form.receive_countries);
+        // Country filters stay off for this release. A saved rule applies to the
+        // selected send and receive currencies only.
+        // const sendList = parseCountryList(form.send_countries);
+        // const rcvList = parseCountryList(form.receive_countries);
         return {
             ...form,
             name: form.name.trim(),
-            send_country_mode: sendList.length === 0 ? 'ALL' : (form.send_country_mode || 'INCLUDE'),
-            send_countries: sendList,
-            send_country: sendList[0] || null,
-            receive_country_mode: rcvList.length === 0 ? 'ALL' : (form.receive_country_mode || 'INCLUDE'),
-            receive_countries: rcvList,
-            receive_country: rcvList[0] || null,
+            send_country_mode: 'ALL',
+            send_countries: [],
+            send_country: null,
+            receive_country_mode: 'ALL',
+            receive_countries: [],
+            receive_country: null,
             qualification_window_days: form.bonus_validity_days,
             referrer_reward: form.reward_type === 'REFEREE' ? 0 : form.referrer_reward,
             referee_reward: form.reward_type === 'REFERRER' ? 0 : form.referee_reward,
@@ -1186,7 +1191,7 @@ const ReferralSettings = () => {
             <div style={{ marginBottom: 24 }}>
                 <h2 className="rf-title">Referral scheme management</h2>
                 <p className="rf-subtitle" style={{ marginBottom: 16 }}>
-                    Create and manage referral reward programmes. Each send currency (e.g. GBP, EUR, USD) can have one referral rule, with optional receive currency and country scope filters.
+                    Create and manage referral reward programmes. Choose a send currency and a receive currency. Each send currency can have one referral rule.
                 </p>
                 <button
                     type="button"
@@ -1398,6 +1403,7 @@ const ReferralSettings = () => {
                                             );
                                         })}
                                     </select>
+                                    {SHOW_COUNTRY_SCOPE && (
                                     <CountryScopeBar
                                         direction="send"
                                         currencyCode={form.base_currency}
@@ -1405,6 +1411,7 @@ const ReferralSettings = () => {
                                         countries={form.send_countries}
                                         onConfigure={() => setCountryModal({ open: true, tab: 'send' })}
                                     />
+                                    )}
                                 </Field>
                                 <Field id="rf-receive_currency" label="Receive currency" required error={err('receive_currency')}
                                     hint={form.receive_currency ? `Applies only to ${corridorLabel(form.base_currency, form.receive_currency)} transfers.` : `Applies to all ${form.base_currency} transfers across all receive currencies.`}>
@@ -1412,6 +1419,7 @@ const ReferralSettings = () => {
                                         <option value="">All receive currencies</option>
                                         {CURRENCIES.filter((c) => c.code !== form.base_currency).map((c) => <option key={c.code} value={c.code}>{c.code} - {c.currencyName} ({c.symbol.trim()})</option>)}
                                     </select>
+                                    {SHOW_COUNTRY_SCOPE && (
                                     <CountryScopeBar
                                         direction="receive"
                                         currencyCode={form.receive_currency}
@@ -1419,6 +1427,7 @@ const ReferralSettings = () => {
                                         countries={form.receive_countries}
                                         onConfigure={() => setCountryModal({ open: true, tab: 'receive' })}
                                     />
+                                    )}
                                 </Field>
                             </div>
 
@@ -1566,6 +1575,7 @@ const ReferralSettings = () => {
                 </div>
             )}
 
+            {SHOW_COUNTRY_SCOPE && (
             <CountryScopeModal
                 open={countryModal.open}
                 initialTab={countryModal.tab}
@@ -1576,6 +1586,7 @@ const ReferralSettings = () => {
                     setCountryModal({ open: false, tab: 'send' });
                 }}
             />
+            )}
 
             <ReferralHistoryModal
                 open={historyModal.open}

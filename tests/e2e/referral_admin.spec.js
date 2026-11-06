@@ -43,7 +43,7 @@ test.describe('Referral Settings', () => {
         await expect(page.locator('#rf-referee_reward')).toHaveValue('5000');
     });
 
-    test('supports multi-country include/exclude modal, info popovers, and collapsible validity summary', async ({ page }) => {
+    test('currency dropdowns are selectable and country filters stay hidden', async ({ page }) => {
         await page.goto('/growth/referral-settings');
         await page.getByTestId('open-create-rule-modal-btn').click();
         await page.getByTestId('rf-bonus_validity_days-info-btn').click();
@@ -56,14 +56,17 @@ test.describe('Referral Settings', () => {
         await page.getByTestId('toggle-validity-rules-summary').click();
         await expect(page.getByTestId('toggle-validity-rules-summary')).toContainText('Hide summary');
 
-        await page.getByTestId('configure-send-countries-btn').click();
-        const modal = page.getByTestId('country-scope-modal');
-        await expect(modal).toBeVisible();
-        await modal.getByTestId('mode-card-INCLUDE').click();
-        await modal.getByTestId('country-option-GB').click();
-        await modal.getByTestId('country-option-FR').click();
-        await modal.getByTestId('apply-country-scope-btn').click();
-        await expect(page.getByTestId('send-country-scope-bar')).toContainText('Include only (2)');
+        await expect(page.getByTestId('configure-send-countries-btn')).toHaveCount(0);
+        await expect(page.getByTestId('configure-receive-countries-btn')).toHaveCount(0);
+        await expect(page.getByTestId('send-country-scope-bar')).toHaveCount(0);
+        await expect(page.getByTestId('receive-country-scope-bar')).toHaveCount(0);
+        const send = page.getByLabel(/Send Currency/i);
+        const receive = page.getByLabel(/Receive Currency/i);
+        await expect(send).toBeEnabled();
+        await expect(receive).toBeEnabled();
+        await send.selectOption('GBP');
+        await receive.selectOption('NGN');
+        await expect(receive).toHaveValue('NGN');
     });
 
     test('creates, deactivates and archives a rule', async ({ page, request }) => {
